@@ -1,0 +1,72 @@
+---
+name: review
+description: PM → Architect → Coder → Tester for a vague Android idea, with human gates
+---
+
+You will run the full Android pipeline with human approval gates for:
+$ARGUMENTS
+
+Before executing, read `.claude/PIPELINE.md` for the shared orchestration rules
+(handoff protocol, subagent mappings, approval gates, build/lint gates) and read
+the consuming project's `AGENTS.md` for local conventions (architecture,
+libraries, verification requirements). Both files are the source of truth — do
+not duplicate their content here.
+
+This is the /review flow — starts with the PM to refine the idea.
+After each phase, pause and ask the user to type one of:
+- `approve` — proceed to next phase
+- `revise: <feedback>` — re-run the current phase with the feedback
+- `stop` — halt the pipeline
+
+Phase 1 — PM (kickoff):
+  Delegate to the `pm` subagent with the user's idea.
+  The PM will ask clarifying questions iteratively. Pass each user response
+  back to the PM until ✅ PM DONE.
+  Parse the artifact directory from the DONE message — it will say:
+    "feature description at pipeline_artifacts/{slug}/feature.md"
+  Store: FEATURE_DIR = pipeline_artifacts/{slug}/
+  Then show the user a summary of FEATURE_DIR/feature.md and ask:
+  "Approve the feature description to proceed to Architect, or revise?"
+  Do not proceed until the user responds.
+
+Phase 2 — Architect (after approval):
+  Delegate to the `architect` subagent.
+  Pass: the path FEATURE_DIR/feature.md
+  When ✅ ARCHITECT DONE, parse the plan path from the DONE message:
+    "plan at pipeline_artifacts/{slug}/implementation-plan.md"
+  Store: PLAN_PATH = pipeline_artifacts/{slug}/implementation-plan.md
+  Show the user the section headings of PLAN_PATH and ask:
+  "Approve the plan to proceed to Coder, or revise?"
+
+Phase 3 — Coder (after approval, execution strategy decided by Architect):
+  Read PLAN_PATH Section 3. Check the **Parallel-safe** field.
+
+  Before spawning coders, tell the user:
+    "The Architect decided this feature is [Parallel-safe: YES/NO].
+    [If YES] I will spawn N coder subagents in parallel across M groups.
+    This will use more tokens than sequential execution. Type `approve`
+    to proceed, `force-sequential` to override to a single coder, or
+    `revise: <feedback>` to send back to the Architect."
+
+  After approval:
+    IF Parallel-safe is NO or user typed `force-sequential`:
+      Spawn ONE `coder` subagent. Pass it PLAN_PATH for all sections
+      sequentially.
+
+    IF Parallel-safe is YES and user approved:
+      For each Execution Group in order:
+        Spawn N `coder` subagents in parallel — one per section.
+        Each receives PLAN_PATH and explicit "implement ONLY Section X"
+        instructions.
+        Wait for all coders in the group to declare ✅ CODER DONE.
+        Run `./gradlew lint detekt testDebugUnitTest` between groups.
+
+  When all coders are done, show the user the list of modified files
+  (grouped by which coder produced them) and ask:
+    "Approve the implementation to proceed to Tester, or revise?"
+
+Phase 4 — Tester (after approval):
+  Delegate to the `tester` subagent.
+  Pass: PLAN_PATH
+  Summarise the final test results for the user from the test-results.md
+  in the same directory as PLAN_PATH.
