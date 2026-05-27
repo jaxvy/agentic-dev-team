@@ -1,0 +1,13 @@
+{
+  "name": "agentic-dev-team",
+  "owner": { "name": "jaxvy" },
+  "plugins": [
+    {
+      "name": "agentic-dev-team",
+      "source": ".",
+      "description": "Reusable PM → Architect → Coder → Tester pipeline for Android.",
+      "version": "0.1.0",
+      "homepage": "https://github.com/jaxvy/agentic-dev-team"
+    }
+  ]
+}

@@ -55,6 +55,34 @@ your own `pm`/`architect`/etc. agents at either project or user scope.
 
 ## Installation
 
+Two paths:
+
+- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-hitl` / `/build-auto` slash commands without per-project setup. Does **not** wire up Antigravity (no `.agents/workflows/` files, no `agents.md` persona stubs, no `.gitignore` block).
+- **install.sh per-project (local repo install)** — works for both Claude Code and Antigravity. Materializes per-file symlinks inside each consuming project, manages a `.gitignore` block, and inlines persona stubs into `.agents/agents.md` for Antigravity. **This is the only supported path for Antigravity** — Antigravity has no plugin marketplace.
+
+The two are not mutually exclusive — you can install the plugin in Claude Code and still run `install.sh` in Antigravity projects.
+
+### Install via Claude Code marketplace (plugin)
+
+From inside the Claude Code CLI:
+
+```
+/plugin marketplace add jaxvy/agentic-dev-team
+/plugin install agentic-dev-team@agentic-dev-team
+```
+
+Claude Code will prompt for an install scope:
+
+| Scope | Storage | Committed to git? | Behavior |
+|---|---|---|---|
+| User (`Install for you`) | `~/.claude/` | No | Plugin available in every Claude Code session on your machine. |
+| Project (`Install for all collaborators on this repository`) | `.claude/settings.json` in the repo | Yes | Anyone who clones the repo and runs `claude` is prompted to install. |
+| Local (`Install for you, in this repo only`) | `.claude/settings.local.json` in the repo | No (gitignored) | Plugin active only in this repo, only for you. |
+
+After install, `/build-hitl`, `/build-auto`, and the four `@adt-*` agents are available. To update, run `/plugin marketplace update agentic-dev-team`. To remove, `/plugin uninstall agentic-dev-team@agentic-dev-team`.
+
+If you also want Antigravity support, additionally follow the install.sh path below — they coexist without conflict.
+
 ### Prerequisites
 
 - `git`.
@@ -260,9 +288,9 @@ file automatically — you don't need to document the pipeline itself in it.
   that add `-reviewer` agents (e.g., a plan reviewer after Architect, a
   code reviewer after Coder) to verify and double-check each phase's
   output before handoff.
-- **Claude Code marketplace.** Publish this as a Claude Code marketplace
-  plugin so install becomes `/plugin install agentic-dev-team` instead of
-  running install.sh.
+- **Antigravity marketplace equivalent.** Antigravity doesn't yet have a
+  plugin marketplace; once it does, ship an equivalent so the install.sh
+  path becomes optional for Antigravity users too.
 
 ## Troubleshooting
 

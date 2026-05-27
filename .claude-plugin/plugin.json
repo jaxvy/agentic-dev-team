@@ -1,0 +1,9 @@
+{
+  "name": "agentic-dev-team",
+  "version": "0.1.0",
+  "description": "PM → Architect → Coder → Tester pipeline for Android, working in Claude Code and Antigravity.",
+  "author": { "name": "jaxvy" },
+  "homepage": "https://github.com/jaxvy/agentic-dev-team",
+  "repository": "https://github.com/jaxvy/agentic-dev-team",
+  "license": "MIT"
+}
