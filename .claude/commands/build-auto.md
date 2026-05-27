@@ -7,7 +7,8 @@ You will run the Android development pipeline for: $ARGUMENTS
 
 Before executing, read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for the shared
 orchestration rules (handoff protocol, subagent mappings, approval gates,
-build/lint gates) and read the consuming project's `AGENTS.md` for local
+build/lint gates) and read the consuming project's `AGENTS.md` (or `CLAUDE.md`)
+for local
 conventions (architecture, libraries, verification requirements). Both files
 are the source of truth — do not duplicate their content here.
 

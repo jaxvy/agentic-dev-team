@@ -3,7 +3,7 @@
 This file is the shared source of truth for the PM → Architect → Coder → Tester
 pipeline. Every agent and command file references this document. Project-specific
 architecture, libraries, and verification rules live in the consuming project's
-`AGENTS.md`.
+`AGENTS.md` (or `CLAUDE.md`).
 
 ## Subagent Tool & Environment Mappings
 
@@ -36,7 +36,7 @@ Gemini, opencode, etc.).
 - **Read-before-write**: Every agent must read the prior phase artifact in full before starting. A missing required artifact is a STOP condition — report to the user, do not proceed by guessing.
 - **No-commit rule for adt-coder**: The Coder must never run `git add`, `git commit`, or any staging command. Changes stay uncommitted for human review.
 - **Build/lint gate**: Before `adt-coder` declares done, run `./gradlew assembleDebug` and `./gradlew lint detekt testDebugUnitTest`. Between parallel coder groups, the orchestrator runs `./gradlew lint detekt testDebugUnitTest` to catch cross-section issues. Fix in-scope failures before handing off to `adt-tester`.
-- **Manual verification**: `adt-tester` must perform manual verification through the `auto-mobile` MCP server when that server is available and the consuming project's `AGENTS.md` requires it.
+- **Manual verification**: `adt-tester` must perform manual verification through the `auto-mobile` MCP server when that server is available and the consuming project's `AGENTS.md` / `CLAUDE.md` requires it.
 
 ## Approval Gates
 

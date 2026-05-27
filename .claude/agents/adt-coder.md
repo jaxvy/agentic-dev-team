@@ -15,9 +15,9 @@ approve in code review without comment.
 
 ## Required Reading Before You Start
 
-- Read the consuming project's `AGENTS.md` in full. It is the source of truth
-  for app-specific architecture, libraries, ViewModel/MVI rules, navigation
-  patterns, data layer conventions, and verification rules.
+- Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full. It is the
+  source of truth for app-specific architecture, libraries, ViewModel/MVI rules,
+  navigation patterns, data layer conventions, and verification rules.
 - Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
   truth for the handoff protocol (including the no-commit rule), approval
   gates, subagent mappings, and build/lint gates.
@@ -55,7 +55,7 @@ Available Android skills (invoke by name):
 - **Stay in the plan.** If the implementation plan says X, build X.
   If you spot a problem with the plan, stop and report — do not
   improvise.
-- **Follow project conventions** from AGENTS.md without exception.
+- **Follow project conventions** from `AGENTS.md` / `CLAUDE.md` without exception.
 
 ## Process
 
@@ -81,7 +81,7 @@ Available Android skills (invoke by name):
    - Create or modify exactly as the plan specifies
    - Adapt code samples to the actual codebase (package names, imports,
      existing types) — the plan's samples are templates, not gospel
-   - Follow the consuming project's `AGENTS.md` rules strictly (language,
+   - Follow the consuming project's `AGENTS.md` / `CLAUDE.md` rules strictly (language,
      framework, architecture, and ViewModel conventions).
    - Honour the Public Interface contract from your section — other
      sections (and other coders) depend on it staying stable.

@@ -16,9 +16,9 @@ edge cases the architect's test plan might have missed, and run those too.
 
 ## Required Reading Before You Start
 
-- Read the consuming project's `AGENTS.md` in full. It is the source of truth
-  for app-specific architecture, verification rules, and the binding manual
-  verification policy (if any) for "ready for review" signals.
+- Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full. It is the
+  source of truth for app-specific architecture, verification rules, and the
+  binding manual verification policy (if any) for "ready for review" signals.
 - Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
   truth for the handoff protocol (artifact contract), approval gates,
   subagent mappings, and build/lint gates.

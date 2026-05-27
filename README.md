@@ -60,9 +60,9 @@ your own `pm`/`architect`/etc. agents at either project or user scope.
 - `git`.
 - A [Claude Code](https://claude.com/claude-code) or
   [Antigravity](https://antigravity.google) install.
-- An Android project with an `AGENTS.md` (or `CLAUDE.md`) describing the
-  app's stack, architecture, conventions, and verification rules. See the
-  sample below.
+- An Android project with an `AGENTS.md` or `CLAUDE.md` describing the
+  app's stack, architecture, conventions, and verification rules. The
+  pipeline agents look for either file.
 - **auto-mobile MCP server** ([kaeawc/auto-mobile](https://github.com/kaeawc/auto-mobile))
   installed and registered with your tool. The `adt-tester` agent drives
   the running app on a device/emulator through this MCP — without it, the
@@ -124,17 +124,6 @@ After install, `ls -la .claude/commands/` makes ownership obvious — each
 of our entries shows an `->` arrow pointing at the clone. Your own files
 in the same directories have no arrow.
 
-### AGENTS.md / CLAUDE.md handling
-
-Claude Code reads `CLAUDE.md`; Antigravity reads `AGENTS.md`. install.sh
-keeps both tools fed by symlinking whichever is missing:
-
-| Disk state | install.sh action |
-|---|---|
-| `AGENTS.md` exists, `CLAUDE.md` doesn't | Creates `CLAUDE.md -> AGENTS.md` |
-| `CLAUDE.md` exists, `AGENTS.md` doesn't | Creates `AGENTS.md -> CLAUDE.md` |
-| Both exist as real files | Warns; touches neither (you should pick one canonical) |
-| Neither exists | Prints a note and a pointer to the sample template (install still succeeds) |
 
 ### Refusal behavior
 
@@ -258,52 +247,12 @@ For maintainers / contributors who want to add new agents or commands:
   install.sh's sync logic removes stale symlinks from consuming projects
   on the next run.
 
-## Sample `AGENTS.md` for consuming projects
+## Project Context (`AGENTS.md` / `CLAUDE.md`)
 
-The only file the consuming project must author is its own `AGENTS.md`.
-Everything else comes from install.sh. A typical shape:
-
-```markdown
-# AGENTS.md
-
-## Stack
-- Kotlin, Android Gradle Plugin 8.x, min SDK 26, target SDK 34.
-- Jetpack Compose for UI; Material 3 theming.
-- Hilt for DI; Coroutines + Flow for async; Room for persistence;
-  Retrofit + OkHttp for networking.
-
-## Architecture
-- MVI per screen: `UiState` (immutable data class), `UiEvent` (sealed),
-  `UiEffect` (sealed, one-shot).
-- ViewModels expose `StateFlow<UiState>` and a single `onEvent(UiEvent)`
-  entry point. No business logic in Composables.
-- Repositories return `Flow` or `Result<T>`; never throw across layer
-  boundaries.
-- Package by feature: `feature/<name>/{ui,domain,data}`.
-
-## Conventions
-- New screens go under `feature/<name>/ui/` with `<Name>Screen.kt` +
-  `<Name>ViewModel.kt` pair.
-- Strings live in `res/values/strings.xml`; no hardcoded user-facing
-  text.
-- Public APIs and ViewModel events get KDoc; private helpers do not.
-
-## Verification
-- `./gradlew lint testDebugUnitTest` must pass before any handoff.
-- Compose previews required for new screens.
-- Manual smoke test on a Pixel 6 emulator (API 34) for any UI-touching
-  change.
-
-## Shared Agent Pipeline
-This project uses the shared agentic-dev-team PM → Architect → Coder →
-Tester pipeline. See `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for handoff
-protocol, approval gates, and artifact locations.
-
-- `/build-hitl <vague idea>` — human-in-the-loop flow.
-- `/build-auto <specified feature>` — fully automatic flow.
-
-Persona handles: `@adt-pm`, `@adt-architect`, `@adt-coder`, `@adt-tester`.
-```
+Every `adt-*` agent reads the consuming project's `AGENTS.md` or `CLAUDE.md`
+(whichever exists) for project-specific context: stack, architecture,
+conventions, and verification rules. The pipeline agents look for either
+file automatically — you don't need to document the pipeline itself in it.
 
 ## Roadmap
 
@@ -325,7 +274,6 @@ Persona handles: `@adt-pm`, `@adt-architect`, `@adt-coder`, `@adt-tester`.
 - **"I see a broken symlink in `.claude/agents/`"** — likely a file was
   renamed or removed in the repo. Run `install.sh`; the sync removes
   stale symlinks.
-- **"Both AGENTS.md and CLAUDE.md exist as real files"** — install.sh
-  doesn't touch either, but edits to one don't propagate to the other.
-  Pick a canonical file (we recommend `AGENTS.md`), delete the other, and
-  re-run install to create the symlink.
+- **"Both AGENTS.md and CLAUDE.md exist as real files"** — the pipeline
+  agents will read whichever they find first. For consistency, pick one
+  as canonical and keep them in sync (or delete one).

@@ -19,9 +19,9 @@ mechanically. If your plan is ambiguous, the Coder will guess wrong.
 
 ## Required Reading Before You Start
 
-- Read the consuming project's `AGENTS.md` in full. It is the source of truth
-  for app-specific architecture, libraries, ViewModel/MVI rules, navigation
-  patterns, data layer conventions, and verification rules.
+- Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full. It is the
+  source of truth for app-specific architecture, libraries, ViewModel/MVI rules,
+  navigation patterns, data layer conventions, and verification rules.
 - Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
   truth for the handoff protocol, approval gates, subagent mappings, and
   build/lint gates.

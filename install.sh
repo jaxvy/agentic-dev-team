@@ -17,8 +17,6 @@
 #     containing the inlined persona stubs from this repo's
 #     .agents/AGENTIC_DEV_TEAM.md (Antigravity auto-loads agents.md into
 #     user_rules).
-#   - Symlinks AGENTS.md <-> CLAUDE.md symmetrically so both Claude Code and
-#     Antigravity find project context.
 #
 # Safety:
 #   - Never overwrites a developer's own files. Real files at our install
@@ -224,48 +222,6 @@ rewrite_agents_block() {
   fi
 }
 
-# Handle AGENTS.md / CLAUDE.md symmetry. Returns 0 always; prints notes/warns.
-manage_agents_claude_md() {
-  local a="$PROJECT_DIR/AGENTS.md"
-  local c="$PROJECT_DIR/CLAUDE.md"
-  local a_real=0 c_real=0 a_link=0 c_link=0
-  [ -f "$a" ] && [ ! -L "$a" ] && a_real=1
-  [ -f "$c" ] && [ ! -L "$c" ] && c_real=1
-  [ -L "$a" ] && a_link=1
-  [ -L "$c" ] && c_link=1
-
-  if [ $a_real -eq 1 ] && [ $c_real -eq 1 ]; then
-    echo "  warn: Both AGENTS.md and CLAUDE.md exist as real files."
-    echo "        Edits to one won't propagate to the other. Consider picking"
-    echo "        one as canonical and symlinking the other."
-    return 0
-  fi
-
-  if [ $a_real -eq 1 ] && [ $c_real -eq 0 ] && [ $c_link -eq 0 ]; then
-    (cd "$PROJECT_DIR" && ln -s AGENTS.md CLAUDE.md)
-    echo "  linked: CLAUDE.md -> AGENTS.md"
-    return 0
-  fi
-
-  if [ $c_real -eq 1 ] && [ $a_real -eq 0 ] && [ $a_link -eq 0 ]; then
-    (cd "$PROJECT_DIR" && ln -s CLAUDE.md AGENTS.md)
-    echo "  linked: AGENTS.md -> CLAUDE.md"
-    return 0
-  fi
-
-  if [ $a_real -eq 0 ] && [ $c_real -eq 0 ] && [ $a_link -eq 0 ] && [ $c_link -eq 0 ]; then
-    cat <<EOF
-  note: Neither AGENTS.md nor CLAUDE.md exists in this project.
-        Create one (we recommend AGENTS.md) describing your stack,
-        architecture, conventions, and verification rules before running
-        /build-hitl or /build-auto. The agents read it for project context.
-        A sample template is in this repo's README.
-EOF
-    return 0
-  fi
-  # Already correctly symlinked — nothing to do.
-  return 0
-}
 
 # ---------- install mode ----------
 do_install() {
@@ -360,8 +316,6 @@ do_install() {
     echo "  synced: .agents/agents.md (marker block)"
   fi
 
-  # Symmetric AGENTS.md / CLAUDE.md handling.
-  manage_agents_claude_md
 
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
