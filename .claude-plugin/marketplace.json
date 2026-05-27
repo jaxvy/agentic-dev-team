@@ -4,10 +4,13 @@
   "plugins": [
     {
       "name": "agentic-dev-team",
-      "source": ".",
+      "source": "./",
       "description": "Reusable PM → Architect → Coder → Tester pipeline for Android.",
       "version": "0.1.0",
-      "homepage": "https://github.com/jaxvy/agentic-dev-team"
+      "homepage": "https://github.com/jaxvy/agentic-dev-team",
+      "repository": "https://github.com/jaxvy/agentic-dev-team",
+      "license": "MIT",
+      "category": "development"
     }
   ]
 }
