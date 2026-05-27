@@ -1,8 +1,8 @@
 ---
-name: coder
+name: adt-coder
 description: >
   Use this agent to implement Android code from an implementation plan.
-  Trigger after the architect agent finishes, or when the user says
+  Trigger after the adt-architect agent finishes, or when the user says
   "implement", "build it", or "code section X". Requires
   pipeline_artifacts/{slug}/implementation-plan.md to exist.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
@@ -18,9 +18,9 @@ approve in code review without comment.
 - Read the consuming project's `AGENTS.md` in full. It is the source of truth
   for app-specific architecture, libraries, ViewModel/MVI rules, navigation
   patterns, data layer conventions, and verification rules.
-- Read `.claude/PIPELINE.md` in full. It is the source of truth for the
-  handoff protocol (including the no-commit rule), approval gates, subagent
-  mappings, and build/lint gates.
+- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
+  truth for the handoff protocol (including the no-commit rule), approval
+  gates, subagent mappings, and build/lint gates.
 
 ## Use Android skills
 

@@ -1,166 +1,267 @@
 # Agentic Android Dev Team
 
-Reusable PM → Architect → Coder → Tester pipeline for Android projects. Works
-with both [Claude Code](https://claude.com/claude-code) and
-[Antigravity](https://antigravity.google) — the same agent prompts and slash
-commands are exposed to each tool via its native configuration directory.
+A reusable PM → Architect → Coder → Tester pipeline for Android projects,
+working identically in [Claude Code](https://claude.com/claude-code) and
+[Antigravity](https://antigravity.google). Distributed as per-file symlinks
+into each consuming project — no whole-dir symlinks, no forced migration
+of your existing `.claude/` or `.agents/` content.
 
 ## How To Use It
 
-Once installed, open the Android project in Claude Code or Antigravity and run
-either slash command from the chat prompt. The exact same flows work in both
-tools.
+Once installed in a project, open it in Claude Code or Antigravity and run
+either slash command from the chat prompt. Both flows **build** a feature;
+the suffix tells you whether a human is in the loop.
 
-### `/review <vague idea>`
+### `/build-hitl <vague idea>`
 
-Use this when you have a rough idea and want the team to think it through
-before any code is written. Runs PM → Architect → Coder → Tester with human
-approval gates between phases.
+Human-in-the-loop variant. PM → Architect → Coder → Tester with approval
+gates between phases. Use when the idea is rough and you want the PM to
+refine it before any code is written.
 
 ```
-/review users keep losing their draft when the app is killed mid-typing
+/build-hitl add a recently-played carousel to the home screen
 ```
 
-The PM agent turns that into a concrete feature spec
-(`pipeline_artifacts/<slug>/feature.md`) and pauses for your sign-off. After
+The PM agent turns that into a concrete feature spec at
+`pipeline_artifacts/<slug>/feature.md` and pauses for your sign-off. After
 you approve, the Architect produces an implementation plan, the Coder
 implements it, and the Tester verifies — each phase stops for review.
 
-### `/build <specified feature>`
+### `/build-auto <specified feature>`
 
-Use this when the feature is already specified and you just want it built.
-Skips the PM phase and goes straight to Architect → Coder → Tester.
+Fully automatic variant. Architect → Coder → Tester, no gates. Use when
+the feature is already specified.
 
 ```
-/build add a "Save draft on background" hook to ComposeViewModel that persists the current input to Room every 2s and restores it on launch
+/build-auto add a "Save draft on background" hook to ComposeViewModel that persists the current input to Room every 2s and restores it on launch
 ```
 
-The Architect writes the plan, the Coder implements it, and the Tester runs
-the verification steps from `AGENTS.md`. Artifacts for every run land under
-`pipeline_artifacts/<slug>/` so you can audit decisions later.
+The Architect writes the plan, the Coder implements it, the Tester runs
+verification on a device via the auto-mobile MCP server. Artifacts for
+every run land under `pipeline_artifacts/<slug>/`.
 
 ### Invoking a single agent
 
-You can also call any agent directly without running the full pipeline — handy
-for one-off questions or partial work. In Claude Code, address it by name:
+You can also call any agent directly without running the full pipeline.
+In Claude Code, address it by name:
 
 ```
-@architect can you sketch a plan for X?
+@adt-architect can you sketch a plan for X?
 ```
 
-## How This Works
+All agents this repo ships are namespaced with `adt-` (`@adt-pm`,
+`@adt-architect`, `@adt-coder`, `@adt-tester`) so they can't collide with
+your own `pm`/`architect`/etc. agents at either project or user scope.
 
-This repo is a *shared configuration package*, not a library you import. Each
-Android project that wants the pipeline runs `install.sh`, which links this
-repo's agent definitions and slash commands into the project so both Claude
-Code and Antigravity can find them.
+## Installation
+
+### Prerequisites
+
+- `git`.
+- A [Claude Code](https://claude.com/claude-code) or
+  [Antigravity](https://antigravity.google) install.
+- An Android project with an `AGENTS.md` (or `CLAUDE.md`) describing the
+  app's stack, architecture, conventions, and verification rules. See the
+  sample below.
+- **auto-mobile MCP server** ([kaeawc/auto-mobile](https://github.com/kaeawc/auto-mobile))
+  installed and registered with your tool. The `adt-tester` agent drives
+  the running app on a device/emulator through this MCP — without it, the
+  Tester phase of `/build-hitl` and `/build-auto` cannot complete its
+  device-verification step.
+
+### One-time setup (per developer)
+
+Clone this repo to a stable location on your machine. The path is a
+suggestion — pick whatever you want:
+
+```bash
+git clone https://github.com/jaxvy/agentic-dev-team.git ~/code/agentic-dev-team
+```
+
+### Per-project install
+
+From each Android project root, run install.sh directly from the clone:
+
+```bash
+cd /path/to/your-android-project
+~/code/agentic-dev-team/install.sh
+```
+
+The installer is **completely non-destructive**: it only creates symlinks
+for the specific files this repo provides. Your existing `.claude/` and
+`.agents/` content is never touched, modified, or migrated.
+
+### What gets installed
+
+For each file this repo owns, install.sh creates a symlink at the matching
+path inside your project:
+
+| Project path | → Symlink target (in your clone) |
+|---|---|
+| `.claude/commands/build-hitl.md` | `<clone>/.claude/commands/build-hitl.md` |
+| `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
+| `.claude/agents/adt-pm.md` | `<clone>/.claude/agents/adt-pm.md` |
+| `.claude/agents/adt-architect.md` | `<clone>/.claude/agents/adt-architect.md` |
+| `.claude/agents/adt-coder.md` | `<clone>/.claude/agents/adt-coder.md` |
+| `.claude/agents/adt-tester.md` | `<clone>/.claude/agents/adt-tester.md` |
+| `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
+| `.agents/workflows/build-hitl.md` | `<clone>/.agents/workflows/build-hitl.md` |
+| `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
+
+Two additional changes happen via **marker-fenced managed blocks** (not symlinks):
+
+- `.gitignore` gains a small block listing the symlink paths above (since
+  the symlink targets are per-developer absolute paths and can't be
+  committed) plus `/pipeline_artifacts/`.
+- `.agents/agents.md` gains a block containing the inlined persona stubs
+  from this repo's `.agents/AGENTIC_DEV_TEAM.md`. Antigravity auto-loads
+  `agents.md` into the system prompt as user_rules, so this is how
+  Antigravity discovers the team. If the file doesn't exist, it's created.
+  If it does exist, your existing content outside the markers is left
+  untouched.
+
+After install, `ls -la .claude/commands/` makes ownership obvious — each
+of our entries shows an `->` arrow pointing at the clone. Your own files
+in the same directories have no arrow.
+
+### AGENTS.md / CLAUDE.md handling
+
+Claude Code reads `CLAUDE.md`; Antigravity reads `AGENTS.md`. install.sh
+keeps both tools fed by symlinking whichever is missing:
+
+| Disk state | install.sh action |
+|---|---|
+| `AGENTS.md` exists, `CLAUDE.md` doesn't | Creates `CLAUDE.md -> AGENTS.md` |
+| `CLAUDE.md` exists, `AGENTS.md` doesn't | Creates `AGENTS.md -> CLAUDE.md` |
+| Both exist as real files | Warns; touches neither (you should pick one canonical) |
+| Neither exists | Prints a note and a pointer to the sample template (install still succeeds) |
+
+### Refusal behavior
+
+If a real file or non-our-symlink already exists at one of our destinations,
+install.sh refuses with the path and a clear "rename or delete, then re-run"
+message. Nothing is ever overwritten silently. Pre-flight collision checks
+run before any symlink is created, so a refusal leaves the install in a
+clean state.
+
+## Updating
+
+The canonical update incantation (run after pulling new changes in the
+clone):
+
+```bash
+cd ~/code/agentic-dev-team && git pull && cd /path/to/your-project
+~/code/agentic-dev-team/install.sh
+```
+
+Why both steps:
+
+- `git pull` refreshes the source files in the clone. Edits to existing
+  agent prompts, commands, or `AGENTIC_DEV_TEAM_PIPELINE.md` are picked up
+  immediately because your project's symlinks already point at them.
+- **install.sh** must run again to materialize symlinks for any **newly
+  added** files in the repo (e.g., a new agent like `adt-qa-reviewer.md`,
+  or a new command like `/build-hitl-long`), and to clean up stale
+  symlinks for any **removed** files. It also refreshes the inlined
+  persona stubs in `.agents/agents.md` from the latest
+  `.agents/AGENTIC_DEV_TEAM.md`.
+
+install.sh is a **sync**, not just an append: adds new symlinks, removes
+stale ones (where the source no longer exists), and rewrites the marker
+blocks to reflect current state.
+
+Suggested shell function for one-shot updates across multiple projects:
+
+```bash
+agentic-dev-team-update() {
+  (cd ~/code/agentic-dev-team && git pull) || return 1
+  ~/code/agentic-dev-team/install.sh
+}
+```
+
+## Uninstalling
+
+From the project root:
+
+```bash
+~/code/agentic-dev-team/install.sh --uninstall
+```
+
+This removes only what install.sh created:
+
+- Every symlink whose target resolves into the clone.
+- The marker-fenced block in `.gitignore` (your other gitignore entries
+  are preserved).
+- The marker-fenced block in `.agents/agents.md` (and the file itself if
+  it ends up empty).
+
+Your own files, content outside the markers, and the clone at
+`~/code/agentic-dev-team` are all untouched.
+
+## How It Works
+
+This repo is a **shared configuration package**, not a library you import.
+Each Android project that wants the pipeline links this repo's files into
+its own `.claude/` and `.agents/`.
 
 The mechanics:
 
-1. `install.sh` clones this repo into the consuming project as `.agent-config/`
-   (gitignored, treated like a vendored tool).
-2. It then symlinks `.claude -> .agent-config/.claude` and
-   `.agents -> .agent-config/.agents` at the project root. The `.agent-config/`
-   intermediate dir exists because this repo holds *both* `.claude/` and
-   `.agents/` plus its own `README.md`/`install.sh`/`.git/` — cloning once
-   into `.agent-config/` and symlinking the two subdirs lets a single
-   `git pull` update both tools and keeps repo cruft out of the host project
-   root.
-3. **Claude Code** discovers agents and slash commands by scanning `.claude/` in
-   the working directory — so `/review` and `/build` become available
-   automatically, and the `pm`, `architect`, `coder`, and `tester` subagents
-   can be invoked by name.
-4. **Antigravity** discovers teams and workflows by scanning `.agents/` in the
-   working directory — the `.agents/agents.md` file registers the same agents
-   and the `.agents/workflows/` directory exposes the same `/review` and
-   `/build` flows.
-5. Both tools read `AGENTS.md` (and the `CLAUDE.md -> AGENTS.md` symlink the
-   installer creates) as the project's engineering context. The agents combine
-   that project-specific context with the shared orchestration rules in
-   `.claude/PIPELINE.md` to produce code that matches the host project's
-   conventions.
-6. To update the pipeline across all consuming projects, push to this repo and
-   re-run `install.sh` (it fast-forwards `.agent-config/`). No per-project
-   migration needed.
+1. **Per-file symlinks, not per-directory.** Your project's `.claude/`
+   and `.agents/` stay real directories. You can keep adding your own
+   commands/agents alongside our symlinks — they coexist freely.
+2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
+   `.claude/agents/` in the project by filename. Our symlinks live at
+   those canonical paths, so `/build-hitl`, `/build-auto`, `@adt-pm`,
+   `@adt-architect`, `@adt-coder`, and `@adt-tester` are all available
+   automatically.
+3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for
+   slash commands (our workflow files there are symlinks into
+   `.claude/commands/` via the clone) and auto-loads `.agents/agents.md`
+   into the system prompt as user_rules. install.sh inlines the persona
+   stubs from `.agents/AGENTIC_DEV_TEAM.md` into a marker-fenced block
+   inside your `agents.md`, so Antigravity sees them in-context without
+   needing to load another file. The HTML-comment markers
+   (`<!-- agentic-dev-team:start -->` / `<!-- agentic-dev-team:end -->`)
+   are ignored by Antigravity.
+4. **Cross-tool source of truth.** Both tools end up reading the same
+   agent prompts and the same `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for
+   orchestration rules. Edits to those files in the clone propagate to
+   every consuming project on the next file read — no install required
+   for in-place edits.
+5. **`.gitignore` block.** Symlink targets are per-developer absolute
+   paths (`~/code/agentic-dev-team/...`) and would not resolve on a
+   teammate's machine, so install.sh manages a small block in
+   `.gitignore` listing them.
 
-The result: the consuming Android project's repo stays clean — no agent
-prompts checked in, no duplication between Claude Code and Antigravity — and
-running `/review` or `/build` in either tool drives the same PM → Architect →
-Coder → Tester pipeline.
+## Extending the Pipeline
 
-## What This Provides
+For maintainers / contributors who want to add new agents or commands:
 
-- `.claude/agents/{pm,architect,coder,tester}.md` — agent prompts.
-- `.claude/commands/{review,build}.md` — `/review` and `/build` slash commands for Claude Code.
-- `.claude/PIPELINE.md` — shared orchestration rules (handoff protocol, approval gates, subagent mappings, build/lint gates).
-- `.agents/agents.md` + `.agents/workflows/` — Antigravity team and workflow registration (symlinked to the same command files).
-- `install.sh` — wires the shared repo into a consuming project as an ignored local clone with `.claude` and `.agents` symlinks.
+- **Adding a new agent.** Create `.claude/agents/adt-<name>.md` in this
+  repo (always use the `adt-` prefix to stay collision-free with
+  developers' own agents). Add a short stub block to
+  `.agents/AGENTIC_DEV_TEAM.md` using the `@adt-<name>` handle and
+  referencing the new prompt. On the next `install.sh` run in each
+  consuming project, the new agent becomes invocable as `@adt-<name>`
+  and the persona-registry block in `agents.md` automatically updates
+  with the new stub.
+- **Adding a new command / workflow.** Create `.claude/commands/<name>.md`
+  with the orchestration prompt. Create `.agents/workflows/<name>.md` as
+  a symlink to `../../.claude/commands/<name>.md` so Antigravity sees it
+  too. Example: `/build-hitl-long` for a longer pipeline with extra
+  agents.
+- **Updating shared orchestration rules.** Edit
+  `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`. Because agent prompts reference
+  it by path and the project's copy is a symlink into the clone, edits
+  propagate the next time an agent reads the file — no install needed.
+- **Removing or renaming files.** Just delete or rename in the repo.
+  install.sh's sync logic removes stale symlinks from consuming projects
+  on the next run.
 
-Each consuming project keeps its own `AGENTS.md` with app-specific architecture,
-libraries, ViewModel/MVI rules, and verification requirements.
+## Sample `AGENTS.md` for consuming projects
 
-## Install Into A Project
-
-From the consuming project's root:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jaxvy/agentic-dev-team/main/install.sh | bash
-```
-
-Or clone first and run locally:
-
-```bash
-git clone https://github.com/jaxvy/agentic-dev-team.git /path/to/agentic-dev-team
-/path/to/agentic-dev-team/install.sh
-```
-
-The installer:
-
-1. Clones (or fast-forwards) this repo into `.agent-config/`.
-2. Creates `.claude -> .agent-config/.claude` and `.agents -> .agent-config/.agents` symlinks.
-3. Creates `CLAUDE.md -> AGENTS.md` if `AGENTS.md` exists and `CLAUDE.md` does not.
-4. Adds `/.agent-config/`, `/.claude`, and `/.agents` to `.gitignore`.
-
-It refuses to overwrite existing real `.claude` or `.agents` directories — back them up or migrate first.
-
-### Migrating Existing `.claude` Or `.agents` Content
-
-If the project already has its own `.claude/` or `.agents/` directory, the
-installer will exit with a `Refusing to overwrite existing ...` error rather
-than touch your files — so **nothing is lost automatically**. To keep your
-custom agents and commands alongside the shared pipeline, you have a few
-options:
-
-- **Move custom agents/commands to user scope.** Claude Code also reads
-  `~/.claude/agents/` and `~/.claude/commands/` (user-level config). Anything
-  you move there survives the install and stays available across all
-  projects. Antigravity has the same pattern at `~/.agents/`.
-- **Fork this repo.** If your custom agents/commands are project-specific and
-  meant to be shared with collaborators, fork `agentic-dev-team`, drop your
-  files into the fork's `.claude/` and `.agents/`, and run the installer with
-  `CONFIG_REPO=https://github.com/<you>/<fork>.git ./install.sh`. Your fork
-  becomes the source of truth for the project.
-- **Contribute upstream.** If the custom pieces are generally useful, PR them
-  into this repo so every consuming project picks them up on the next
-  `install.sh` run.
-
-The simplest migration:
-
-```bash
-mv .claude .claude.bak
-mv .agents .agents.bak   # if present
-./install.sh             # now succeeds — sets up the symlinks
-# then move any custom files from .claude.bak / .agents.bak into ~/.claude/
-# (user scope) or into your fork of this repo
-```
-
-## After Installing
-
-- Create or update `AGENTS.md` in the project root with the app's engineering conventions and a short `## Shared Agent Pipeline` section pointing at `.claude/PIPELINE.md`.
-- Add `/pipeline_artifacts/` to `.gitignore` (the agents write per-feature artifacts there).
-- Use `/review <vague idea>` for ideation flows and `/build <specified feature>` for direct implementation.
-
-### Sample `AGENTS.md`
+The only file the consuming project must author is its own `AGENTS.md`.
+Everything else comes from install.sh. A typical shape:
 
 ```markdown
 # AGENTS.md
@@ -168,42 +269,63 @@ mv .agents .agents.bak   # if present
 ## Stack
 - Kotlin, Android Gradle Plugin 8.x, min SDK 26, target SDK 34.
 - Jetpack Compose for UI; Material 3 theming.
-- Hilt for DI; Coroutines + Flow for async; Room for persistence; Retrofit + OkHttp for networking.
+- Hilt for DI; Coroutines + Flow for async; Room for persistence;
+  Retrofit + OkHttp for networking.
 
 ## Architecture
-- MVI per screen: `UiState` (immutable data class), `UiEvent` (sealed), `UiEffect` (sealed, one-shot).
-- ViewModels expose `StateFlow<UiState>` and a single `onEvent(UiEvent)` entry point. No business logic in Composables.
-- Repositories return `Flow` or `Result<T>`; never throw across layer boundaries.
+- MVI per screen: `UiState` (immutable data class), `UiEvent` (sealed),
+  `UiEffect` (sealed, one-shot).
+- ViewModels expose `StateFlow<UiState>` and a single `onEvent(UiEvent)`
+  entry point. No business logic in Composables.
+- Repositories return `Flow` or `Result<T>`; never throw across layer
+  boundaries.
 - Package by feature: `feature/<name>/{ui,domain,data}`.
 
 ## Conventions
-- New screens go under `feature/<name>/ui/` with a `<Name>Screen.kt` + `<Name>ViewModel.kt` pair.
-- Strings live in `res/values/strings.xml`; no hardcoded user-facing text.
+- New screens go under `feature/<name>/ui/` with `<Name>Screen.kt` +
+  `<Name>ViewModel.kt` pair.
+- Strings live in `res/values/strings.xml`; no hardcoded user-facing
+  text.
 - Public APIs and ViewModel events get KDoc; private helpers do not.
 
 ## Verification
 - `./gradlew lint testDebugUnitTest` must pass before any handoff.
 - Compose previews required for new screens.
-- Manual smoke test on a Pixel 6 emulator (API 34) for any UI-touching change.
+- Manual smoke test on a Pixel 6 emulator (API 34) for any UI-touching
+  change.
 
 ## Shared Agent Pipeline
-This project uses the shared PM → Architect → Coder → Tester pipeline.
-See `.claude/PIPELINE.md` for handoff protocol, approval gates, and artifact locations.
-Run `/review <idea>` for ideation or `/build <feature>` for direct implementation.
+This project uses the shared agentic-dev-team PM → Architect → Coder →
+Tester pipeline. See `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for handoff
+protocol, approval gates, and artifact locations.
+
+- `/build-hitl <vague idea>` — human-in-the-loop flow.
+- `/build-auto <specified feature>` — fully automatic flow.
+
+Persona handles: `@adt-pm`, `@adt-architect`, `@adt-coder`, `@adt-tester`.
 ```
 
-## Additional Info
+## Roadmap
 
-The current agent set is targeted at **Android development**. The `tester`
-agent specifically assumes [kaeawc/auto-mobile](https://github.com/kaeawc/auto-mobile)
-is installed and available as an MCP server for driving the app on a device or
-emulator.
+- **`-long` command variants** — `/build-hitl-long` and `/build-auto-long`
+  that add `-reviewer` agents (e.g., a plan reviewer after Architect, a
+  code reviewer after Coder) to verify and double-check each phase's
+  output before handoff.
+- **Claude Code marketplace.** Publish this as a Claude Code marketplace
+  plugin so install becomes `/plugin install agentic-dev-team` instead of
+  running install.sh.
 
-Planned additions:
+## Troubleshooting
 
-- More agent types — code reviewer, implementation-plan reviewer, and other
-  quality-gate roles.
-- More slash commands — `/fix-bug`, `/test-feature`, and other task-specific
-  flows alongside the existing `/review` and `/build`.
-- Platform-specific agent sets — web, backend, and iOS variants alongside the
-  existing Android lineup.
+- **"install.sh refused with 'real file at X'"** — you have your own file
+  at one of our install paths. Rename or delete one side, then re-run.
+- **"I pulled the repo but new commands aren't showing up"** — run
+  `install.sh` in the project again; `git pull` alone doesn't materialize
+  symlinks for newly added files.
+- **"I see a broken symlink in `.claude/agents/`"** — likely a file was
+  renamed or removed in the repo. Run `install.sh`; the sync removes
+  stale symlinks.
+- **"Both AGENTS.md and CLAUDE.md exist as real files"** — install.sh
+  doesn't touch either, but edits to one don't propagate to the other.
+  Pick a canonical file (we recommend `AGENTS.md`), delete the other, and
+  re-run install to create the symlink.

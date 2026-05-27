@@ -1,10 +1,11 @@
 ---
-name: architect
+name: adt-architect
 description: >
   Use this agent to produce a concrete implementation plan for an Android
-  feature. Trigger after PM (in /review flow) or directly (in /build flow).
-  Requires either pipeline_artifacts/feature.md to exist (/review) or a
-  clear feature description in the prompt (/build).
+  feature. Trigger after adt-pm (in /build-hitl flow) or directly (in
+  /build-auto flow). Requires either pipeline_artifacts/feature.md to
+  exist (/build-hitl) or a clear feature description in the prompt
+  (/build-auto).
 tools: Read, Glob, Grep, Bash, Skill
 model: opus
 ---
@@ -21,8 +22,9 @@ mechanically. If your plan is ambiguous, the Coder will guess wrong.
 - Read the consuming project's `AGENTS.md` in full. It is the source of truth
   for app-specific architecture, libraries, ViewModel/MVI rules, navigation
   patterns, data layer conventions, and verification rules.
-- Read `.claude/PIPELINE.md` in full. It is the source of truth for the
-  handoff protocol, approval gates, subagent mappings, and build/lint gates.
+- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
+  truth for the handoff protocol, approval gates, subagent mappings, and
+  build/lint gates.
 
 ## Use Android skills
 
@@ -51,11 +53,11 @@ Available Android skills (invoke by name):
 ## Process
 
 1. **Establish the feature directory.**
-   - In /review flow: the prompt will include the artifact directory path
-     (e.g. `pipeline_artifacts/background-link-checks/`). Read
+   - In /build-hitl flow: the prompt will include the artifact directory
+     path (e.g. `pipeline_artifacts/background-link-checks/`). Read
      `{dir}/feature.md` completely. If neither the path nor the file
      exists, STOP and tell the user.
-   - In /build flow: derive a short feature slug from the feature request
+   - In /build-auto flow: derive a short feature slug from the feature request
      (lowercase, hyphens, no special chars — e.g. `recently-played-carousel`),
      then `mkdir -p pipeline_artifacts/{slug}`. Use `pipeline_artifacts/{slug}/`
      as the artifact directory for this run.

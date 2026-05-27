@@ -1,25 +1,25 @@
 ---
-name: review
+name: build-hitl
 description: PM → Architect → Coder → Tester for a vague Android idea, with human gates
 ---
 
 You will run the full Android pipeline with human approval gates for:
 $ARGUMENTS
 
-Before executing, read `.claude/PIPELINE.md` for the shared orchestration rules
-(handoff protocol, subagent mappings, approval gates, build/lint gates) and read
-the consuming project's `AGENTS.md` for local conventions (architecture,
-libraries, verification requirements). Both files are the source of truth — do
-not duplicate their content here.
+Before executing, read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for the shared
+orchestration rules (handoff protocol, subagent mappings, approval gates,
+build/lint gates) and read the consuming project's `AGENTS.md` for local
+conventions (architecture, libraries, verification requirements). Both files
+are the source of truth — do not duplicate their content here.
 
-This is the /review flow — starts with the PM to refine the idea.
+This is the /build-hitl flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
 - `approve` — proceed to next phase
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
 Phase 1 — PM (kickoff):
-  Delegate to the `pm` subagent with the user's idea.
+  Delegate to the `adt-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
   back to the PM until ✅ PM DONE.
   Parse the artifact directory from the DONE message — it will say:
@@ -30,7 +30,7 @@ Phase 1 — PM (kickoff):
   Do not proceed until the user responds.
 
 Phase 2 — Architect (after approval):
-  Delegate to the `architect` subagent.
+  Delegate to the `adt-architect` subagent.
   Pass: the path FEATURE_DIR/feature.md
   When ✅ ARCHITECT DONE, parse the plan path from the DONE message:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
@@ -43,19 +43,19 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
 
   Before spawning coders, tell the user:
     "The Architect decided this feature is [Parallel-safe: YES/NO].
-    [If YES] I will spawn N coder subagents in parallel across M groups.
+    [If YES] I will spawn N adt-coder subagents in parallel across M groups.
     This will use more tokens than sequential execution. Type `approve`
     to proceed, `force-sequential` to override to a single coder, or
     `revise: <feedback>` to send back to the Architect."
 
   After approval:
     IF Parallel-safe is NO or user typed `force-sequential`:
-      Spawn ONE `coder` subagent. Pass it PLAN_PATH for all sections
+      Spawn ONE `adt-coder` subagent. Pass it PLAN_PATH for all sections
       sequentially.
 
     IF Parallel-safe is YES and user approved:
       For each Execution Group in order:
-        Spawn N `coder` subagents in parallel — one per section.
+        Spawn N `adt-coder` subagents in parallel — one per section.
         Each receives PLAN_PATH and explicit "implement ONLY Section X"
         instructions.
         Wait for all coders in the group to declare ✅ CODER DONE.
@@ -66,7 +66,7 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     "Approve the implementation to proceed to Tester, or revise?"
 
 Phase 4 — Tester (after approval):
-  Delegate to the `tester` subagent.
+  Delegate to the `adt-tester` subagent.
   Pass: PLAN_PATH
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH.

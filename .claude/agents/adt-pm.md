@@ -1,11 +1,11 @@
 ---
-name: pm
+name: adt-pm
 description: >
   Use this agent to refine a vague Android feature idea into a concrete
-  feature description. Trigger only when the user runs /review, or when
-  they say "help me think through", "what should X look like", or "I have
-  an idea for". DO NOT use for /build — /build assumes the feature is
-  already specified.
+  feature description. Trigger only when the user runs /build-hitl, or
+  when they say "help me think through", "what should X look like", or
+  "I have an idea for". DO NOT use for /build-auto — /build-auto assumes
+  the feature is already specified.
 tools: Read, Glob, Grep
 model: opus
 ---

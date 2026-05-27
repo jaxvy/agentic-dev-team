@@ -1,21 +1,21 @@
 ---
-name: build
+name: build-auto
 description: Architect → Coder → Tester for an already-specified Android feature
 ---
 
 You will run the Android development pipeline for: $ARGUMENTS
 
-Before executing, read `.claude/PIPELINE.md` for the shared orchestration rules
-(handoff protocol, subagent mappings, approval gates, build/lint gates) and read
-the consuming project's `AGENTS.md` for local conventions (architecture,
-libraries, verification requirements). Both files are the source of truth — do
-not duplicate their content here.
+Before executing, read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for the shared
+orchestration rules (handoff protocol, subagent mappings, approval gates,
+build/lint gates) and read the consuming project's `AGENTS.md` for local
+conventions (architecture, libraries, verification requirements). Both files
+are the source of truth — do not duplicate their content here.
 
-This is the /build flow — assumes the feature is already understood.
-No PM phase. If the request is vague, suggest the user run /review instead.
+This is the /build-auto flow — assumes the feature is already understood.
+No PM phase. If the request is vague, suggest the user run /build-hitl instead.
 
 Phase 1 — Architect:
-  Delegate to the `architect` subagent with the feature request.
+  Delegate to the `adt-architect` subagent with the feature request.
   Wait for ✅ ARCHITECT DONE.
   Parse the artifact directory from the DONE message — it will say:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
@@ -26,13 +26,13 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
   Look at the **Parallel-safe** field.
 
   IF Parallel-safe is NO:
-    Spawn ONE `coder` subagent. Pass it PLAN_PATH with instructions to
+    Spawn ONE `adt-coder` subagent. Pass it PLAN_PATH with instructions to
     implement all sections sequentially in the order listed.
     Wait for ✅ CODER DONE.
 
   IF Parallel-safe is YES:
     For each Execution Group in order (Group 1, then Group 2, etc):
-      Spawn N `coder` subagents IN PARALLEL — one per section in the group.
+      Spawn N `adt-coder` subagents IN PARALLEL — one per section in the group.
       Each coder receives:
         - PLAN_PATH
         - Explicit instruction: "Implement ONLY Section X. Do not touch
@@ -49,12 +49,12 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
   rather than continuing.
 
 Phase 3 — Tester:
-  Delegate to the `tester` subagent.
+  Delegate to the `adt-tester` subagent.
   Pass: PLAN_PATH
   Wait for ✅ TESTER DONE.
 
 When complete, summarise the verdict from the test-results.md in the same
 directory as PLAN_PATH. Also report whether parallel execution was used and
-how many coder subagents ran, so the user can gauge token cost.
-If verdict is NEEDS FIXES, suggest re-running the coder with the
+how many adt-coder subagents ran, so the user can gauge token cost.
+If verdict is NEEDS FIXES, suggest re-running the adt-coder with the
 recommendations section as input.

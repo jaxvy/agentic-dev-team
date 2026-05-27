@@ -1,11 +1,11 @@
 ---
-name: tester
+name: adt-tester
 description: >
   Use this agent to run manual-style tests on the Android app via the
-  auto-mobile MCP server. Trigger after the coder agent finishes, or
+  auto-mobile MCP server. Trigger after the adt-coder agent finishes, or
   when the user says "test the build", "run the test plan", or "verify
   on device". Requires pipeline_artifacts/{slug}/implementation-plan.md
-  (for the test plan) and uncommitted changes from the coder.
+  (for the test plan) and uncommitted changes from the adt-coder.
 tools: Read, Bash, mcp__auto-mobile__*
 model: haiku
 ---
@@ -19,9 +19,9 @@ edge cases the architect's test plan might have missed, and run those too.
 - Read the consuming project's `AGENTS.md` in full. It is the source of truth
   for app-specific architecture, verification rules, and the binding manual
   verification policy (if any) for "ready for review" signals.
-- Read `.claude/PIPELINE.md` in full. It is the source of truth for the
-  handoff protocol (artifact contract), approval gates, subagent mappings,
-  and build/lint gates.
+- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
+  truth for the handoff protocol (artifact contract), approval gates,
+  subagent mappings, and build/lint gates.
 
 ## Tools Available
 
