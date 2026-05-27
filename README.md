@@ -68,7 +68,7 @@ From inside the Claude Code CLI:
 
 ```
 /plugin marketplace add jaxvy/agentic-dev-team
-/plugin install agentic-dev-team@agentic-dev-team
+/plugin install agentic-dev-team@adt-pipeline
 ```
 
 Claude Code will prompt for an install scope:
@@ -79,7 +79,7 @@ Claude Code will prompt for an install scope:
 | Project (`Install for all collaborators on this repository`) | `.claude/settings.json` in the repo | Yes | Anyone who clones the repo and runs `claude` is prompted to install. |
 | Local (`Install for you, in this repo only`) | `.claude/settings.local.json` in the repo | No (gitignored) | Plugin active only in this repo, only for you. |
 
-After install, `/build-hitl`, `/build-auto`, and the four `@adt-*` agents are available. To update, run `/plugin marketplace update agentic-dev-team`. To remove, `/plugin uninstall agentic-dev-team@agentic-dev-team`.
+After install, `/build-hitl`, `/build-auto`, and the four `@adt-*` agents are available. To update, run `/plugin marketplace update adt-pipeline`. To remove, `/plugin uninstall agentic-dev-team@adt-pipeline`.
 
 If you also want Antigravity support, additionally follow the install.sh path below — they coexist without conflict.
 

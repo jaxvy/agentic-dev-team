@@ -1,15 +1,24 @@
 {
-  "name": "agentic-dev-team",
-  "owner": { "name": "jaxvy" },
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "adt-pipeline",
+  "version": "0.1.0",
+  "description": "Reusable PM → Architect → Coder → Tester pipeline for Android, working in Claude Code and Antigravity.",
+  "owner": {
+    "name": "jaxvy"
+  },
   "plugins": [
     {
       "name": "agentic-dev-team",
-      "source": "./plugins/agentic-dev-team",
       "description": "Reusable PM → Architect → Coder → Tester pipeline for Android.",
       "version": "0.1.0",
-      "homepage": "https://github.com/jaxvy/agentic-dev-team",
-      "repository": "https://github.com/jaxvy/agentic-dev-team",
-      "license": "MIT",
+      "author": {
+        "name": "jaxvy"
+      },
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/jaxvy/agentic-dev-team.git",
+        "path": "plugins/agentic-dev-team"
+      },
       "category": "development"
     }
   ]
