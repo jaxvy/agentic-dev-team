@@ -10,7 +10,6 @@
     {
       "name": "agentic-dev-team",
       "description": "Reusable PM → Architect → Coder → Tester pipeline for Android.",
-      "version": "0.1.0",
       "author": {
         "name": "jaxvy"
       },
