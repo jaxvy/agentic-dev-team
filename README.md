@@ -46,11 +46,11 @@ You can also call any agent directly without running the full pipeline.
 In Claude Code, address it by name:
 
 ```
-@adt-architect can you sketch a plan for X?
+@adt-android-architect can you sketch a plan for X?
 ```
 
-All agents this repo ships are namespaced with `adt-` (`@adt-pm`,
-`@adt-architect`, `@adt-coder`, `@adt-tester`) so they can't collide with
+All agents this repo ships are namespaced with `adt-` (`@adt-android-pm`,
+`@adt-android-architect`, `@adt-android-coder`, `@adt-android-tester`) so they can't collide with
 your own `pm`/`architect`/etc. agents at either project or user scope.
 
 ## Installation
@@ -92,7 +92,7 @@ If you also want Antigravity support, additionally follow the install.sh path be
   app's stack, architecture, conventions, and verification rules. The
   pipeline agents look for either file.
 - **auto-mobile MCP server** ([kaeawc/auto-mobile](https://github.com/kaeawc/auto-mobile))
-  installed and registered with your tool. The `adt-tester` agent drives
+  installed and registered with your tool. The `adt-android-tester` agent drives
   the running app on a device/emulator through this MCP — without it, the
   Tester phase of `/build-hitl` and `/build-auto` cannot complete its
   device-verification step.
@@ -128,10 +128,10 @@ path inside your project:
 |---|---|
 | `.claude/commands/build-hitl.md` | `<clone>/.claude/commands/build-hitl.md` |
 | `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
-| `.claude/agents/adt-pm.md` | `<clone>/.claude/agents/adt-pm.md` |
-| `.claude/agents/adt-architect.md` | `<clone>/.claude/agents/adt-architect.md` |
-| `.claude/agents/adt-coder.md` | `<clone>/.claude/agents/adt-coder.md` |
-| `.claude/agents/adt-tester.md` | `<clone>/.claude/agents/adt-tester.md` |
+| `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` |
+| `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` |
+| `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
+| `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
 | `.agents/workflows/build-hitl.md` | `<clone>/.agents/workflows/build-hitl.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
@@ -228,8 +228,8 @@ The mechanics:
    commands/agents alongside our symlinks — they coexist freely.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` in the project by filename. Our symlinks live at
-   those canonical paths, so `/build-hitl`, `/build-auto`, `@adt-pm`,
-   `@adt-architect`, `@adt-coder`, and `@adt-tester` are all available
+   those canonical paths, so `/build-hitl`, `/build-auto`, `@adt-android-pm`,
+   `@adt-android-architect`, `@adt-android-coder`, and `@adt-android-tester` are all available
    automatically.
 3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for
    slash commands (our workflow files there are symlinks into

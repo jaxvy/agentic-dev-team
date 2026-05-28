@@ -20,7 +20,7 @@ After each phase, pause and ask the user to type one of:
 - `stop` — halt the pipeline
 
 Phase 1 — PM (kickoff):
-  Delegate to the `adt-pm` subagent with the user's idea.
+  Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
   back to the PM until ✅ PM DONE.
   Parse the artifact directory from the DONE message — it will say:
@@ -31,7 +31,7 @@ Phase 1 — PM (kickoff):
   Do not proceed until the user responds.
 
 Phase 2 — Architect (after approval):
-  Delegate to the `adt-architect` subagent.
+  Delegate to the `adt-android-architect` subagent.
   Pass: the path FEATURE_DIR/feature.md
   When ✅ ARCHITECT DONE, parse the plan path from the DONE message:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
@@ -44,19 +44,19 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
 
   Before spawning coders, tell the user:
     "The Architect decided this feature is [Parallel-safe: YES/NO].
-    [If YES] I will spawn N adt-coder subagents in parallel across M groups.
+    [If YES] I will spawn N adt-android-coder subagents in parallel across M groups.
     This will use more tokens than sequential execution. Type `approve`
     to proceed, `force-sequential` to override to a single coder, or
     `revise: <feedback>` to send back to the Architect."
 
   After approval:
     IF Parallel-safe is NO or user typed `force-sequential`:
-      Spawn ONE `adt-coder` subagent. Pass it PLAN_PATH for all sections
+      Spawn ONE `adt-android-coder` subagent. Pass it PLAN_PATH for all sections
       sequentially.
 
     IF Parallel-safe is YES and user approved:
       For each Execution Group in order:
-        Spawn N `adt-coder` subagents in parallel — one per section.
+        Spawn N `adt-android-coder` subagents in parallel — one per section.
         Each receives PLAN_PATH and explicit "implement ONLY Section X"
         instructions.
         Wait for all coders in the group to declare ✅ CODER DONE.
@@ -67,7 +67,7 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     "Approve the implementation to proceed to Tester, or revise?"
 
 Phase 4 — Tester (after approval):
-  Delegate to the `adt-tester` subagent.
+  Delegate to the `adt-android-tester` subagent.
   Pass: PLAN_PATH
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH.
