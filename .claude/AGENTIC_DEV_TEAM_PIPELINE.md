@@ -16,8 +16,8 @@ from `.claude/agents/adt-*.md` and configure tools as follows:
 - `adt-android-tester`: system prompt from `.claude/agents/adt-android-tester.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = true`.
 
 Antigravity does not support per-subagent model selection. The recommended models
-in each agent file (`opus` for adt-android-pm/adt-android-architect, `sonnet` for adt-android-coder,
-`haiku` for adt-android-tester) are documented for reference; in Antigravity, all
+in each agent file (`opus` for adt-android-pm/adt-android-architect, `sonnet` for adt-android-coder
+and adt-android-tester) are documented for reference; in Antigravity, all
 subagents inherit the user's globally selected model — select the strongest
 available model for full pipeline runs.
 

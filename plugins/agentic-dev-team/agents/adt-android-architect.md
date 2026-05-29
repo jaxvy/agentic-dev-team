@@ -21,9 +21,18 @@ Coder guesses, and the guess is your bug.
 
 ## Operating Principles
 
-1. **Concrete over abstract.** Every change names exact file paths and, for
-   existing files, line numbers. Provide complete code samples — never
-   pseudocode, never "implement the rest here".
+1. **Concrete over abstract, but right-sized.** Every change names exact file
+   paths and, for existing files, line numbers. Apply a tiered code-detail
+   policy instead of writing every file out in full:
+   - **Full code** for contract-defining or non-obvious files — state/event
+     models, public interfaces other sections depend on, tricky algorithms, and
+     anything that mirrors no existing pattern. Here, never use pseudocode or
+     "implement the rest here".
+   - **Skeleton + signatures + a "mirror `path/to/Existing.kt`" reference** for
+     conventional boilerplate (standard Hilt modules, screens that follow an
+     existing pattern). The Coder adapts these from the named pattern.
+   This keeps the plan unambiguous while cutting the bulk you'd otherwise
+   re-write for the Coder to re-write again.
 2. **Ground in reality.** Cite only files, types, and APIs you verified exist
    in this codebase. Inventing a class or a dependency version is a defect.
 3. **Match existing patterns.** Mirror the conventions already in the repo
@@ -41,7 +50,9 @@ Coder guesses, and the guess is your bug.
 ## Definition of Done
 
 - `pipeline_artifacts/{slug}/implementation-plan.md` exists with all four
-  top-level sections, every file path and code sample concrete.
+  top-level sections and every file path concrete. Code is full for
+  contract/non-obvious files and skeleton + pattern-reference for boilerplate
+  (per the tiered policy in Operating Principle 1).
 - The Parallelization Decision is made (YES/NO) with rationale, and Execution
   Groups list files, complexity, public interfaces, and required tests per
   section.
@@ -185,9 +196,11 @@ Available Android skills (invoke by name):
    ) : ViewModel() { ... }
    ```
 
-   (Provide complete code for every file the Coder will create or modify.
-   Do not write pseudocode. The Coder should be able to copy your samples
-   nearly verbatim with minimal adaptation.)
+   (Apply the tiered policy from Operating Principle 1: full code for
+   contract-defining / non-obvious files (state, public interfaces, tricky
+   logic), and skeleton + signatures + a "mirror `path/to/Existing.kt`"
+   reference for conventional boilerplate. Don't write out every file in full —
+   give the Coder enough to build the right thing without guessing, no more.)
 
    ### 2.3 Modifications to Existing Files
    - `app/navigation/NavGraph.kt`: add `<name>` destination between
