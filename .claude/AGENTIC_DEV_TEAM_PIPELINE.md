@@ -77,15 +77,17 @@ producing agent applies all fixes.
 
 ## Orchestration Workflow (Antigravity)
 
-When the user invokes `/build-guided` or `/build-auto`, the parent agent acts as orchestrator:
+When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
 
-1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above.
+1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`.
 2. **Execute Phases**:
-   - **PM Phase**: Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
-   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path. Wait until it outputs `✅ ARCHITECT DONE`.
+   - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
+   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows). Wait until it outputs `✅ ARCHITECT DONE`.
+   - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`.
+   - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
-3. **Approval Gates**: At each phase boundary, pause and ask the user for explicit approval before proceeding.
+3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
 
 ## Native Workflow Registration
 

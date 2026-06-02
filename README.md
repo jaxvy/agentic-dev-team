@@ -240,8 +240,9 @@ Why both steps:
   agent prompts, commands, or `AGENTIC_DEV_TEAM_PIPELINE.md` are picked up
   immediately because your project's symlinks already point at them.
 - **install.sh** must run again to materialize symlinks for any **newly
-  added** files in the repo (e.g., a new agent like `adt-qa-reviewer.md`,
-  or a new command like `/build-guided-long`), and to clean up stale
+  added** files in the repo (e.g., a new agent like
+  `adt-android-code-reviewer.md`, or a new command like
+  `/build-auto-reviewed`), and to clean up stale
   symlinks for any **removed** files. It also refreshes the inlined
   persona stubs in `.agents/agents.md` from the latest
   `.agents/AGENTIC_DEV_TEAM.md`.
@@ -330,8 +331,9 @@ For maintainers / contributors who want to add new agents or commands:
 - **Adding a new command / workflow.** Create `.claude/commands/<name>.md`
   with the orchestration prompt. Create `.agents/workflows/<name>.md` as
   a symlink to `../../.claude/commands/<name>.md` so Antigravity sees it
-  too. Example: `/build-guided-long` for a longer pipeline with extra
-  agents.
+  too. `/build-auto-reviewed` is built exactly this way: its workflow
+  symlink points at the command, which orchestrates the two reviewer
+  agents between the existing phases.
 - **Updating shared orchestration rules.** Edit
   `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`. Because agent prompts reference
   it by path and the project's copy is a symlink into the clone, edits
