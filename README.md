@@ -9,10 +9,11 @@ of your existing `.claude/` or `.agents/` content.
 ## How To Use It
 
 Once installed in a project, open it in Claude Code or Antigravity and run a
-slash command from the chat prompt. The two `build-*` commands run the full
-pipeline end to end (the suffix tells you whether a human is in the loop); the
-two `plan-*` commands run just one early phase and stop, so you can research or
-design without committing to a build.
+slash command from the chat prompt. The `build-*` commands run the full
+pipeline end to end (the suffix tells you whether a human is in the loop, and
+whether automated reviewers gate each phase); the two `plan-*` commands run just
+one early phase and stop, so you can research or design without committing to a
+build.
 
 ### `/build-guided <vague idea>`
 
@@ -41,6 +42,24 @@ the feature is already specified.
 The Architect writes the plan, the Coder implements it, the Tester runs
 verification on a device via the auto-mobile MCP server. Artifacts for
 every run land under `pipeline_artifacts/<slug>/`.
+
+### `/build-auto-reviewed <specified feature>`
+
+Same shape as `/build-auto` (no PM phase, no human gates), but each producing
+phase is followed by an automated reviewer that can send the work back. Use when
+you want a higher-quality unattended run and are willing to spend more tokens for
+it.
+
+```
+/build-auto-reviewed add a "Save draft on background" hook to ComposeViewModel that persists the current input to Room every 2s and restores it on launch
+```
+
+The Architect writes the plan, then `@adt-android-architect-reviewer` reviews
+it; the Coder implements, then `@adt-android-code-reviewer` reviews the diff. On
+each gate, if the reviewer requests changes, the producing agent is re-run with
+the feedback — **at most twice** per gate. If a reviewer still isn't satisfied
+after the second re-run, the pipeline **stops and reports** rather than shipping
+work the reviewer rejected. A clean run then hands off to the Tester as usual.
 
 ### Planning-only commands
 
@@ -84,14 +103,16 @@ In Claude Code, address it by name:
 ```
 
 All agents this repo ships are namespaced with `adt-` (`@adt-android-pm`,
-`@adt-android-architect`, `@adt-android-coder`, `@adt-android-tester`) so they can't collide with
-your own `pm`/`architect`/etc. agents at either project or user scope.
+`@adt-android-architect`, `@adt-android-coder`, `@adt-android-tester`, plus the
+two reviewers `@adt-android-architect-reviewer` and `@adt-android-code-reviewer`
+used by `/build-auto-reviewed`) so they can't collide with your own
+`pm`/`architect`/etc. agents at either project or user scope.
 
 ## Installation
 
 Two paths:
 
-- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-auto`, `/build-guided`, `/plan-research`, and `/plan-design` slash commands without per-project setup. Does **not** wire up Antigravity (no `.agents/workflows/` files, no `agents.md` persona stubs, no `.gitignore` block).
+- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-auto`, `/build-auto-reviewed`, `/build-guided`, `/plan-research`, and `/plan-design` slash commands without per-project setup. Does **not** wire up Antigravity (no `.agents/workflows/` files, no `agents.md` persona stubs, no `.gitignore` block).
 - **install.sh per-project (local repo install)** — works for both Claude Code and Antigravity. Materializes per-file symlinks inside each consuming project, manages a `.gitignore` block, and inlines persona stubs into `.agents/agents.md` for Antigravity. **This is the only supported path for Antigravity** — Antigravity has no plugin marketplace.
 
 The two are not mutually exclusive — you can install the plugin in Claude Code and still run `install.sh` in Antigravity projects.
@@ -113,7 +134,7 @@ Claude Code will prompt for an install scope:
 | Project (`Install for all collaborators on this repository`) | `.claude/settings.json` in the repo | Yes | Anyone who clones the repo and runs `claude` is prompted to install. |
 | Local (`Install for you, in this repo only`) | `.claude/settings.local.json` in the repo | No (gitignored) | Plugin active only in this repo, only for you. |
 
-After install, `/build-auto`, `/build-guided`, `/plan-research`, `/plan-design`, and the four `@adt-*` agents are available. To update, run `/plugin marketplace update adt-pipeline`. To remove, `/plugin uninstall agentic-dev-team@adt-pipeline`.
+After install, `/build-auto`, `/build-auto-reviewed`, `/build-guided`, `/plan-research`, `/plan-design`, and the six `@adt-*` agents are available. To update, run `/plugin marketplace update adt-pipeline`. To remove, `/plugin uninstall agentic-dev-team@adt-pipeline`.
 
 If you also want Antigravity support, additionally follow the install.sh path below — they coexist without conflict.
 
@@ -128,8 +149,8 @@ If you also want Antigravity support, additionally follow the install.sh path be
 - **auto-mobile MCP server** ([kaeawc/auto-mobile](https://github.com/kaeawc/auto-mobile))
   installed and registered with your tool. The `adt-android-tester` agent drives
   the running app on a device/emulator through this MCP — without it, the
-  Tester phase of `/build-guided` and `/build-auto` cannot complete its
-  device-verification step.
+  Tester phase of `/build-guided`, `/build-auto`, and `/build-auto-reviewed`
+  cannot complete its device-verification step.
 
 ### One-time setup (per developer)
 
@@ -162,15 +183,19 @@ path inside your project:
 |---|---|
 | `.claude/commands/build-guided.md` | `<clone>/.claude/commands/build-guided.md` |
 | `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
+| `.claude/commands/build-auto-reviewed.md` | `<clone>/.claude/commands/build-auto-reviewed.md` |
 | `.claude/commands/plan-research.md` | `<clone>/.claude/commands/plan-research.md` |
 | `.claude/commands/plan-design.md` | `<clone>/.claude/commands/plan-design.md` |
 | `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` |
 | `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` |
+| `.claude/agents/adt-android-architect-reviewer.md` | `<clone>/.claude/agents/adt-android-architect-reviewer.md` |
 | `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
+| `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
 | `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
+| `.agents/workflows/build-auto-reviewed.md` | `<clone>/.agents/workflows/build-auto-reviewed.md` |
 | `.agents/workflows/plan-research.md` | `<clone>/.agents/workflows/plan-research.md` |
 | `.agents/workflows/plan-design.md` | `<clone>/.agents/workflows/plan-design.md` |
 
@@ -266,10 +291,11 @@ The mechanics:
    commands/agents alongside our symlinks — they coexist freely.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` in the project by filename. Our symlinks live at
-   those canonical paths, so `/build-auto`, `/build-guided`, `/plan-research`,
-   `/plan-design`, `@adt-android-pm`,
-   `@adt-android-architect`, `@adt-android-coder`, and `@adt-android-tester` are all available
-   automatically.
+   those canonical paths, so `/build-auto`, `/build-auto-reviewed`,
+   `/build-guided`, `/plan-research`, `/plan-design`, `@adt-android-pm`,
+   `@adt-android-architect`, `@adt-android-architect-reviewer`,
+   `@adt-android-coder`, `@adt-android-code-reviewer`, and `@adt-android-tester`
+   are all available automatically.
 3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for
    slash commands (our workflow files there are symlinks into
    `.claude/commands/` via the clone) and auto-loads `.agents/agents.md`
@@ -323,10 +349,11 @@ file automatically — you don't need to document the pipeline itself in it.
 
 ## Roadmap
 
-- **`-long` command variants** — `/build-guided-long` and `/build-auto-long`
-  that add `-reviewer` agents (e.g., a plan reviewer after Architect, a
-  code reviewer after Coder) to verify and double-check each phase's
-  output before handoff.
+- **Reviewer gates for the guided flow** — `/build-auto-reviewed` already adds
+  an architect-reviewer (after Architect) and a code-reviewer (after Coder) to
+  the autonomous flow. A guided equivalent could surface the same reviewer
+  feedback at the human approval gates, and a `pm-reviewer` could vet the
+  feature spec before the Architect sees it.
 - **Antigravity marketplace equivalent.** Antigravity doesn't yet have a
   plugin marketplace; once it does, ship an equivalent so the install.sh
   path becomes optional for Antigravity users too.
