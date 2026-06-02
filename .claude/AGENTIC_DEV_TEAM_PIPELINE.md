@@ -40,16 +40,16 @@ Gemini, opencode, etc.).
 
 ## Approval Gates
 
-For `/build-hitl`, pause for explicit user approval between PM, Architect,
+For `/build-guided`, pause for explicit user approval between PM, Architect,
 Coder, and Tester phases. Accept `approve`, `revise: <feedback>`, or `stop`.
 
 For `/build-auto`, skip the PM phase. If the feature description is too vague
-for the Architect to produce a concrete plan, stop and suggest `/build-hitl`
+for the Architect to produce a concrete plan, stop and suggest `/build-guided`
 instead.
 
 ## Orchestration Workflow (Antigravity)
 
-When the user invokes `/build-hitl` or `/build-auto`, the parent agent acts as orchestrator:
+When the user invokes `/build-guided` or `/build-auto`, the parent agent acts as orchestrator:
 
 1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above.
 2. **Execute Phases**:
@@ -61,7 +61,7 @@ When the user invokes `/build-hitl` or `/build-auto`, the parent agent acts as o
 
 ## Native Workflow Registration
 
-`/build-auto` and `/build-hitl` slash commands are registered natively in
+`/build-auto` and `/build-guided` slash commands are registered natively in
 Antigravity via symlinks in `.agents/workflows/` that point to
 `.claude/commands/`. Team personas are inlined into the consuming project's
 `.agents/agents.md` (inside a marker-fenced block managed by install.sh),

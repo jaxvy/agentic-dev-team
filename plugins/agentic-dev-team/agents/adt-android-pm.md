@@ -2,7 +2,7 @@
 name: adt-android-pm
 description: >
   Use this agent to refine a vague Android feature idea into a concrete
-  feature description. Trigger only when the user runs /build-hitl, or
+  feature description. Trigger only when the user runs /build-guided, or
   when they say "help me think through", "what should X look like", or
   "I have an idea for". DO NOT use for /build-auto — /build-auto assumes
   the feature is already specified.

@@ -8,18 +8,20 @@ of your existing `.claude/` or `.agents/` content.
 
 ## How To Use It
 
-Once installed in a project, open it in Claude Code or Antigravity and run
-either slash command from the chat prompt. Both flows **build** a feature;
-the suffix tells you whether a human is in the loop.
+Once installed in a project, open it in Claude Code or Antigravity and run a
+slash command from the chat prompt. The two `build-*` commands run the full
+pipeline end to end (the suffix tells you whether a human is in the loop); the
+two `plan-*` commands run just one early phase and stop, so you can research or
+design without committing to a build.
 
-### `/build-hitl <vague idea>`
+### `/build-guided <vague idea>`
 
 Human-in-the-loop variant. PM → Architect → Coder → Tester with approval
 gates between phases. Use when the idea is rough and you want the PM to
 refine it before any code is written.
 
 ```
-/build-hitl add a recently-played carousel to the home screen
+/build-guided add a recently-played carousel to the home screen
 ```
 
 The PM agent turns that into a concrete feature spec at
@@ -40,6 +42,38 @@ The Architect writes the plan, the Coder implements it, the Tester runs
 verification on a device via the auto-mobile MCP server. Artifacts for
 every run land under `pipeline_artifacts/<slug>/`.
 
+### Planning-only commands
+
+When you want a plan but not a build, run just one phase. Both stop after
+writing their artifact, and their output chains into a build command (or each
+other) later.
+
+#### `/plan-research <vague idea>`
+
+Runs only the PM. Turns a rough idea into a concrete, unambiguous feature spec
+at `pipeline_artifacts/<slug>/feature.md`, asking clarifying questions along
+the way — then stops.
+
+```
+/plan-research add a recently-played carousel to the home screen
+```
+
+Feed the resulting `feature.md` to `/plan-design`, `/build-auto`, or
+`/build-guided` when you're ready.
+
+#### `/plan-design <feature.md path | specified feature>`
+
+Runs only the Architect. Produces an implementation plan at
+`pipeline_artifacts/<slug>/implementation-plan.md` from either a `feature.md`
+(e.g. from `/plan-research`) or a clear feature description — then stops.
+
+```
+/plan-design pipeline_artifacts/recently-played-carousel/feature.md
+```
+
+Feed the resulting plan to `/build-auto` or `/build-guided` to implement and
+verify it.
+
 ### Invoking a single agent
 
 You can also call any agent directly without running the full pipeline.
@@ -57,7 +91,7 @@ your own `pm`/`architect`/etc. agents at either project or user scope.
 
 Two paths:
 
-- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-hitl` / `/build-auto` slash commands without per-project setup. Does **not** wire up Antigravity (no `.agents/workflows/` files, no `agents.md` persona stubs, no `.gitignore` block).
+- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-auto`, `/build-guided`, `/plan-research`, and `/plan-design` slash commands without per-project setup. Does **not** wire up Antigravity (no `.agents/workflows/` files, no `agents.md` persona stubs, no `.gitignore` block).
 - **install.sh per-project (local repo install)** — works for both Claude Code and Antigravity. Materializes per-file symlinks inside each consuming project, manages a `.gitignore` block, and inlines persona stubs into `.agents/agents.md` for Antigravity. **This is the only supported path for Antigravity** — Antigravity has no plugin marketplace.
 
 The two are not mutually exclusive — you can install the plugin in Claude Code and still run `install.sh` in Antigravity projects.
@@ -79,7 +113,7 @@ Claude Code will prompt for an install scope:
 | Project (`Install for all collaborators on this repository`) | `.claude/settings.json` in the repo | Yes | Anyone who clones the repo and runs `claude` is prompted to install. |
 | Local (`Install for you, in this repo only`) | `.claude/settings.local.json` in the repo | No (gitignored) | Plugin active only in this repo, only for you. |
 
-After install, `/build-hitl`, `/build-auto`, and the four `@adt-*` agents are available. To update, run `/plugin marketplace update adt-pipeline`. To remove, `/plugin uninstall agentic-dev-team@adt-pipeline`.
+After install, `/build-auto`, `/build-guided`, `/plan-research`, `/plan-design`, and the four `@adt-*` agents are available. To update, run `/plugin marketplace update adt-pipeline`. To remove, `/plugin uninstall agentic-dev-team@adt-pipeline`.
 
 If you also want Antigravity support, additionally follow the install.sh path below — they coexist without conflict.
 
@@ -94,7 +128,7 @@ If you also want Antigravity support, additionally follow the install.sh path be
 - **auto-mobile MCP server** ([kaeawc/auto-mobile](https://github.com/kaeawc/auto-mobile))
   installed and registered with your tool. The `adt-android-tester` agent drives
   the running app on a device/emulator through this MCP — without it, the
-  Tester phase of `/build-hitl` and `/build-auto` cannot complete its
+  Tester phase of `/build-guided` and `/build-auto` cannot complete its
   device-verification step.
 
 ### One-time setup (per developer)
@@ -126,15 +160,19 @@ path inside your project:
 
 | Project path | → Symlink target (in your clone) |
 |---|---|
-| `.claude/commands/build-hitl.md` | `<clone>/.claude/commands/build-hitl.md` |
+| `.claude/commands/build-guided.md` | `<clone>/.claude/commands/build-guided.md` |
 | `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
+| `.claude/commands/plan-research.md` | `<clone>/.claude/commands/plan-research.md` |
+| `.claude/commands/plan-design.md` | `<clone>/.claude/commands/plan-design.md` |
 | `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` |
 | `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` |
 | `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
-| `.agents/workflows/build-hitl.md` | `<clone>/.agents/workflows/build-hitl.md` |
+| `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
+| `.agents/workflows/plan-research.md` | `<clone>/.agents/workflows/plan-research.md` |
+| `.agents/workflows/plan-design.md` | `<clone>/.agents/workflows/plan-design.md` |
 
 Two additional changes happen via **marker-fenced managed blocks** (not symlinks):
 
@@ -178,7 +216,7 @@ Why both steps:
   immediately because your project's symlinks already point at them.
 - **install.sh** must run again to materialize symlinks for any **newly
   added** files in the repo (e.g., a new agent like `adt-qa-reviewer.md`,
-  or a new command like `/build-hitl-long`), and to clean up stale
+  or a new command like `/build-guided-long`), and to clean up stale
   symlinks for any **removed** files. It also refreshes the inlined
   persona stubs in `.agents/agents.md` from the latest
   `.agents/AGENTIC_DEV_TEAM.md`.
@@ -228,7 +266,8 @@ The mechanics:
    commands/agents alongside our symlinks — they coexist freely.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` in the project by filename. Our symlinks live at
-   those canonical paths, so `/build-hitl`, `/build-auto`, `@adt-android-pm`,
+   those canonical paths, so `/build-auto`, `/build-guided`, `/plan-research`,
+   `/plan-design`, `@adt-android-pm`,
    `@adt-android-architect`, `@adt-android-coder`, and `@adt-android-tester` are all available
    automatically.
 3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for
@@ -265,7 +304,7 @@ For maintainers / contributors who want to add new agents or commands:
 - **Adding a new command / workflow.** Create `.claude/commands/<name>.md`
   with the orchestration prompt. Create `.agents/workflows/<name>.md` as
   a symlink to `../../.claude/commands/<name>.md` so Antigravity sees it
-  too. Example: `/build-hitl-long` for a longer pipeline with extra
+  too. Example: `/build-guided-long` for a longer pipeline with extra
   agents.
 - **Updating shared orchestration rules.** Edit
   `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`. Because agent prompts reference
@@ -284,7 +323,7 @@ file automatically — you don't need to document the pipeline itself in it.
 
 ## Roadmap
 
-- **`-long` command variants** — `/build-hitl-long` and `/build-auto-long`
+- **`-long` command variants** — `/build-guided-long` and `/build-auto-long`
   that add `-reviewer` agents (e.g., a plan reviewer after Architect, a
   code reviewer after Coder) to verify and double-check each phase's
   output before handoff.

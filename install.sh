@@ -320,7 +320,7 @@ do_install() {
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
-  echo "Done. Try /build-hitl or /build-auto in Claude Code or Antigravity."
+  echo "Done. Try /build-auto, /build-guided, /plan-research, or /plan-design in Claude Code or Antigravity."
 }
 
 # ---------- uninstall mode ----------
