@@ -1,5 +1,5 @@
 ---
-name: build-hitl
+name: build-guided
 description: PM → Architect → Coder → Tester for a vague Android idea, with human gates
 ---
 
@@ -13,7 +13,7 @@ for local
 conventions (architecture, libraries, verification requirements). Both files
 are the source of truth — do not duplicate their content here.
 
-This is the /build-hitl flow — starts with the PM to refine the idea.
+This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
 - `approve` — proceed to next phase
 - `revise: <feedback>` — re-run the current phase with the feedback

@@ -13,7 +13,7 @@ conventions (architecture, libraries, verification requirements). Both files
 are the source of truth — do not duplicate their content here.
 
 This is the /build-auto flow — assumes the feature is already understood.
-No PM phase. If the request is vague, suggest the user run /build-hitl instead.
+No PM phase. If the request is vague, suggest the user run /build-guided instead.
 
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request.

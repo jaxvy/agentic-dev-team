@@ -14,12 +14,14 @@ from `.claude/agents/adt-*.md` and configure tools as follows:
 - `adt-android-architect`: system prompt from `.claude/agents/adt-android-architect.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 - `adt-android-coder`: system prompt from `.claude/agents/adt-android-coder.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 - `adt-android-tester`: system prompt from `.claude/agents/adt-android-tester.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = true`.
+- `adt-android-architect-reviewer`: system prompt from `.claude/agents/adt-android-architect-reviewer.md`; `enable_write_tools = true` (for read-only Bash inspection — the reviewer never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
+- `adt-android-code-reviewer`: system prompt from `.claude/agents/adt-android-code-reviewer.md`; `enable_write_tools = true` (for `git diff` and the gradle gate — the reviewer never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 
 Antigravity does not support per-subagent model selection. The recommended models
-in each agent file (`opus` for adt-android-pm/adt-android-architect, `sonnet` for adt-android-coder
-and adt-android-tester) are documented for reference; in Antigravity, all
-subagents inherit the user's globally selected model — select the strongest
-available model for full pipeline runs.
+in each agent file (`opus` for adt-android-pm/adt-android-architect and both
+reviewers, `sonnet` for adt-android-coder and adt-android-tester) are documented
+for reference; in Antigravity, all subagents inherit the user's globally selected
+model — select the strongest available model for full pipeline runs.
 
 ## Handoff Protocol
 
@@ -40,30 +42,58 @@ Gemini, opencode, etc.).
 
 ## Approval Gates
 
-For `/build-hitl`, pause for explicit user approval between PM, Architect,
+For `/build-guided`, pause for explicit user approval between PM, Architect,
 Coder, and Tester phases. Accept `approve`, `revise: <feedback>`, or `stop`.
 
 For `/build-auto`, skip the PM phase. If the feature description is too vague
-for the Architect to produce a concrete plan, stop and suggest `/build-hitl`
+for the Architect to produce a concrete plan, stop and suggest `/build-guided`
 instead.
+
+For `/build-auto-reviewed`, skip the PM phase and run no human gates — but
+insert an automated reviewer after each producing phase, per the Reviewer-Loop
+Protocol below.
+
+## Reviewer-Loop Protocol
+
+Used by `/build-auto-reviewed`. After a producing agent finishes, the
+orchestrator delegates to that agent's reviewer before proceeding:
+
+- `adt-android-architect` → reviewed by `adt-android-architect-reviewer`
+  (reviews `implementation-plan.md`).
+- `adt-android-coder` (all coding complete) → reviewed by
+  `adt-android-code-reviewer` (reviews the uncommitted diff against the plan).
+
+Each reviewer ends with exactly one verdict marker:
+- `✅ PLAN APPROVED` / `✅ CODE APPROVED` → proceed to the next phase.
+- `🔧 PLAN CHANGES REQUESTED` / `🔧 CODE CHANGES REQUESTED` → re-run the
+  producing agent with the reviewer's numbered feedback, then review again.
+
+Each gate allows **at most 2 re-runs** (3 production attempts total). If the
+reviewer still requests changes after the 2nd re-run, the orchestrator **STOPS
+the entire pipeline** and reports to the user: the gate, the unresolved
+feedback, and the current artifact/diff state. It does not advance to later
+phases. Reviewers are read-only — they never edit the plan or code; the
+producing agent applies all fixes.
 
 ## Orchestration Workflow (Antigravity)
 
-When the user invokes `/build-hitl` or `/build-auto`, the parent agent acts as orchestrator:
+When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
 
-1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above.
+1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`.
 2. **Execute Phases**:
-   - **PM Phase**: Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
-   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path. Wait until it outputs `✅ ARCHITECT DONE`.
+   - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
+   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows). Wait until it outputs `✅ ARCHITECT DONE`.
+   - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`.
+   - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
-3. **Approval Gates**: At each phase boundary, pause and ask the user for explicit approval before proceeding.
+3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
 
 ## Native Workflow Registration
 
-`/build-auto` and `/build-hitl` slash commands are registered natively in
-Antigravity via symlinks in `.agents/workflows/` that point to
-`.claude/commands/`. Team personas are inlined into the consuming project's
+`/build-auto`, `/build-auto-reviewed`, and `/build-guided` slash commands (along
+with `/plan-research` and `/plan-design`) are registered natively in Antigravity
+via symlinks in `.agents/workflows/` that point to `.claude/commands/`. Team personas are inlined into the consuming project's
 `.agents/agents.md` (inside a marker-fenced block managed by install.sh),
 sourced from `.agents/AGENTIC_DEV_TEAM.md` in this repo. Each persona stub
 references the canonical detailed prompt at `.claude/agents/adt-*.md`.
