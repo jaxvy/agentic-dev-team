@@ -93,20 +93,16 @@ Runs only the Architect. Produces an implementation plan at
 Feed the resulting plan to `/build-auto` or `/build-guided` to implement and
 verify it.
 
-### Invoking a single agent
+### Running a single phase
 
-You can also call any agent directly without running the full pipeline.
-In Claude Code, address it by name:
+You don't have to run the whole pipeline. To do just the early planning work,
+use the planning-only commands — each runs a single phase and stops after
+writing its artifact, and both work identically in Claude Code and Antigravity:
 
-```
-@adt-android-architect can you sketch a plan for X?
-```
-
-All agents this repo ships are namespaced with `adt-` (`@adt-android-pm`,
-`@adt-android-architect`, `@adt-android-coder`, `@adt-android-tester`, plus the
-two reviewers `@adt-android-architect-reviewer` and `@adt-android-code-reviewer`
-used by `/build-auto-reviewed`) so they can't collide with your own
-`pm`/`architect`/etc. agents at either project or user scope.
+- **`/plan-research <vague idea>`** — runs the PM phase to research a rough idea
+  into a concrete feature spec (`feature.md`).
+- **`/plan-design <feature.md | feature description>`** — runs the Architect
+  phase to produce an implementation plan (`implementation-plan.md`).
 
 ## Installation
 
