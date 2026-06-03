@@ -63,9 +63,9 @@ work the reviewer rejected. A clean run then hands off to the Tester as usual.
 
 ### Planning-only commands
 
-When you want a plan but not a build, run just one phase. Both stop after
-writing their artifact, and their output chains into a build command (or each
-other) later.
+When you want a plan but not a build, run just one phase — each runs a single
+phase, stops after writing its artifact, and works identically in Claude Code
+and Antigravity. Their output chains into a build command (or each other) later.
 
 #### `/plan-research <vague idea>`
 
@@ -92,17 +92,6 @@ Runs only the Architect. Produces an implementation plan at
 
 Feed the resulting plan to `/build-auto` or `/build-guided` to implement and
 verify it.
-
-### Running a single phase
-
-You don't have to run the whole pipeline. To do just the early planning work,
-use the planning-only commands — each runs a single phase and stops after
-writing its artifact, and both work identically in Claude Code and Antigravity:
-
-- **`/plan-research <vague idea>`** — runs the PM phase to research a rough idea
-  into a concrete feature spec (`feature.md`).
-- **`/plan-design <feature.md | feature description>`** — runs the Architect
-  phase to produce an implementation plan (`implementation-plan.md`).
 
 ## Installation
 
