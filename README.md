@@ -345,17 +345,6 @@ Every `adt-*` agent reads the consuming project's `AGENTS.md` or `CLAUDE.md`
 conventions, and verification rules. The pipeline agents look for either
 file automatically — you don't need to document the pipeline itself in it.
 
-## Roadmap
-
-- **Reviewer gates for the guided flow** — `/build-auto-reviewed` already adds
-  an architect-reviewer (after Architect) and a code-reviewer (after Coder) to
-  the autonomous flow. A guided equivalent could surface the same reviewer
-  feedback at the human approval gates, and a `pm-reviewer` could vet the
-  feature spec before the Architect sees it.
-- **Antigravity marketplace equivalent.** Antigravity doesn't yet have a
-  plugin marketplace; once it does, ship an equivalent so the install.sh
-  path becomes optional for Antigravity users too.
-
 ## Troubleshooting
 
 - **"install.sh refused with 'real file at X'"** — you have your own file
