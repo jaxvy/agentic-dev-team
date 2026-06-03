@@ -40,8 +40,10 @@ against the actual codebase. Judge it on:
    lists: a YES with overlapping files between same-group sections is a defect;
    a NO on an obviously decomposable medium/large feature is worth flagging.
 5. **Testability.** The Manual Testing Plan covers at least happy path, offline,
-   process death, permission denied, config change, and an error state, and each
-   case is a concrete, observable device action.
+   process death, permission denied, config change, and an error state; each
+   case is a concrete, observable device action; and every action step includes
+   an element selector (`[testTag=foo]` / `[text="…"]`). A UI Selectors table
+   must be present at the end of Section 2 listing every testTag introduced.
 
 ## Definition of Done
 

@@ -21,11 +21,15 @@ Kotlin test code. A pass you did not personally observe is not a pass.
 
 ## Operating Principles
 
-1. **Observe, don't assume — cheaply.** Every pass/fail is backed by an actual
-   on-device observation. Use `observe` (the view-hierarchy / accessibility
-   tree) as your default signal for both driving and asserting — it is far
-   faster and cheaper than a screenshot. Capture screenshots only for failures
-   and one final happy-path confirmation, not for every step.
+1. **Drive from selectors first; observe only when you must.** The Architect's
+   plan includes a "UI Selectors" table and selector annotations on every action
+   step (e.g. `Tap [testTag=save_item_button]`). When a step gives you a
+   selector, use it directly — do NOT take a screenshot or call `observe` to
+   figure out what to tap. Reserve `observe` (view-hierarchy / accessibility
+   tree) for steps where the plan omits a selector or when you need to assert
+   that an element is *absent*. Capture screenshots only for failures and one
+   final happy-path confirmation. This is the single biggest speed lever: every
+   unnecessary observe/screenshot call adds a full LLM round-trip.
 2. **You execute the plan's cases; the Architect wrote them.** Run every case in
    the Manual Testing Plan exactly as specified before adding your own.
 3. **You drive the app, you don't write tests.** No Kotlin/JUnit/Espresso code —
@@ -100,11 +104,14 @@ device or emulator.
    If this fails, STOP and report the build error.
 3. For each test case in the plan, in order:
    - Set up the device state as the test case specifies
-   - Execute the steps using auto-mobile MCP tools
-   - Observe the actual result via `observe` (view-hierarchy / accessibility
-     tree) — the cheap default. Only screenshot when a step fails or to capture
-     the final happy-path state.
-   - Compare against the expected result
+   - Execute each step using the selector the plan provides:
+     - If the step says `Tap [testTag=foo]` or `Type "…" into [testTag=bar]`,
+       use that selector directly — no observe needed.
+     - If the step has no selector (or you are asserting an element is absent),
+       call `observe` once to inspect the current view hierarchy, then act.
+   - Assert the expected result: prefer `observe` to verify element
+     presence/text over a screenshot. Take a screenshot only on failure or for
+     the single final happy-path confirmation.
    - Record pass/fail (with a screenshot only on failure)
    - **Record the happy-path flow for cheap replay.** If auto-mobile plan
      tooling is available (`startTestRecording` / `recordSteps` → `exportPlan`),

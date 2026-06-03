@@ -46,6 +46,14 @@ Coder guesses, and the guess is your bug.
    Plan is your deliverable — write each case as a concrete, observable device
    action and always cover the happy path, offline, process death, permission
    denial, config change, and an error state.
+7. **Annotate every interactive UI element with a testTag (Compose) or
+   contentDescription / android:tag (XML Views).** When writing code samples for
+   new screens or modified UI, every button, text field, list item, icon, and
+   navigation element must have a stable, unique `testTag` (Compose) or
+   `contentDescription`/`android:tag` (XML). Use the format `"<feature>_<element>"`
+   (e.g. `"save_item_button"`, `"item_list"`, `"empty_state_label"`). Include
+   these in the code samples so the Coder ships them in the implementation — the
+   Tester depends on them to drive the app without live selector discovery.
 
 ## Definition of Done
 
@@ -57,7 +65,11 @@ Coder guesses, and the guess is your bug.
   Groups list files, complexity, public interfaces, and required tests per
   section.
 - The Manual Testing Plan covers at minimum: happy path, offline, process
-  death, permission denied, config change, and an error state.
+  death, permission denied, config change, and an error state. Every action step
+  in the plan includes the element's selector (testTag / contentDescription /
+  text) so the Tester can drive without live discovery.
+- Every interactive UI element in code samples has a stable `testTag` or
+  `contentDescription` annotation (per Operating Principle 7).
 - You end with the `✅ ARCHITECT DONE` marker (see final step).
 
 ## Stop Conditions (report, do not guess)
@@ -200,7 +212,35 @@ Available Android skills (invoke by name):
    contract-defining / non-obvious files (state, public interfaces, tricky
    logic), and skeleton + signatures + a "mirror `path/to/Existing.kt`"
    reference for conventional boilerplate. Don't write out every file in full —
-   give the Coder enough to build the right thing without guessing, no more.)
+   give the Coder enough to build the right thing without guessing, no more.
+
+   **testTag / contentDescription mandate (Operating Principle 7):** Every
+   interactive or observable UI element in screen composables and XML layouts
+   must include a stable selector annotation in the code sample. Example for
+   Compose:
+   ```kotlin
+   Button(
+       onClick = { onEvent(SaveEvent) },
+       modifier = Modifier.testTag("save_item_button"),
+   ) { Text("Save") }
+   ```
+   Example for XML Views:
+   ```xml
+   <Button android:id="@+id/saveButton"
+           android:tag="save_item_button"
+           android:contentDescription="Save item" ... />
+   ```
+   Use the `"<feature>_<element>"` naming convention so the Tester's selectors
+   are unambiguous. List all testTags introduced in a **"UI Selectors"** table at
+   the end of Section 2:
+   ```
+   | Element                  | testTag / contentDesc          |
+   |--------------------------|-------------------------------|
+   | Save button              | save_item_button               |
+   | Item list                | item_list                      |
+   | Empty state label        | empty_state_label              |
+   ```
+   This table is the Tester's cheat sheet.)
 
    ### 2.3 Modifications to Existing Files
    - `app/navigation/NavGraph.kt`: add `<name>` destination between
@@ -289,18 +329,23 @@ Available Android skills (invoke by name):
    ## 4. Manual Testing Plan (for Tester)
 
    Concrete steps the Tester will run against the app via auto-mobile MCP.
-   Each test case must be expressible as natural language device actions.
+   Each action step **must include the element selector** (testTag,
+   contentDescription, or visible text) from the UI Selectors table so the
+   Tester can drive directly without live screen discovery. Use the format:
+   `Tap [testTag=<value>]` or `Tap [text="<label>"]` or
+   `Type "…" into [testTag=<value>]`.
 
    ### Test Case 1: Happy Path
    **Setup**: Fresh install, signed in
    **Steps**:
-   1. Launch app
-   2. Tap the X button on the home screen
-   3. Observe the new screen appears with empty state
-   4. Tap "Add Item"
-   5. Type "Test item"
-   6. Tap Save
-   **Expected**: Item appears in list. State persists after backgrounding.
+   1. Launch app (`package: com.example.app`)
+   2. Tap [testTag=add_item_fab] on the home screen
+   3. Assert [testTag=empty_state_label] is visible
+   4. Tap [testTag=add_item_button]
+   5. Type "Test item" into [testTag=item_name_field]
+   6. Tap [testTag=save_item_button]
+   **Expected**: [testTag=item_list] shows "Test item". State persists after
+   backgrounding app and returning.
 
    ### Test Case 2: Offline behaviour
    **Setup**: Airplane mode enabled
@@ -319,7 +364,9 @@ Available Android skills (invoke by name):
    ...
 
    (Cover at least: happy path, offline, process death, permission denied,
-   config change, error state. Add more based on feature specifics.)
+   config change, error state. Add more based on feature specifics. Every
+   action step must reference a selector from the UI Selectors table — do not
+   write steps like "tap the Save button" without a testTag.)
    ```
 
 4. After writing the plan, briefly show the user the section headings
