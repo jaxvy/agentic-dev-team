@@ -97,3 +97,27 @@ via symlinks in `.agents/workflows/` that point to `.claude/commands/`. Team per
 `.agents/agents.md` (inside a marker-fenced block managed by install.sh),
 sourced from `.agents/AGENTIC_DEV_TEAM.md` in this repo. Each persona stub
 references the canonical detailed prompt at `.claude/agents/adt-*.md`.
+
+## Orchestration Workflow (opencode)
+
+opencode drives the same pipeline through its native per-file discovery, wired
+up by the same install.sh run:
+
+1. **Commands**: the five slash commands live in `.opencode/commands/` as
+   symlinks to the canonical `.claude/commands/*.md` bodies — opencode reads the
+   same orchestration prompts (`$ARGUMENTS` and `` `adt-android-*` subagent ``
+   delegation are both opencode-native).
+2. **Subagents**: each role is a `mode: subagent` agent file in
+   `.opencode/agents/adt-android-*.md`. The orchestrator (primary agent)
+   delegates to them automatically by description or via `@adt-android-<role>`
+   mention; each stub reads its canonical prompt at `.claude/agents/adt-*.md`
+   before acting, so the persona is identical across tools.
+3. **Models**: opencode runs every subagent on the user's currently selected
+   model (the agent files set no per-role `model:`), matching Antigravity's
+   behavior. Select the strongest available model for full pipeline runs.
+4. **Tester MCP**: the `auto-mobile` MCP (an HTTP server) is registered in
+   `opencode.json` under the `mcp` key (`type: "remote"`, with auto-mobile's
+   `url`); the Tester reaches it like any other tool.
+5. **Rules**: agents and commands reference `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
+   and the project's `AGENTS.md`/`CLAUDE.md` by path (both present in the project
+   tree), so opencode reads the same sources of truth as the other tools.

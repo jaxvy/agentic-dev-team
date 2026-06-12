@@ -1,15 +1,16 @@
 # Agentic Android Dev Team
 
 A reusable PM → Architect → Coder → Tester pipeline for Android projects,
-working identically in [Claude Code](https://claude.com/claude-code) and
-[Antigravity](https://antigravity.google). Distributed as per-file symlinks
-into each consuming project — no whole-dir symlinks, no forced migration
-of your existing `.claude/` or `.agents/` content.
+working identically in [Claude Code](https://claude.com/claude-code),
+[Antigravity](https://antigravity.google), and [opencode](https://opencode.ai).
+Distributed as per-file symlinks into each consuming project — no whole-dir
+symlinks, no forced migration of your existing `.claude/`, `.agents/`, or
+`.opencode/` content.
 
 ## How To Use It
 
-Once installed in a project, open it in Claude Code or Antigravity and run a
-slash command from the chat prompt. The `build-*` commands run the full
+Once installed in a project, open it in Claude Code, Antigravity, or opencode
+and run a slash command from the chat prompt. The `build-*` commands run the full
 pipeline end to end (the suffix tells you whether a human is in the loop, and
 whether automated reviewers gate each phase); the two `plan-*` commands run just
 one early phase and stop, so you can research or design without committing to a
@@ -64,8 +65,9 @@ work the reviewer rejected. A clean run then hands off to the Tester as usual.
 ### Planning-only commands
 
 When you want a plan but not a build, run just one phase — each runs a single
-phase, stops after writing its artifact, and works identically in Claude Code
-and Antigravity. Their output chains into a build command (or each other) later.
+phase, stops after writing its artifact, and works identically in Claude Code,
+Antigravity, and opencode. Their output chains into a build command (or each
+other) later.
 
 #### `/plan-research <vague idea>`
 
@@ -97,10 +99,10 @@ verify it.
 
 Two paths:
 
-- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-auto`, `/build-auto-reviewed`, `/build-guided`, `/plan-research`, and `/plan-design` slash commands without per-project setup. Does **not** wire up Antigravity (no `.agents/workflows/` files, no `agents.md` persona stubs, no `.gitignore` block).
-- **install.sh per-project (local repo install)** — works for both Claude Code and Antigravity. Materializes per-file symlinks inside each consuming project, manages a `.gitignore` block, and inlines persona stubs into `.agents/agents.md` for Antigravity. **This is the only supported path for Antigravity** — Antigravity has no plugin marketplace.
+- **Claude Code plugin** — installable from the Claude Code CLI via the plugin marketplace. Installs the `adt-*` agents and the `/build-auto`, `/build-auto-reviewed`, `/build-guided`, `/plan-research`, and `/plan-design` slash commands without per-project setup. Does **not** wire up Antigravity or opencode (no `.agents/workflows/` or `.opencode/` files, no `agents.md` persona stubs, no `.gitignore` block).
+- **install.sh per-project (local repo install)** — works for Claude Code, Antigravity, and opencode. Materializes per-file symlinks inside each consuming project (`.claude/`, `.agents/workflows/`, and `.opencode/`), manages a `.gitignore` block, and inlines persona stubs into `.agents/agents.md` for Antigravity. **This is the only supported path for Antigravity and opencode** — neither has a Claude Code plugin marketplace.
 
-The two are not mutually exclusive — you can install the plugin in Claude Code and still run `install.sh` in Antigravity projects.
+The two are not mutually exclusive — you can install the plugin in Claude Code and still run `install.sh` in Antigravity or opencode projects.
 
 ### Install via Claude Code marketplace (plugin)
 
@@ -111,23 +113,12 @@ From inside the Claude Code CLI:
 /plugin install agentic-dev-team@adt-pipeline
 ```
 
-Claude Code will prompt for an install scope:
-
-| Scope | Storage | Committed to git? | Behavior |
-|---|---|---|---|
-| User (`Install for you`) | `~/.claude/` | No | Plugin available in every Claude Code session on your machine. |
-| Project (`Install for all collaborators on this repository`) | `.claude/settings.json` in the repo | Yes | Anyone who clones the repo and runs `claude` is prompted to install. |
-| Local (`Install for you, in this repo only`) | `.claude/settings.local.json` in the repo | No (gitignored) | Plugin active only in this repo, only for you. |
-
-After install, `/build-auto`, `/build-auto-reviewed`, `/build-guided`, `/plan-research`, `/plan-design`, and the six `@adt-*` agents are available. To update, run `/plugin marketplace update adt-pipeline`. To remove, `/plugin uninstall agentic-dev-team@adt-pipeline`.
-
-If you also want Antigravity support, additionally follow the install.sh path below — they coexist without conflict.
-
 ### Prerequisites
 
 - `git`.
-- A [Claude Code](https://claude.com/claude-code) or
-  [Antigravity](https://antigravity.google) install.
+- A [Claude Code](https://claude.com/claude-code),
+  [Antigravity](https://antigravity.google), or [opencode](https://opencode.ai)
+  install.
 - An Android project with an `AGENTS.md` or `CLAUDE.md` describing the
   app's stack, architecture, conventions, and verification rules. The
   pipeline agents look for either file.
@@ -156,58 +147,10 @@ cd /path/to/your-android-project
 ```
 
 The installer is **completely non-destructive**: it only creates symlinks
-for the specific files this repo provides. Your existing `.claude/` and
-`.agents/` content is never touched, modified, or migrated.
-
-### What gets installed
-
-For each file this repo owns, install.sh creates a symlink at the matching
-path inside your project:
-
-| Project path | → Symlink target (in your clone) |
-|---|---|
-| `.claude/commands/build-guided.md` | `<clone>/.claude/commands/build-guided.md` |
-| `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
-| `.claude/commands/build-auto-reviewed.md` | `<clone>/.claude/commands/build-auto-reviewed.md` |
-| `.claude/commands/plan-research.md` | `<clone>/.claude/commands/plan-research.md` |
-| `.claude/commands/plan-design.md` | `<clone>/.claude/commands/plan-design.md` |
-| `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` |
-| `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` |
-| `.claude/agents/adt-android-architect-reviewer.md` | `<clone>/.claude/agents/adt-android-architect-reviewer.md` |
-| `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
-| `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
-| `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
-| `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
-| `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
-| `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
-| `.agents/workflows/build-auto-reviewed.md` | `<clone>/.agents/workflows/build-auto-reviewed.md` |
-| `.agents/workflows/plan-research.md` | `<clone>/.agents/workflows/plan-research.md` |
-| `.agents/workflows/plan-design.md` | `<clone>/.agents/workflows/plan-design.md` |
-
-Two additional changes happen via **marker-fenced managed blocks** (not symlinks):
-
-- `.gitignore` gains a small block listing the symlink paths above (since
-  the symlink targets are per-developer absolute paths and can't be
-  committed) plus `/pipeline_artifacts/`.
-- `.agents/agents.md` gains a block containing the inlined persona stubs
-  from this repo's `.agents/AGENTIC_DEV_TEAM.md`. Antigravity auto-loads
-  `agents.md` into the system prompt as user_rules, so this is how
-  Antigravity discovers the team. If the file doesn't exist, it's created.
-  If it does exist, your existing content outside the markers is left
-  untouched.
-
-After install, `ls -la .claude/commands/` makes ownership obvious — each
-of our entries shows an `->` arrow pointing at the clone. Your own files
-in the same directories have no arrow.
-
-
-### Refusal behavior
-
-If a real file or non-our-symlink already exists at one of our destinations,
-install.sh refuses with the path and a clear "rename or delete, then re-run"
-message. Nothing is ever overwritten silently. Pre-flight collision checks
-run before any symlink is created, so a refusal leaves the install in a
-clean state.
+for the specific files this repo provides. Your existing `.claude/`,
+`.agents/`, and `.opencode/` content is never touched, modified, or migrated.
+See [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the full list of symlinks and
+managed blocks it creates, and its refusal behavior on collisions.
 
 ## Updating
 
@@ -236,15 +179,6 @@ install.sh is a **sync**, not just an append: adds new symlinks, removes
 stale ones (where the source no longer exists), and rewrites the marker
 blocks to reflect current state.
 
-Suggested shell function for one-shot updates across multiple projects:
-
-```bash
-agentic-dev-team-update() {
-  (cd ~/code/agentic-dev-team && git pull) || return 1
-  ~/code/agentic-dev-team/install.sh
-}
-```
-
 ## Uninstalling
 
 From the project root:
@@ -266,84 +200,7 @@ Your own files, content outside the markers, and the clone at
 
 ## How It Works
 
-This repo is a **shared configuration package**, not a library you import.
-Each Android project that wants the pipeline links this repo's files into
-its own `.claude/` and `.agents/`.
-
-The mechanics:
-
-1. **Per-file symlinks, not per-directory.** Your project's `.claude/`
-   and `.agents/` stay real directories. You can keep adding your own
-   commands/agents alongside our symlinks — they coexist freely.
-2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
-   `.claude/agents/` in the project by filename. Our symlinks live at
-   those canonical paths, so `/build-auto`, `/build-auto-reviewed`,
-   `/build-guided`, `/plan-research`, `/plan-design`, `@adt-android-pm`,
-   `@adt-android-architect`, `@adt-android-architect-reviewer`,
-   `@adt-android-coder`, `@adt-android-code-reviewer`, and `@adt-android-tester`
-   are all available automatically.
-3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for
-   slash commands (our workflow files there are symlinks into
-   `.claude/commands/` via the clone) and auto-loads `.agents/agents.md`
-   into the system prompt as user_rules. install.sh inlines the persona
-   stubs from `.agents/AGENTIC_DEV_TEAM.md` into a marker-fenced block
-   inside your `agents.md`, so Antigravity sees them in-context without
-   needing to load another file. The HTML-comment markers
-   (`<!-- agentic-dev-team:start -->` / `<!-- agentic-dev-team:end -->`)
-   are ignored by Antigravity.
-4. **Cross-tool source of truth.** Both tools end up reading the same
-   agent prompts and the same `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for
-   orchestration rules. Edits to those files in the clone propagate to
-   every consuming project on the next file read — no install required
-   for in-place edits.
-5. **`.gitignore` block.** Symlink targets are per-developer absolute
-   paths (`~/code/agentic-dev-team/...`) and would not resolve on a
-   teammate's machine, so install.sh manages a small block in
-   `.gitignore` listing them.
-
-## Extending the Pipeline
-
-For maintainers / contributors who want to add new agents or commands:
-
-- **Adding a new agent.** Create `.claude/agents/adt-<name>.md` in this
-  repo (always use the `adt-` prefix to stay collision-free with
-  developers' own agents). Add a short stub block to
-  `.agents/AGENTIC_DEV_TEAM.md` using the `@adt-<name>` handle and
-  referencing the new prompt. On the next `install.sh` run in each
-  consuming project, the new agent becomes invocable as `@adt-<name>`
-  and the persona-registry block in `agents.md` automatically updates
-  with the new stub.
-- **Adding a new command / workflow.** Create `.claude/commands/<name>.md`
-  with the orchestration prompt. Create `.agents/workflows/<name>.md` as
-  a symlink to `../../.claude/commands/<name>.md` so Antigravity sees it
-  too. `/build-auto-reviewed` is built exactly this way: its workflow
-  symlink points at the command, which orchestrates the two reviewer
-  agents between the existing phases.
-- **Updating shared orchestration rules.** Edit
-  `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`. Because agent prompts reference
-  it by path and the project's copy is a symlink into the clone, edits
-  propagate the next time an agent reads the file — no install needed.
-- **Removing or renaming files.** Just delete or rename in the repo.
-  install.sh's sync logic removes stale symlinks from consuming projects
-  on the next run.
-
-## Project Context (`AGENTS.md` / `CLAUDE.md`)
-
-Every `adt-*` agent reads the consuming project's `AGENTS.md` or `CLAUDE.md`
-(whichever exists) for project-specific context: stack, architecture,
-conventions, and verification rules. The pipeline agents look for either
-file automatically — you don't need to document the pipeline itself in it.
-
-## Troubleshooting
-
-- **"install.sh refused with 'real file at X'"** — you have your own file
-  at one of our install paths. Rename or delete one side, then re-run.
-- **"I pulled the repo but new commands aren't showing up"** — run
-  `install.sh` in the project again; `git pull` alone doesn't materialize
-  symlinks for newly added files.
-- **"I see a broken symlink in `.claude/agents/`"** — likely a file was
-  renamed or removed in the repo. Run `install.sh`; the sync removes
-  stale symlinks.
-- **"Both AGENTS.md and CLAUDE.md exist as real files"** — the pipeline
-  agents will read whichever they find first. For consistency, pick one
-  as canonical and keep them in sync (or delete one).
+See [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the mechanics (per-tool discovery,
+symlink layout, cross-tool source of truth), the full list of what install.sh
+installs and its refusal behavior, how to extend the pipeline with new agents
+or commands, project context (`AGENTS.md` / `CLAUDE.md`), and troubleshooting.
