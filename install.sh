@@ -64,7 +64,9 @@ build_desired_pairs() {
   shopt -s nullglob
   for f in "$REPO_DIR"/.claude/commands/*.md \
            "$REPO_DIR"/.claude/agents/*.md \
-           "$REPO_DIR"/.agents/workflows/*.md; do
+           "$REPO_DIR"/.agents/workflows/*.md \
+           "$REPO_DIR"/.opencode/agents/*.md \
+           "$REPO_DIR"/.opencode/commands/*.md; do
     rel="${f#$REPO_DIR/}"
     printf '%s|%s\n' "$f" "$rel"
   done
@@ -320,7 +322,7 @@ do_install() {
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
-  echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code or Antigravity."
+  echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code, Antigravity, or opencode."
 }
 
 # ---------- uninstall mode ----------
