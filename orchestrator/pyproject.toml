@@ -1,0 +1,32 @@
+[project]
+name = "adt-orchestrator"
+version = "0.1.0"
+description = "LangGraph orchestrator for the agentic dev team pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.0",
+    "langchain-core>=0.3",
+]
+
+[project.optional-dependencies]
+# Heavy roles (Coder/Tester/Architect) keep a real coding harness.
+sdk = ["claude-agent-sdk>=0.1"]
+# Reviewer panel providers — install only the ones you actually use.
+anthropic = ["langchain-anthropic>=0.3"]
+openai = ["langchain-openai>=0.3"]
+google = ["langchain-google-genai>=2.0"]
+trace = ["langsmith>=0.2"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+adt-orchestrator = "adt_orchestrator.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["adt_orchestrator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
