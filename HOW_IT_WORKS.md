@@ -81,6 +81,12 @@ path inside your project:
 | `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 
+The canonical `AGENTIC_DEV_TEAM_PIPELINE.md` lives in
+`plugins/agentic-dev-team/` (so the Claude Code plugin packages it); the
+clone's `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, so the
+project-side path in the table above is unchanged and installed projects
+need no re-install.
+
 Two additional changes happen via **marker-fenced managed blocks** (not symlinks):
 
 - `.gitignore` gains a small block listing the symlink paths above (since
@@ -126,10 +132,13 @@ For maintainers / contributors who want to add new agents or commands:
   `/build-auto-reviewed` is built exactly this way: its workflow symlinks
   point at the command, which orchestrates the two reviewer agents between
   the existing phases.
-- **Updating shared orchestration rules.** Edit
-  `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`. Because agent prompts reference
-  it by path and the project's copy is a symlink into the clone, edits
-  propagate the next time an agent reads the file — no install needed.
+- **Updating shared orchestration rules.** Edit the canonical file,
+  `plugins/agentic-dev-team/AGENTIC_DEV_TEAM_PIPELINE.md` (the clone's
+  `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it). Because agent
+  prompts reference it by path and the project's copy is a symlink into the
+  clone, edits propagate the next time an agent reads the file — no install
+  needed. Agent-facing rules go in **Part A**, orchestrator-only rules in
+  **Part B**: agents are told to read Part A and skip Part B.
 - **Removing or renaming files.** Just delete or rename in the repo.
   install.sh's sync logic removes stale symlinks from consuming projects
   on the next run.

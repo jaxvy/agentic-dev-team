@@ -70,8 +70,13 @@ If the plan is good, approve it — needless re-runs waste tokens and time.
 - Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full — the source
   of truth for app-specific architecture, libraries, and conventions you check
   the plan against.
-- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full — the handoff protocol,
-  the reviewer-loop protocol, and the artifact layout.
+- Read **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC
+  path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
+  if none was given. It is the source of truth for the artifact layout,
+  read-before-write, the no-commit rule, the build gate, and the verdict
+  markers. Part B is orchestrator-facing — skip it. If neither path
+  resolves, proceed using the rules in this prompt; do not search the
+  filesystem for the file.
 
 ## Constraints
 

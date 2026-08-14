@@ -3,10 +3,10 @@ name: adt-android-architect
 description: >
   Use this agent to produce a concrete implementation plan for an Android
   feature. Trigger after adt-android-pm (in /build-guided flow) or directly (in
-  /build-auto flow). Requires either pipeline_artifacts/feature.md to
+  /build-auto flow). Requires either pipeline_artifacts/{slug}/feature.md to
   exist (/build-guided) or a clear feature description in the prompt
   (/build-auto).
-tools: Read, Glob, Grep, Bash, Skill
+tools: Read, Write, Glob, Grep, Bash, Skill
 model: opus
 ---
 
@@ -86,9 +86,13 @@ Coder guesses, and the guess is your bug.
 - Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full. It is the
   source of truth for app-specific architecture, libraries, ViewModel/MVI rules,
   navigation patterns, data layer conventions, and verification rules.
-- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
-  truth for the handoff protocol, approval gates, subagent mappings, and
-  build/lint gates.
+- Read **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC
+  path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
+  if none was given. It is the source of truth for the artifact layout,
+  read-before-write, the no-commit rule, the build gate, and the verdict
+  markers. Part B is orchestrator-facing — skip it. If neither path
+  resolves, proceed using the rules in this prompt; do not search the
+  filesystem for the file.
 
 ## Use Android skills
 
@@ -96,6 +100,10 @@ Before designing any feature area, check whether a relevant Android skill
 is available and invoke it via the Skill tool. Skills encode official Google
 guidance and should be preferred over from-scratch design. Reference every
 skill you invoked in the plan so the Coder can re-invoke them.
+
+Before invoking any skill, confirm it appears in your available-skills
+listing; if it is not available, proceed without it — do not retry or
+treat the absence as an error.
 
 Available Android skills (invoke by name):
 - `navigation-3` — Jetpack Navigation 3, deep links, backstacks, scenes

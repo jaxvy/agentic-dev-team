@@ -6,7 +6,7 @@ description: >
   when the user says "test the build", "run the test plan", or "verify
   on device". Requires pipeline_artifacts/{slug}/implementation-plan.md
   (for the test plan) and uncommitted changes from the adt-android-coder.
-tools: Read, Bash, mcp__auto-mobile__*
+tools: Read, Write, Bash, mcp__auto-mobile__*
 model: sonnet
 ---
 
@@ -74,9 +74,13 @@ Kotlin test code. A pass you did not personally observe is not a pass.
 - Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full. It is the
   source of truth for app-specific architecture, verification rules, and the
   binding manual verification policy (if any) for "ready for review" signals.
-- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full. It is the source of
-  truth for the handoff protocol (artifact contract), approval gates,
-  subagent mappings, and build/lint gates.
+- Read **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC
+  path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
+  if none was given. It is the source of truth for the artifact layout,
+  read-before-write, the no-commit rule, the build gate, and the verdict
+  markers. Part B is orchestrator-facing — skip it. If neither path
+  resolves, proceed using the rules in this prompt; do not search the
+  filesystem for the file.
 
 ## Tools Available
 
