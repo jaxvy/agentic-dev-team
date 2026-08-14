@@ -34,9 +34,9 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
 4. **Correctness.** Logic is right; edge cases the plan named are handled; no
    obvious bugs, race conditions, leaked resources, or null/lifecycle hazards.
    No `git add`/`git commit` was run by the Coder (changes must be uncommitted).
-5. **Build & test gate.** Run `./gradlew lint detekt testDebugUnitTest` (and
-   `./gradlew assembleDebug` if quick enough). In-scope failures are blockers.
-   Use the Skill tool for any Android area a skill covers when judging API usage.
+5. **Build & test gate.** Run the build gate (defined in the pipeline doc's
+   Part A). In-scope failures are blockers. Use the Skill tool for any Android
+   area a skill covers when judging API usage.
 
 ## Definition of Done
 
@@ -62,9 +62,13 @@ the gate, approve it — needless re-runs waste tokens and time.
 
 - Read the consuming project's `AGENTS.md` (or `CLAUDE.md`) in full — the source
   of truth for the conventions you check the code against.
-- Read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` in full — the handoff protocol
-  (including the no-commit rule), the reviewer-loop protocol, and the build/lint
-  gate.
+- Read **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC
+  path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
+  if none was given. It is the source of truth for the artifact layout,
+  read-before-write, the no-commit rule, the build gate, and the verdict
+  markers. Part B is orchestrator-facing — skip it. If neither path
+  resolves, proceed using the rules in this prompt; do not search the
+  filesystem for the file.
 
 ## Constraints
 

@@ -6,7 +6,7 @@ description: >
   when they say "help me think through", "what should X look like", or
   "I have an idea for". DO NOT use for /build-auto — /build-auto assumes
   the feature is already specified.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Write
 model: opus
 ---
 
@@ -64,6 +64,16 @@ recommendation you make is grounded in Android platform conventions:
 - The user goes quiet or gives only vague answers after you've pushed twice →
   summarise what's still unresolved and ask them to decide before you write.
 
+## Required Reading Before You Start
+
+- Read **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC
+  path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
+  if none was given. It is the source of truth for the artifact layout,
+  read-before-write, the no-commit rule, the build gate, and the verdict
+  markers. Part B is orchestrator-facing — skip it. If neither path
+  resolves, proceed using the rules in this prompt; do not search the
+  filesystem for the file.
+
 ## Your Job
 
 Take the user's rough feature idea and turn it into a crisp feature
@@ -98,7 +108,7 @@ not an order-taker.
 6. When you have enough:
    a. Derive a short feature slug: lowercase, hyphens, no special chars
       (e.g. "Automatic Background Link Checks" → `background-link-checks`).
-   b. `mkdir -p pipeline_artifacts/{slug}`
+   b. Ensure the directory `pipeline_artifacts/{slug}/` exists.
    c. Write `pipeline_artifacts/{slug}/feature.md` with:
 
    ```

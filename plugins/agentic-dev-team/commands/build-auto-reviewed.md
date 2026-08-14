@@ -12,6 +12,11 @@ build/lint gates, reviewer-loop protocol) and read the consuming project's
 verification requirements). Both files are the source of truth — do not
 duplicate their content here.
 
+If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
+(plugin-only install), read `${CLAUDE_PLUGIN_ROOT}/AGENTIC_DEV_TEAM_PIPELINE.md`
+instead. Store the path that worked as PIPELINE_DOC and pass it to every
+subagent you spawn, alongside the artifact paths you already pass.
+
 This is the /build-auto-reviewed flow — same shape as /build-auto (no PM phase,
 no human gates), but each producing phase is followed by an automated reviewer
 that can send the work back. It assumes the feature is already understood. If
@@ -60,9 +65,9 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
           working on other sections concurrently."
       Wait for ALL coders in the group to declare ✅ CODER DONE before
       starting the next group.
-      After each group finishes, run `./gradlew lint detekt
-      testDebugUnitTest` once at the orchestrator level to catch any
-      cross-section issues before moving to the next group.
+      After each group finishes, run the cross-section check (defined in
+      the pipeline doc's Part A) once at the orchestrator level to catch
+      any cross-section issues before moving to the next group.
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP the pipeline and report to the user

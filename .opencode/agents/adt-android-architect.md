@@ -2,7 +2,7 @@
 description: >
   Use this agent to produce a concrete implementation plan for an Android
   feature. Trigger after adt-android-pm (in /build-guided flow) or directly (in
-  /build-auto flow). Requires either pipeline_artifacts/feature.md to
+  /build-auto flow). Requires either pipeline_artifacts/{slug}/feature.md to
   exist (/build-guided) or a clear feature description in the prompt
   (/build-auto).
 mode: subagent

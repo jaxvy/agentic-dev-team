@@ -12,6 +12,11 @@ read the consuming project's `AGENTS.md` (or `CLAUDE.md`) for local conventions
 (architecture, libraries, verification requirements). Both files are the source
 of truth — do not duplicate their content here.
 
+If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
+(plugin-only install), read `${CLAUDE_PLUGIN_ROOT}/AGENTIC_DEV_TEAM_PIPELINE.md`
+instead. Store the path that worked as PIPELINE_DOC and pass it to every
+subagent you spawn, alongside the artifact paths you already pass.
+
 This is the /plan-research flow — it produces a feature spec and stops. There
 is no Architect, Coder, or Tester phase. Use it when you want the PM to turn a
 rough idea into a concrete, unambiguous `feature.md` you can review, hand off,

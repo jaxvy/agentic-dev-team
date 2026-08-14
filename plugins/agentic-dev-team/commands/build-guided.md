@@ -13,6 +13,11 @@ for local
 conventions (architecture, libraries, verification requirements). Both files
 are the source of truth — do not duplicate their content here.
 
+If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
+(plugin-only install), read `${CLAUDE_PLUGIN_ROOT}/AGENTIC_DEV_TEAM_PIPELINE.md`
+instead. Store the path that worked as PIPELINE_DOC and pass it to every
+subagent you spawn, alongside the artifact paths you already pass.
+
 This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
 - `approve` — proceed to next phase
@@ -60,7 +65,8 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
         Each receives PLAN_PATH and explicit "implement ONLY Section X"
         instructions.
         Wait for all coders in the group to declare ✅ CODER DONE.
-        Run `./gradlew lint detekt testDebugUnitTest` between groups.
+        Run the cross-section check (defined in the pipeline doc's Part A)
+        between groups.
 
   When all coders are done, show the user the list of modified files
   (grouped by which coder produced them) and ask:
@@ -69,5 +75,6 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
 Phase 4 — Tester (after approval):
   Delegate to the `adt-android-tester` subagent.
   Pass: PLAN_PATH
+  Wait for ✅ TESTER DONE.
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH.
