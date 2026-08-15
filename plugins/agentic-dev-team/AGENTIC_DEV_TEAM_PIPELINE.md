@@ -66,6 +66,26 @@ commands themselves.
   ./gradlew lint detekt testDebugUnitTest
   ```
 
+## The Working-Tree Fingerprint
+
+`adt-android-coder` reports this with its DONE marker and
+`adt-android-code-reviewer` re-computes it. A match is what lets the reviewer
+record the gate as already satisfied instead of running the identical command
+on an identical tree. As with the checks above, refer to it by name elsewhere —
+prompts must not restate the commands.
+
+```
+git status --porcelain
+{ git diff; git ls-files -o --exclude-standard | sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done; } | shasum
+```
+
+The first command is the file list. The second is a content hash covering both
+edits to tracked files and the contents of new untracked ones. Both legs are
+required: when a section's work is entirely new files — the common case —
+`git diff` is empty, so a hash of it alone is the empty-input digest no matter
+what those files contain. Substitute `sha1sum` where `shasum` is unavailable;
+the Coder and the reviewer must use the same one.
+
 ## Verdict and DONE Markers
 
 Each producing agent ends its turn with its own DONE marker; the orchestrator
@@ -79,10 +99,9 @@ waits on that marker before advancing.
 `adt-android-coder` reports two extra pieces just above its marker line, which
 the code reviewer depends on: the tail of the build gate's own output (the task
 list and the `BUILD SUCCESSFUL` or failure line), and the working-tree
-fingerprint — the output of `git status --porcelain` and of
-`git diff | shasum`. The reviewer re-computes that fingerprint itself; a match
-is what lets it skip a re-run of the identical gate on an identical tree, and
-anything else means it re-runs. The marker itself stays the last line.
+fingerprint defined above. The reviewer re-computes that fingerprint itself; a
+match is what lets it skip a re-run of the identical gate on an identical tree,
+and anything else means it re-runs. The marker itself stays the last line.
 
 Each reviewer ends with **exactly one** verdict marker as its final line:
 

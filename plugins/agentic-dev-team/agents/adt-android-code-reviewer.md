@@ -39,12 +39,14 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    area a skill covers when judging API usage.
 
    If the orchestrator provides a build-gate result, confirm the tree is
-   unchanged since that run — compare `git status --porcelain` and
-   `git diff | shasum` (or `sha1sum`) against the fingerprint the Coder
-   reported — and if it matches, record the gate as already satisfied instead
-   of re-running it. Re-run the gate if no result was provided, the fingerprint
-   differs, the reported output does not show the gate actually completing, or
-   the Coder reported "passing-within-scope" from a parallel run.
+   unchanged since that run — re-compute the working-tree fingerprint (defined
+   in the pipeline doc's Part A) yourself and compare both of its parts against
+   what the Coder reported — and if it matches, record the gate as already
+   satisfied instead of re-running it. Re-run the gate if no result was
+   provided, either part of the fingerprint differs, the Coder reported a
+   fingerprint that is not the one Part A defines, the reported output does not
+   show the gate actually completing, or the Coder reported
+   "passing-within-scope" from a parallel run.
 6. **Test adequacy.** The tests the plan required exist, exercise the edge
    cases the plan names, and would fail if the feature regressed.
 

@@ -142,8 +142,8 @@ Available Android skills (invoke by name):
    silently change the plan.
 6. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
-   Then capture the working-tree fingerprint: the output of
-   `git status --porcelain` and of `git diff | shasum` (or `sha1sum`).
+   Then capture the working-tree fingerprint (defined in the pipeline doc's
+   Part A) — both of its commands, run as written.
 7. In your final message, before the marker line, quote the build gate's tail
    output from step 5 and the fingerprint from step 6. A reviewer uses them to
    prove the tree is unchanged since your gate run instead of re-running the

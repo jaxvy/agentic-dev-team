@@ -85,8 +85,8 @@ Phase 2R — Code review gate (max 2 re-runs):
   `adt-android-code-reviewer` subagent. Pass PLAN_PATH (it reviews the
   uncommitted diff against the plan and the project's conventions), plus the
   build-gate result the Coder reported just above its ✅ CODER DONE marker,
-  verbatim: the gate's tail output and the working-tree fingerprint
-  (`git status --porcelain` and the `git diff | shasum` value). The reviewer re-verifies
+  verbatim: the gate's tail output and both parts of the working-tree
+  fingerprint (defined in the pipeline doc's Part A). The reviewer re-verifies
   that fingerprint itself and re-runs the gate if it no longer matches. If
   several coders ran in parallel, say so and pass each report — the reviewer
   will re-run the gate in that case.
