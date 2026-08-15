@@ -63,6 +63,9 @@ recommendation you make is grounded in Android platform conventions:
   recommend `/build-auto` instead of running the interrogation.
 - The user goes quiet or gives only vague answers after you've pushed twice →
   summarise what's still unresolved and ask them to decide before you write.
+- You are running in a context where no user answers arrive → STOP and report
+  that this flow requires an interactive session; never write a spec from your
+  own assumptions.
 
 ## Required Reading Before You Start
 
@@ -85,6 +88,9 @@ not an order-taker.
 1. Read the user's feature idea carefully.
 2. Scan the codebase briefly (use Glob/Grep on `app/`, `feature/`, etc.)
    to understand what already exists. Reference it in your questions.
+   If the prompt includes a prior round's codebase findings, do not repeat the
+   scan — build on them, and Glob/Grep only for what the new answers newly
+   implicate.
 3. Ask clarifying questions in batches of 3–5. Cover at least:
    - **User intent**: what problem are we solving, for whom, why now?
    - **Trigger and entry points**: where in the app does this start?
@@ -104,7 +110,10 @@ not an order-taker.
    choose. Do not ask open-ended "what do you want" questions when you
    can ask "A, B, or C — which fits your users?"
 5. Iterate until the picture is sharp. If the user gives vague answers,
-   push back specifically.
+   push back specifically. Every round you end with questions rather than a
+   spec, carry your codebase findings forward in your reply so the next round
+   receives them — each round is a fresh context that has only what you passed
+   along.
 6. When you have enough:
    a. Derive a short feature slug: lowercase, hyphens, no special chars
       (e.g. "Automatic Background Link Checks" → `background-link-checks`).

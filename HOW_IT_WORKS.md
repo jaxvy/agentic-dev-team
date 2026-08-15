@@ -160,6 +160,12 @@ file automatically — you don't need to document the pipeline itself in it.
 - **"I see a broken symlink in `.claude/agents/`"** — likely a file was
   renamed or removed in the repo. Run `install.sh`; the sync removes
   stale symlinks.
+- **"An agent's persona looks out of date in Antigravity"** — the persona
+  stubs are *inlined* into the project's `.agents/agents.md` at install time,
+  not symlinked. When this repo's `.agents/AGENTIC_DEV_TEAM.md` changes,
+  re-run `install.sh` in the project to refresh that block; `git pull` alone
+  doesn't rewrite it. (Agent prompts and the pipeline doc are symlinked, so
+  they need no re-install.)
 - **"Both AGENTS.md and CLAUDE.md exist as real files"** — the pipeline
   agents will read whichever they find first. For consistency, pick one
   as canonical and keep them in sync (or delete one).

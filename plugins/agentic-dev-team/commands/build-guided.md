@@ -27,7 +27,9 @@ After each phase, pause and ask the user to type one of:
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
-  back to the PM until ✅ PM DONE.
+  back to the PM until ✅ PM DONE. Include the full accumulated Q&A transcript
+  with each re-invocation — including the codebase findings the PM carried
+  forward — since each re-invocation is a fresh subagent context.
   Parse the artifact directory from the DONE message — it will say:
     "feature description at pipeline_artifacts/{slug}/feature.md"
   Store: FEATURE_DIR = pipeline_artifacts/{slug}/
@@ -62,11 +64,19 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     IF Parallel-safe is YES and user approved:
       For each Execution Group in order:
         Spawn N `adt-android-coder` subagents in parallel — one per section.
-        Each receives PLAN_PATH and explicit "implement ONLY Section X"
-        instructions.
+        Each receives PLAN_PATH, explicit "implement ONLY Section X"
+        instructions, and this reading scope: "Read the plan's Section 1,
+        every section's Files list in Section 3, your own assigned section in
+        full (its files, public interface, and tests required), and the Public
+        Interface blocks of any sections yours depends on. You may skip the
+        Section 2.2 code samples belonging to files outside your own file
+        list."
         Wait for all coders in the group to declare ✅ CODER DONE.
         Run the cross-section check (defined in the pipeline doc's Part A)
-        between groups.
+        between groups — unless the group contained exactly one section, in
+        which case skip it: there is no cross-section interaction within a
+        single section, and the next group's boundary (or the final build
+        gate) covers it.
 
   When all coders are done, show the user the list of modified files
   (grouped by which coder produced them) and ask:

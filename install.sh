@@ -49,6 +49,7 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
 # ---------- markers ----------
 GITIGNORE_MARK_START="# agentic-dev-team:start (managed by install.sh — do not edit by hand)"
+GITIGNORE_MARK_NOTE="# This block is also install-state used for stale-cleanup — hand-edits break sync."
 GITIGNORE_MARK_END="# agentic-dev-team:end"
 AGENTS_MARK_START="<!-- agentic-dev-team:start (managed by install.sh — do not edit) -->"
 AGENTS_MARK_END="<!-- agentic-dev-team:end -->"
@@ -104,7 +105,18 @@ abs_readlink() {
   target="$(readlink "$p")"
   case "$target" in
     /*) echo "$target" ;;
-    *) echo "$(cd "$(dirname "$p")" && cd "$(dirname "$target")" 2>/dev/null && pwd)/$(basename "$target")" ;;
+    *)
+      local parent
+      if parent="$(cd "$(dirname "$p")" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd)" \
+         && [ -n "$parent" ]; then
+        echo "$parent/$(basename "$target")"
+      else
+        # The target's parent doesn't exist (broken symlink). Echo the raw
+        # readlink value so the caller still sees a foreign target instead of
+        # an empty string it would misclassify.
+        echo "$target"
+      fi
+      ;;
   esac
 }
 
@@ -168,6 +180,7 @@ rewrite_gitignore_block() {
     {
       [ -s "$tmp" ] && echo ""
       echo "$GITIGNORE_MARK_START"
+      echo "$GITIGNORE_MARK_NOTE"
       while IFS= read -r p; do
         [ -z "$p" ] && continue
         echo "/$p"
