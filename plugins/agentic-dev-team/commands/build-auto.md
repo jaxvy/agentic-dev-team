@@ -44,11 +44,18 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
         - Explicit instruction: "Implement ONLY Section X. Do not touch
           files outside the file list for Section X. Other coders are
           working on other sections concurrently."
+        - Reading scope: "Read the plan's Section 1, every section's Files
+          list in Section 3, your own assigned section in full (its files,
+          public interface, and tests required), and the Public Interface
+          blocks of any sections yours depends on. You may skip the Section
+          2.2 code samples belonging to files outside your own file list."
       Wait for ALL coders in the group to declare ✅ CODER DONE before
       starting the next group.
-      After each group finishes, run the cross-section check (defined in
-      the pipeline doc's Part A) once at the orchestrator level to catch
-      any cross-section issues before moving to the next group.
+      After a group finishes, run the cross-section check (defined in the
+      pipeline doc's Part A) once at the orchestrator level — unless the
+      group contained exactly one section, in which case skip it: there is
+      no cross-section interaction within a single section, and the next
+      group's boundary (or the final build gate) covers it.
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP the pipeline and report to the user

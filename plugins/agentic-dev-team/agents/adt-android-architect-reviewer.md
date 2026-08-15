@@ -45,6 +45,12 @@ against the actual codebase. Judge it on:
    an element selector (`[testTag=foo]` / `[text="…"]`). A UI Selectors table
    must be present at the end of Section 2 listing every testTag introduced.
 
+If this is a re-review after your own CHANGES REQUESTED verdict, first verify
+each item of your previous numbered feedback was addressed, then spot-check only
+what changed since that review; do a full review only on the first pass. If the
+producing agent rewrote the artifact wholesale rather than editing it, "what
+changed" is the whole artifact — review it fully.
+
 ## Definition of Done
 
 End with EXACTLY ONE of these verdict markers as the final line:

@@ -33,6 +33,9 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
    code in its area; start from the ones the Architect listed.
 7. **Adapt samples, don't transcribe blindly.** The plan's code is a template —
    fit it to the real package names, imports, and existing types.
+8. **Orient from the plan, don't re-survey.** Treat the plan's Section 1 as your
+   codebase orientation; verify only the specific claims your own work depends
+   on, rather than re-surveying the repository.
 
 ## Definition of Done
 
@@ -41,7 +44,9 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
   (in parallel runs, cross-section gaps are expected — note them, don't treat
   them as blockers).
 - `git status` shows changes uncommitted and unstaged; nothing committed.
-- You end with the `✅ CODER DONE` marker listing sections, files, and status.
+- Your final message reports the build gate's own tail output and the
+  working-tree fingerprint, then ends with the `✅ CODER DONE` marker listing
+  sections, files, and status (see step 7).
 
 ## Stop Conditions (report, do not guess)
 
@@ -98,8 +103,9 @@ Available Android skills (invoke by name):
 
 1. The prompt will specify the exact path to the implementation plan
    (e.g. `pipeline_artifacts/background-link-checks/implementation-plan.md`).
-   Read that file completely. If no path was given or the file does not
-   exist, STOP and tell the user.
+   Read that file completely — unless the prompt gives you a narrower reading
+   scope for a parallel run, in which case read exactly the parts it names.
+   If no path was given or the file does not exist, STOP and tell the user.
 2. Determine your scope:
    - **If the prompt names specific sections** (e.g. "Implement ONLY
      Section A"): implement only those sections. Another coder may be
@@ -123,7 +129,8 @@ Available Android skills (invoke by name):
    - Honour the Public Interface contract from your section — other
      sections (and other coders) depend on it staying stable.
 5. After implementation, run the build gate (defined in the pipeline doc's
-   Part A).
+   Part A). Keep the tail of its output — the task list and the final
+   `BUILD SUCCESSFUL` or failure line — to quote in your DONE marker.
 
    If you're running in parallel and a test fails due to code from another
    section that hasn't been written yet, that's expected — note it in your
@@ -135,5 +142,14 @@ Available Android skills (invoke by name):
    silently change the plan.
 6. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
-7. End with: ✅ CODER DONE — section(s) implemented: <list>. Files
-   modified: <list>. Lint/tests status: <passing | passing-within-scope>.
+   Then capture the working-tree fingerprint: the output of
+   `git status --porcelain` and of `git diff | shasum` (or `sha1sum`).
+7. In your final message, before the marker line, quote the build gate's tail
+   output from step 5 and the fingerprint from step 6. A reviewer uses them to
+   prove the tree is unchanged since your gate run instead of re-running the
+   identical gate, so report the build's own words rather than a bare
+   "passing". If this run is a re-run after reviewer feedback, also list what
+   you changed this attempt, item by item against that feedback.
+   Then end with, as the last line: ✅ CODER DONE — section(s) implemented:
+   <list>. Files modified: <list>. Lint/tests status:
+   <passing | passing-within-scope>.

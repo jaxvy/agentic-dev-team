@@ -25,7 +25,10 @@ or sit on.
 PM Phase:
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Relay each question to the
-  user and pass each user response back to the PM until ✅ PM DONE.
+  user and pass each user response back to the PM until ✅ PM DONE. Include the
+  full accumulated Q&A transcript with each re-invocation — including the
+  codebase findings the PM carried forward — since each re-invocation is a
+  fresh subagent context.
   Parse the artifact directory from the DONE message — it will say:
     "feature description at pipeline_artifacts/{slug}/feature.md"
   Store: FEATURE_DIR = pipeline_artifacts/{slug}/

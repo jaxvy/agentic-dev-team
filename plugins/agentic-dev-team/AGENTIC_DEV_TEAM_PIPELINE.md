@@ -47,15 +47,20 @@ commands themselves.
 
 - **The build gate** — the full end-of-work check. `adt-android-coder` runs it
   before declaring done, and `adt-android-code-reviewer` runs it as part of its
-  review. Fix in-scope failures before handing off to `adt-android-tester`.
+  review — unless it can prove the Coder's run still covers the current tree
+  (see the DONE-marker contract below). Fix in-scope failures before handing off
+  to `adt-android-tester`.
 
   ```
   ./gradlew assembleDebug lint detekt testDebugUnitTest
   ```
 
 - **The cross-section check** — the cheaper between-groups check. The
-  orchestrator runs it after each parallel coder group to catch cross-section
-  issues before starting the next group. It deliberately omits `assembleDebug`.
+  orchestrator runs it after each parallel coder group that contained more than
+  one section, to catch cross-section issues before starting the next group. A
+  group of exactly one section has no cross-section interaction and its coder
+  has already run the build gate on that same tree, so the check is skipped
+  there. It deliberately omits `assembleDebug`.
 
   ```
   ./gradlew lint detekt testDebugUnitTest
@@ -70,6 +75,14 @@ waits on that marker before advancing.
 - `adt-android-architect` → `✅ ARCHITECT DONE`
 - `adt-android-coder` → `✅ CODER DONE`
 - `adt-android-tester` → `✅ TESTER DONE`
+
+`adt-android-coder` reports two extra pieces just above its marker line, which
+the code reviewer depends on: the tail of the build gate's own output (the task
+list and the `BUILD SUCCESSFUL` or failure line), and the working-tree
+fingerprint — the output of `git status --porcelain` and of
+`git diff | shasum`. The reviewer re-computes that fingerprint itself; a match
+is what lets it skip a re-run of the identical gate on an identical tree, and
+anything else means it re-runs. The marker itself stays the last line.
 
 Each reviewer ends with **exactly one** verdict marker as its final line:
 
@@ -86,6 +99,11 @@ required changes.
 - Reviewers are read-only — they never edit the plan or the code. The producing
   agent applies every fix: `adt-android-architect` for plan feedback,
   `adt-android-coder` for code feedback.
+- On each re-run, the producing agent appends a short
+  `## Revision Notes (attempt N)` section to its artifact listing what changed,
+  so downstream agents can see how the artifact drifted.
+  `adt-android-coder` has no markdown artifact — it lists what changed in its
+  `✅ CODER DONE` message instead, and never edits the plan to record it.
 
 ---
 
@@ -138,6 +156,14 @@ Act on the reviewer's verdict marker (the markers are defined in Part A):
 - `✅ PLAN APPROVED` / `✅ CODE APPROVED` → proceed to the next phase.
 - `🔧 PLAN CHANGES REQUESTED` / `🔧 CODE CHANGES REQUESTED` → re-run the
   producing agent with the reviewer's numbered feedback, then review again.
+
+When delegating to `adt-android-code-reviewer`, pass through the build-gate
+result and working-tree fingerprint from the Coder's `✅ CODER DONE` message.
+The reviewer re-verifies that fingerprint itself before deciding whether the
+gate still needs re-running.
+
+On the 2nd re-run, pass the producing agent all prior numbered feedback (both
+rounds), marking items the reviewer previously accepted as resolved.
 
 Each gate allows **at most 2 re-runs** (3 production attempts total). If the
 reviewer still requests changes after the 2nd re-run, the orchestrator **STOPS
