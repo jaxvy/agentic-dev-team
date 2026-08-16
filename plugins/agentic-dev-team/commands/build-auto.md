@@ -60,19 +60,32 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
       group's boundary (or the final build gate) covers it.
 
   If any coder reports a problem with its section (e.g. spec issue,
-  unexpected file conflict), STOP the pipeline and report to the user
-  rather than continuing.
+  unexpected file conflict), STOP rather than continuing.
 
 Phase 3 — Tester:
   Delegate to the `adt-android-tester` subagent.
   Pass: PLAN_PATH
   Wait for ✅ TESTER DONE.
 
-When complete, summarise the verdict from the test-results.md in the same
-directory as PLAN_PATH. Also report whether parallel execution was used and
-how many adt-android-coder subagents ran, so the user can gauge token cost.
+Phase 3F — Tester fix loop (max 2 iterations):
+  Read the verdict from `test-results.md`. On READY TO MERGE, go to the
+  summary. On NEEDS FIXES, iterate (N = 1, then 2):
+    Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
+    report's "Recommendations for Coder" section verbatim (blocking findings
+    only — the Tester's Observations section is for the user and never drives
+    a fix), instructing it to fix exactly those failures. Wait for
+    ✅ CODER DONE.
+    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    `test-results.md`, instructing it to re-run the failed cases and the
+    happy path — other previously-passing cases only if the fix plausibly
+    affects them. Wait for ✅ TESTER DONE.
+    On READY TO MERGE, go to the summary.
+  After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
+  declare the run complete, and do not start a 3rd iteration.
 
-If the verdict is NEEDS FIXES, say so plainly — the feature is not done. Report
-the failing cases and the test report's "Recommendations for Coder" section, and
-suggest re-running the adt-android-coder with it as input. Never present a
-NEEDS FIXES run as a completed feature.
+When complete, summarise the final verdict from the test-results.md in the same
+directory as PLAN_PATH, including how many fix iterations ran, and list any
+Observations the Tester recorded — those are unrequested behaviours it noticed
+and deliberately did not fix, for the user to accept or turn into a follow-up.
+Also report whether parallel execution was used and how many adt-android-coder
+subagents ran, so the user can gauge token cost.

@@ -29,21 +29,43 @@ against the actual codebase. Judge it on:
    the plan cites must actually exist (or be explicitly created by the plan).
    Use Glob/Grep to spot-check the riskiest claims. An invented class, a wrong
    line number, or a non-existent dependency is a defect.
-2. **Completeness.** All four top-level sections present and populated. No
-   placeholders, no "implement the rest here". Contract/non-obvious files have
-   full code; boilerplate has skeleton + a concrete "mirror `path/to/X.kt`"
-   reference.
-3. **Correctness & fit.** The design matches existing patterns (MVI/DI/module
+2. **Completeness.** All five top-level sections (0 through 4) present and
+   populated. No placeholders, no "implement the rest here". Contract/non-obvious
+   files have full code; boilerplate has skeleton + a concrete "mirror
+   `path/to/X.kt`" reference.
+3. **Verification commands (Section 0).** The build gate, cross-section check,
+   and install command must name tasks this project actually defines. Check them
+   against `settings.gradle.kts` and the application module's `build.gradle.kts`:
+   a `detekt` leg with no detekt plugin applied, an unqualified `assembleDebug`
+   in a multi-module project with a non-`app` application module, or a `Debug`
+   variant in a project that only has `demoDebug` are all blockers — each one
+   fails every downstream phase, and the failure will look like broken code
+   rather than a bad plan. Section 0 restating the pipeline doc's defaults
+   verbatim, with no Source line and no evidence of discovery, is itself worth
+   a flag.
+4. **Correctness & fit.** The design matches existing patterns (MVI/DI/module
    layout), doesn't conflict with the architecture, and actually satisfies the
    feature request.
-4. **Parallel-safety call.** Sanity-check the YES/NO decision against the file
+5. **Parallel-safety call.** Sanity-check the YES/NO decision against the file
    lists: a YES with overlapping files between same-group sections is a defect;
    a NO on an obviously decomposable medium/large feature is worth flagging.
-5. **Testability.** The Manual Testing Plan covers at least happy path, offline,
-   process death, permission denied, config change, and an error state; each
-   case is a concrete, observable device action; and every action step includes
-   an element selector (`[testTag=foo]` / `[text="…"]`). A UI Selectors table
-   must be present at the end of Section 2 listing every testTag introduced.
+6. **Testability.** The Manual Testing Plan addresses all six risk categories —
+   happy path, offline, process death, permission denied, config change, error
+   state — each as a real case or an explicit `N/A — <reason>`, summarised in the
+   Risk Category Coverage table. Judge the substance, not the count:
+   - A category silently missing is a blocker — the Architect may have
+     overlooked it.
+   - A well-reasoned `N/A` is **correct and complete**, not a gap. Do not
+     request a test case for a permission the feature never requests or offline
+     behaviour for a feature that makes no network calls; forcing one invents a
+     requirement the Coder will then implement.
+   - An `N/A` whose reason is wrong — "no permissions" on a feature that reads
+     contacts — is a blocker.
+
+   Each real case must be a concrete, observable device action, and every action
+   step must include an element selector (`[testTag=foo]` / `[text="…"]`). A UI
+   Selectors table must be present at the end of Section 2 listing every testTag
+   introduced.
 
 ## Definition of Done
 

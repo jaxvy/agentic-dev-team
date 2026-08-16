@@ -90,9 +90,24 @@ Phase 4 — Tester (after approval):
   Pass: PLAN_PATH
   Wait for ✅ TESTER DONE.
   Summarise the final test results for the user from the test-results.md
-  in the same directory as PLAN_PATH.
+  in the same directory as PLAN_PATH. Present blocking findings and
+  Observations separately: blocking findings are defects against the plan;
+  Observations are unrequested behaviours the Tester noticed and did not fix,
+  which only you — the user — can promote into requirements.
+  Then ask the user: `approve` to finish, `revise: <feedback>` to send the
+  failures back to the Coder, or `stop`.
 
-  If the verdict is NEEDS FIXES, say so plainly — the feature is not done.
-  Report the failing cases and the test report's "Recommendations for Coder"
-  section, and suggest re-running the adt-android-coder with it as input.
-  Never present a NEEDS FIXES run as a completed feature.
+  On `revise:`, run the fix loop (max 2 iterations):
+    Spawn ONE `adt-android-coder` subagent with PLAN_PATH, the user's
+    feedback, and the test report's "Recommendations for Coder" section
+    verbatim, instructing it to fix exactly those failures. An Observation
+    the user explicitly asked for in their `revise:` feedback is fair game —
+    that is the user creating a requirement, which is allowed; the Tester
+    doing it on its own is not. Wait for ✅ CODER DONE.
+    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    `test-results.md`, instructing it to re-run the failed cases and the
+    happy path — other previously-passing cases only if the fix plausibly
+    affects them. Wait for ✅ TESTER DONE, then return to this gate with the
+    fresh results.
+    After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
+    3rd iteration.
