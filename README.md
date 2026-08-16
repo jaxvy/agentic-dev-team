@@ -20,6 +20,19 @@ If the Tester ends on `NEEDS FIXES`, the Coder gets up to **two** fix-and-retest
 attempts. If it still fails, the run stops and says so rather than reporting a
 feature that doesn't work.
 
+The Tester only sends the Coder back for **blocking** findings — behaviour that
+contradicts your request, the approved plan, or the project's own conventions,
+plus crashes, data loss, and regressions. Anything else it notices (a UX
+opinion, an edge case nobody specified) is recorded as an **observation** in
+`test-results.md` for you to decide on. QA finds defects; it doesn't get to
+invent requirements mid-run.
+
+Each project's build, lint, test, and install commands are **discovered per
+project**, not assumed. The Architect resolves them against your Gradle setup
+and records them in the plan's Section 0, so a project without `detekt`, or one
+that needs `:app:lintDebug` and a `demoDebug` variant, runs its own commands
+rather than failing on tasks it never defined.
+
 ### `/build-guided <vague idea>`
 
 Human-in-the-loop variant. PM → Architect → Coder → Tester with approval
@@ -60,11 +73,19 @@ it.
 ```
 
 The Architect writes the plan, then `@adt-android-architect-reviewer` reviews
-it; the Coder implements, then `@adt-android-code-reviewer` reviews the diff. On
-each gate, if the reviewer requests changes, the producing agent is re-run with
-the feedback — **at most twice** per gate. If a reviewer still isn't satisfied
-after the second re-run, the pipeline **stops and reports** rather than shipping
-work the reviewer rejected. A clean run then hands off to the Tester as usual.
+it; the Coder implements, then `@adt-android-code-reviewer` reviews the full set
+of changes — the diff *and* every new untracked file, which `git diff` doesn't
+show. On each gate, if the reviewer requests changes, the producing agent is
+re-run with the feedback — **at most twice** per gate. If a reviewer still isn't
+satisfied after the second re-run, the pipeline **stops and reports** rather
+than shipping work the reviewer rejected. A clean run then hands off to the
+Tester as usual.
+
+Fixes made *after* that review are reviewed too. When the Tester finds a defect
+and the Coder patches it, a **targeted re-review** of the patch runs before the
+re-test — so the tree you're handed has passed code review after its last
+change, not before it. Without that step, a fix could reach `READY TO MERGE`
+having been tested but never read.
 
 ### Planning-only commands
 
