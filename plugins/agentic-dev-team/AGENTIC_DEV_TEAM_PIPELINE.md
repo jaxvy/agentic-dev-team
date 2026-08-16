@@ -47,9 +47,7 @@ commands themselves.
 
 - **The build gate** — the full end-of-work check. `adt-android-coder` runs it
   before declaring done, and `adt-android-code-reviewer` runs it as part of its
-  review — unless it can prove the Coder's run still covers the current tree
-  (see the DONE-marker contract below). Fix in-scope failures before handing off
-  to `adt-android-tester`.
+  review. Fix in-scope failures before handing off to `adt-android-tester`.
 
   ```
   ./gradlew assembleDebug lint detekt testDebugUnitTest
@@ -66,26 +64,6 @@ commands themselves.
   ./gradlew lint detekt testDebugUnitTest
   ```
 
-## The Working-Tree Fingerprint
-
-`adt-android-coder` reports this with its DONE marker and
-`adt-android-code-reviewer` re-computes it. A match is what lets the reviewer
-record the gate as already satisfied instead of running the identical command
-on an identical tree. As with the checks above, refer to it by name elsewhere —
-prompts must not restate the commands.
-
-```
-git status --porcelain
-{ git diff; git ls-files -o --exclude-standard | sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done; } | shasum
-```
-
-The first command is the file list. The second is a content hash covering both
-edits to tracked files and the contents of new untracked ones. Both legs are
-required: when a section's work is entirely new files — the common case —
-`git diff` is empty, so a hash of it alone is the empty-input digest no matter
-what those files contain. Substitute `sha1sum` where `shasum` is unavailable;
-the Coder and the reviewer must use the same one.
-
 ## Verdict and DONE Markers
 
 Each producing agent ends its turn with its own DONE marker; the orchestrator
@@ -95,13 +73,6 @@ waits on that marker before advancing.
 - `adt-android-architect` → `✅ ARCHITECT DONE`
 - `adt-android-coder` → `✅ CODER DONE`
 - `adt-android-tester` → `✅ TESTER DONE`
-
-`adt-android-coder` reports two extra pieces just above its marker line, which
-the code reviewer depends on: the tail of the build gate's own output (the task
-list and the `BUILD SUCCESSFUL` or failure line), and the working-tree
-fingerprint defined above. The reviewer re-computes that fingerprint itself; a
-match is what lets it skip a re-run of the identical gate on an identical tree,
-and anything else means it re-runs. The marker itself stays the last line.
 
 Each reviewer ends with **exactly one** verdict marker as its final line:
 
@@ -118,11 +89,6 @@ required changes.
 - Reviewers are read-only — they never edit the plan or the code. The producing
   agent applies every fix: `adt-android-architect` for plan feedback,
   `adt-android-coder` for code feedback.
-- On each re-run, the producing agent appends a short
-  `## Revision Notes (attempt N)` section to its artifact listing what changed,
-  so downstream agents can see how the artifact drifted.
-  `adt-android-coder` has no markdown artifact — it lists what changed in its
-  `✅ CODER DONE` message instead, and never edits the plan to record it.
 
 ---
 
@@ -147,21 +113,6 @@ in each agent file (`opus` for adt-android-pm/adt-android-architect and both
 reviewers, `sonnet` for adt-android-coder and adt-android-tester) are documented
 for reference; in Antigravity, all subagents inherit the user's globally selected
 model — select the strongest available model for full pipeline runs.
-
-## The Structured STOP Report
-
-Every STOP path in `/build-auto`, `/build-auto-reviewed`, and `/build-guided`
-ends with this block, so a stopped run is a resume point rather than a dead end:
-
-```
-⛔ PIPELINE STOPPED — <phase>
-Reason: <one line>
-Artifacts so far: <paths + git status summary>
-Resume: re-run /<command> <original argument> — it will resume at <phase>.
-```
-
-Use it verbatim — the same shape at every stop is what makes a stop readable
-without re-reading the transcript.
 
 ## Approval Gates
 
@@ -191,20 +142,15 @@ Act on the reviewer's verdict marker (the markers are defined in Part A):
 - `🔧 PLAN CHANGES REQUESTED` / `🔧 CODE CHANGES REQUESTED` → re-run the
   producing agent with the reviewer's numbered feedback, then review again.
 
-When delegating to `adt-android-code-reviewer`, pass through the build-gate
-result and working-tree fingerprint from the Coder's `✅ CODER DONE` message.
-The reviewer re-verifies that fingerprint itself before deciding whether the
-gate still needs re-running.
-
 On the 2nd re-run, pass the producing agent all prior numbered feedback (both
 rounds), marking items the reviewer previously accepted as resolved.
 
 Each gate allows **at most 2 re-runs** (3 production attempts total). If the
 reviewer still requests changes after the 2nd re-run, the orchestrator **STOPS
-the entire pipeline** with the structured STOP report above, naming the gate and
-the unresolved feedback. It does not advance to later phases. Reviewers are
-read-only and the producing agent applies all fixes — see Part A,
-"Producing-Agent Obligations During a Reviewer Loop".
+the entire pipeline** and reports to the user: the gate, the unresolved
+feedback, and the current artifact/diff state. It does not advance to later
+phases. Reviewers are read-only and the producing agent applies all fixes — see
+Part A, "Producing-Agent Obligations During a Reviewer Loop".
 
 ## Orchestration Workflow (Antigravity)
 
@@ -218,10 +164,9 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`.
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
-   - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded Coder →
-     re-test loop the command file defines (max 2 iterations), then STOP with the
-     structured STOP report if it is still failing. A run never ends by declaring
-     a `NEEDS FIXES` feature complete.
+   - **Tester Verdict**: on a `NEEDS FIXES` verdict, STOP and report the failing
+     cases and the test report's "Recommendations for Coder". A run never ends by
+     declaring a `NEEDS FIXES` feature complete.
 3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
 
 ## Native Workflow Registration

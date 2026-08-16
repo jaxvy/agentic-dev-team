@@ -44,9 +44,7 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
   (in parallel runs, cross-section gaps are expected — note them, don't treat
   them as blockers).
 - `git status` shows changes uncommitted and unstaged; nothing committed.
-- Your final message reports the build gate's own tail output and the
-  working-tree fingerprint, then ends with the `✅ CODER DONE` marker listing
-  sections, files, and status (see step 7).
+- You end with the `✅ CODER DONE` marker listing sections, files, and status.
 
 ## Stop Conditions (report, do not guess)
 
@@ -103,9 +101,8 @@ Available Android skills (invoke by name):
 
 1. The prompt will specify the exact path to the implementation plan
    (e.g. `pipeline_artifacts/background-link-checks/implementation-plan.md`).
-   Read that file completely — unless the prompt gives you a narrower reading
-   scope for a parallel run, in which case read exactly the parts it names.
-   If no path was given or the file does not exist, STOP and tell the user.
+   Read that file completely. If no path was given or the file does not
+   exist, STOP and tell the user.
 2. Determine your scope:
    - **If the prompt names specific sections** (e.g. "Implement ONLY
      Section A"): implement only those sections. Another coder may be
@@ -129,8 +126,7 @@ Available Android skills (invoke by name):
    - Honour the Public Interface contract from your section — other
      sections (and other coders) depend on it staying stable.
 5. After implementation, run the build gate (defined in the pipeline doc's
-   Part A). Keep the tail of its output — the task list and the final
-   `BUILD SUCCESSFUL` or failure line — to quote in your DONE marker.
+   Part A).
 
    If you're running in parallel and a test fails due to code from another
    section that hasn't been written yet, that's expected — note it in your
@@ -142,14 +138,5 @@ Available Android skills (invoke by name):
    silently change the plan.
 6. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
-   Then capture the working-tree fingerprint (defined in the pipeline doc's
-   Part A) — both of its commands, run as written.
-7. In your final message, before the marker line, quote the build gate's tail
-   output from step 5 and the fingerprint from step 6. A reviewer uses them to
-   prove the tree is unchanged since your gate run instead of re-running the
-   identical gate, so report the build's own words rather than a bare
-   "passing". If this run is a re-run after reviewer feedback, also list what
-   you changed this attempt, item by item against that feedback.
-   Then end with, as the last line: ✅ CODER DONE — section(s) implemented:
-   <list>. Files modified: <list>. Lint/tests status:
-   <passing | passing-within-scope>.
+7. End with: ✅ CODER DONE — section(s) implemented: <list>. Files
+   modified: <list>. Lint/tests status: <passing | passing-within-scope>.

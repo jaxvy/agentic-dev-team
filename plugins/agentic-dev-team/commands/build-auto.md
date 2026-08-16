@@ -20,9 +20,6 @@ subagent you spawn, alongside the artifact paths you already pass.
 This is the /build-auto flow — assumes the feature is already understood.
 No PM phase. If the request is vague, suggest the user run /build-guided instead.
 
-Every STOP below means: stop the pipeline and report using the **structured STOP
-report** defined in the pipeline doc's Part B.
-
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request.
   Wait for ✅ ARCHITECT DONE.
@@ -54,11 +51,6 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
         - Explicit instruction: "Implement ONLY Section X. Do not touch
           files outside the file list for Section X. Other coders are
           working on other sections concurrently."
-        - Reading scope: "Read the plan's Section 1, every section's Files
-          list in Section 3, your own assigned section in full (its files,
-          public interface, and tests required), and the Public Interface
-          blocks of any sections yours depends on. You may skip the Section
-          2.2 code samples belonging to files outside your own file list."
       Wait for ALL coders in the group to declare ✅ CODER DONE before
       starting the next group.
       After a group finishes, run the cross-section check (defined in the
@@ -68,28 +60,19 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
       group's boundary (or the final build gate) covers it.
 
   If any coder reports a problem with its section (e.g. spec issue,
-  unexpected file conflict), STOP rather than continuing.
+  unexpected file conflict), STOP the pipeline and report to the user
+  rather than continuing.
 
 Phase 3 — Tester:
   Delegate to the `adt-android-tester` subagent.
   Pass: PLAN_PATH
   Wait for ✅ TESTER DONE.
 
-Phase 3F — Tester fix loop (max 2 iterations):
-  Read the verdict from `test-results.md`. On READY TO MERGE, go to the
-  summary. On NEEDS FIXES, iterate (N = 1, then 2):
-    Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
-    report's "Recommendations for Coder" section verbatim, instructing it to
-    fix exactly those failures. Wait for ✅ CODER DONE.
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
-    `test-results.md`, instructing it to re-run the failed cases and the
-    happy path — other previously-passing cases only if the fix plausibly
-    affects them. Wait for ✅ TESTER DONE.
-    On READY TO MERGE, go to the summary.
-  After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
-  declare the run complete, and do not start a 3rd iteration.
+When complete, summarise the verdict from the test-results.md in the same
+directory as PLAN_PATH. Also report whether parallel execution was used and
+how many adt-android-coder subagents ran, so the user can gauge token cost.
 
-When complete, summarise the final verdict from the test-results.md in the same
-directory as PLAN_PATH, including how many fix iterations ran. Also report
-whether parallel execution was used and how many adt-android-coder subagents
-ran, so the user can gauge token cost.
+If the verdict is NEEDS FIXES, say so plainly — the feature is not done. Report
+the failing cases and the test report's "Recommendations for Coder" section, and
+suggest re-running the adt-android-coder with it as input. Never present a
+NEEDS FIXES run as a completed feature.

@@ -16,9 +16,9 @@ whether automated reviewers gate each phase); the two `plan-*` commands run just
 one early phase and stop, so you can research or design without committing to a
 build.
 
-If the Tester ends on `NEEDS FIXES`, the Coder gets up to **two** fix-and-retest
-attempts. If it still fails, the run stops and says so rather than reporting a
-feature that doesn't work.
+If the Tester ends on `NEEDS FIXES`, the run stops and says so — reporting the
+failing cases and what the Coder should fix — rather than presenting a feature
+that doesn't work as complete.
 
 ### `/build-guided <vague idea>`
 

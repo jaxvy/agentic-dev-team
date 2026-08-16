@@ -24,9 +24,6 @@ After each phase, pause and ask the user to type one of:
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
-Every STOP below means: stop the pipeline and report using the **structured STOP
-report** defined in the pipeline doc's Part B.
-
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
@@ -75,13 +72,8 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     IF Parallel-safe is YES and user approved:
       For each Execution Group in order:
         Spawn N `adt-android-coder` subagents in parallel — one per section.
-        Each receives PLAN_PATH, explicit "implement ONLY Section X"
-        instructions, and this reading scope: "Read the plan's Section 1,
-        every section's Files list in Section 3, your own assigned section in
-        full (its files, public interface, and tests required), and the Public
-        Interface blocks of any sections yours depends on. You may skip the
-        Section 2.2 code samples belonging to files outside your own file
-        list."
+        Each receives PLAN_PATH and explicit "implement ONLY Section X"
+        instructions.
         Wait for all coders in the group to declare ✅ CODER DONE.
         Run the cross-section check (defined in the pipeline doc's Part A)
         between groups — unless the group contained exactly one section, in
@@ -99,18 +91,8 @@ Phase 4 — Tester (after approval):
   Wait for ✅ TESTER DONE.
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH.
-  Then ask the user: `approve` to finish, `revise: <feedback>` to send the
-  failures back to the Coder, or `stop`.
 
-  On `revise:`, run the fix loop (max 2 iterations):
-    Spawn ONE `adt-android-coder` subagent with PLAN_PATH, the user's
-    feedback, and the test report's "Recommendations for Coder" section
-    verbatim, instructing it to fix exactly those failures. Wait for
-    ✅ CODER DONE.
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
-    `test-results.md`, instructing it to re-run the failed cases and the
-    happy path — other previously-passing cases only if the fix plausibly
-    affects them. Wait for ✅ TESTER DONE, then return to this gate with the
-    fresh results.
-    After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
-    3rd iteration.
+  If the verdict is NEEDS FIXES, say so plainly — the feature is not done.
+  Report the failing cases and the test report's "Recommendations for Coder"
+  section, and suggest re-running the adt-android-coder with it as input.
+  Never present a NEEDS FIXES run as a completed feature.
