@@ -37,9 +37,8 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    worst failure available to you.
 
    Before you reach a verdict, confirm every file in the manifest was reviewed.
-   If the manifest and the Coder's reported fingerprint disagree about which
-   files exist, the tree moved under you — re-build the manifest and re-run the
-   build gate.
+   If the manifest changes while you are reviewing, the tree moved under you —
+   re-build the manifest and re-run the build gate.
 2. **Plan fidelity.** Every change the plan specified is present; nothing the
    plan did *not* call for was added (no scope creep, no unrequested
    refactors). Public-interface contracts from the plan are honoured.
@@ -54,24 +53,6 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    plan exists. Never substitute your own guess at the project's Gradle tasks.
    In-scope failures are blockers. Use the Skill tool for any Android area a
    skill covers when judging API usage.
-
-   If the orchestrator provides a build-gate result, confirm the tree is
-   unchanged since that run — re-compute the working-tree fingerprint (defined
-   in the pipeline doc's Part A) yourself and compare both of its parts against
-   what the Coder reported — and if it matches, record the gate as already
-   satisfied instead of re-running it. Re-run the gate if no result was
-   provided, either part of the fingerprint differs, the Coder reported a
-   fingerprint that is not the one Part A defines, the reported output does not
-   show the gate actually completing, or the Coder reported
-   "passing-within-scope" from a parallel run.
-6. **Test adequacy.** The tests the plan required exist, exercise the edge
-   cases the plan names, and would fail if the feature regressed.
-
-If this is a re-review after your own CHANGES REQUESTED verdict, first verify
-each item of your previous numbered feedback was addressed, then spot-check only
-what changed since that review; do a full review only on the first pass. If the
-producing agent rewrote the artifact wholesale rather than editing it, "what
-changed" is the whole artifact — review it fully.
 
 ## Targeted Re-Review (after a Tester-driven fix)
 
@@ -95,8 +76,7 @@ the Coder worked from (the test report's blocking findings). In that mode:
   specified is scope creep arriving through the back door. Flag it: the Tester
   is not allowed to create requirements, so a blocking finding should always
   trace back to the feature request, the plan, or the project's conventions.
-- **Re-run the build gate** unless the fingerprint proves the tree is unchanged
-  since the Coder's own gate run — the same rule as a first-pass review.
+- **Re-run the build gate** — the same rule as a first-pass review.
 
 End with the usual verdict marker. Only `✅ CODE APPROVED` lets the re-test
 proceed; the targeted loop allows just one Coder re-run before the orchestrator

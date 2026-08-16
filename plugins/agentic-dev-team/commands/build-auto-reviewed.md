@@ -32,9 +32,6 @@ the request is vague, suggest the user run /build-guided instead.
   pipeline** and report the phase and the unresolved feedback. Do not proceed
   to later phases.
 
-Every STOP below means: stop the pipeline and report using the **structured STOP
-report** defined in the pipeline doc's Part B.
-
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request.
   Wait for ✅ ARCHITECT DONE.
@@ -73,11 +70,6 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
         - Explicit instruction: "Implement ONLY Section X. Do not touch
           files outside the file list for Section X. Other coders are
           working on other sections concurrently."
-        - Reading scope: "Read the plan's Section 1, every section's Files
-          list in Section 3, your own assigned section in full (its files,
-          public interface, and tests required), and the Public Interface
-          blocks of any sections yours depends on. You may skip the Section
-          2.2 code samples belonging to files outside your own file list."
       Wait for ALL coders in the group to declare ✅ CODER DONE before
       starting the next group.
       After a group finishes, run the cross-section check (defined in the
@@ -92,21 +84,14 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
 Phase 2R — Code review gate (max 2 re-runs):
   After ALL coding for the feature is complete, delegate to the
   `adt-android-code-reviewer` subagent. Pass PLAN_PATH (it reviews the
-  uncommitted diff against the plan and the project's conventions), plus the
-  build-gate result the Coder reported just above its ✅ CODER DONE marker,
-  verbatim: the gate's tail output and both parts of the working-tree
-  fingerprint (defined in the pipeline doc's Part A). The reviewer re-verifies
-  that fingerprint itself and re-runs the gate if it no longer matches. If
-  several coders ran in parallel, say so and pass each report — the reviewer
-  will re-run the gate in that case.
+  uncommitted diff against the plan and the project's conventions).
   - On `✅ CODE APPROVED`: continue to Phase 3.
   - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder to address the feedback —
     spawn ONE `adt-android-coder` subagent with PLAN_PATH and the reviewer's
     numbered feedback, instructing it to fix exactly those points (regardless of
     the parallel-safety decision; fixes are usually small and cross-cutting).
-    Wait for ✅ CODER DONE, then review again — passing the reviewer the fresh
-    gate result and fingerprint from that re-run, not the earlier one. After
-    the 2nd failed re-run, STOP and report (see protocol).
+    Wait for ✅ CODER DONE, then review again. After the 2nd failed re-run,
+    STOP and report (see protocol).
 
 Phase 3 — Tester:
   Delegate to the `adt-android-tester` subagent.
@@ -124,9 +109,8 @@ Phase 3F — Tester fix loop (max 2 iterations):
     Targeted re-review — the Coder just mutated code that Phase 2R approved,
     which invalidates that approval (pipeline doc Part A, "Review Currency").
     Delegate to `adt-android-code-reviewer`, stating that this is a TARGETED
-    RE-REVIEW and passing: PLAN_PATH, the fix instructions the Coder was given,
-    and the fresh build-gate result and working-tree fingerprint from this
-    Coder run.
+    RE-REVIEW and passing: PLAN_PATH and the fix instructions the Coder was
+    given.
     - On `✅ CODE APPROVED`: proceed to the re-test below.
     - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
       feedback, then re-review. This targeted loop allows **at most 1 re-run**.

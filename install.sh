@@ -49,7 +49,6 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
 # ---------- markers ----------
 GITIGNORE_MARK_START="# agentic-dev-team:start (managed by install.sh — do not edit by hand)"
-GITIGNORE_MARK_NOTE="# This block is also install-state used for stale-cleanup — hand-edits break sync."
 GITIGNORE_MARK_END="# agentic-dev-team:end"
 AGENTS_MARK_START="<!-- agentic-dev-team:start (managed by install.sh — do not edit) -->"
 AGENTS_MARK_END="<!-- agentic-dev-team:end -->"
@@ -180,7 +179,6 @@ rewrite_gitignore_block() {
     {
       [ -s "$tmp" ] && echo ""
       echo "$GITIGNORE_MARK_START"
-      echo "$GITIGNORE_MARK_NOTE"
       while IFS= read -r p; do
         [ -z "$p" ] && continue
         echo "/$p"

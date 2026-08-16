@@ -24,9 +24,6 @@ After each phase, pause and ask the user to type one of:
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
-Every STOP below means: stop the pipeline and report using the **structured STOP
-report** defined in the pipeline doc's Part B.
-
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
@@ -75,13 +72,8 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     IF Parallel-safe is YES and user approved:
       For each Execution Group in order:
         Spawn N `adt-android-coder` subagents in parallel — one per section.
-        Each receives PLAN_PATH, explicit "implement ONLY Section X"
-        instructions, and this reading scope: "Read the plan's Section 1,
-        every section's Files list in Section 3, your own assigned section in
-        full (its files, public interface, and tests required), and the Public
-        Interface blocks of any sections yours depends on. You may skip the
-        Section 2.2 code samples belonging to files outside your own file
-        list."
+        Each receives PLAN_PATH and explicit "implement ONLY Section X"
+        instructions.
         Wait for all coders in the group to declare ✅ CODER DONE.
         Run the cross-section check (defined in the pipeline doc's Part A)
         between groups — unless the group contained exactly one section, in

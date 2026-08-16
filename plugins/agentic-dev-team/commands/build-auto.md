@@ -20,9 +20,6 @@ subagent you spawn, alongside the artifact paths you already pass.
 This is the /build-auto flow — assumes the feature is already understood.
 No PM phase. If the request is vague, suggest the user run /build-guided instead.
 
-Every STOP below means: stop the pipeline and report using the **structured STOP
-report** defined in the pipeline doc's Part B.
-
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request.
   Wait for ✅ ARCHITECT DONE.
@@ -54,11 +51,6 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
         - Explicit instruction: "Implement ONLY Section X. Do not touch
           files outside the file list for Section X. Other coders are
           working on other sections concurrently."
-        - Reading scope: "Read the plan's Section 1, every section's Files
-          list in Section 3, your own assigned section in full (its files,
-          public interface, and tests required), and the Public Interface
-          blocks of any sections yours depends on. You may skip the Section
-          2.2 code samples belonging to files outside your own file list."
       Wait for ALL coders in the group to declare ✅ CODER DONE before
       starting the next group.
       After a group finishes, run the cross-section check (defined in the
