@@ -117,8 +117,22 @@ Phase 3F — Tester fix loop (max 2 iterations):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to the
   summary. On NEEDS FIXES, iterate (N = 1, then 2):
     Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
-    report's "Recommendations for Coder" section verbatim, instructing it to
-    fix exactly those failures. Wait for ✅ CODER DONE.
+    report's "Recommendations for Coder" section verbatim (blocking findings
+    only — the Tester's Observations section never drives a fix), instructing
+    it to fix exactly those failures. Wait for ✅ CODER DONE.
+
+    Targeted re-review — the Coder just mutated code that Phase 2R approved,
+    which invalidates that approval (pipeline doc Part A, "Review Currency").
+    Delegate to `adt-android-code-reviewer`, stating that this is a TARGETED
+    RE-REVIEW and passing: PLAN_PATH, the fix instructions the Coder was given,
+    and the fresh build-gate result and working-tree fingerprint from this
+    Coder run.
+    - On `✅ CODE APPROVED`: proceed to the re-test below.
+    - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
+      feedback, then re-review. This targeted loop allows **at most 1 re-run**.
+      If the reviewer still requests changes, **STOP** — do not re-test
+      unreviewed code and do not spend the remaining Tester iteration on it.
+
     Re-run `adt-android-tester` with PLAN_PATH and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
@@ -127,11 +141,17 @@ Phase 3F — Tester fix loop (max 2 iterations):
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
 
-  These fix iterations do not re-open Phase 2R: the code reviewer's bounded
-  re-runs and the Tester loop's are separate budgets.
+  The targeted re-review is what keeps the final tree bound to a code review:
+  a run may only reach READY TO MERGE with an approval that post-dates the last
+  code mutation. Its 1-re-run budget is per iteration and separate from Phase
+  2R's — a targeted re-review never re-opens Phase 2R's own budget, and never
+  re-reviews the whole feature.
 
 When complete, summarise the final verdict from the test-results.md in the same
-directory as PLAN_PATH, including how many fix iterations ran. Also report, for
-each review gate, how many re-runs were needed (0, 1, or 2) and whether parallel
-execution was used and how many adt-android-coder subagents ran, so the user can
-gauge token cost.
+directory as PLAN_PATH, including how many fix iterations ran and, for each one,
+the targeted re-review's verdict — so the user can see the final tree was
+reviewed after its last change. Note any Observations the Tester recorded as
+non-blocking, since those are decisions waiting on the user rather than work the
+pipeline did. Also report, for each review gate, how many re-runs were needed
+(0, 1, or 2) and whether parallel execution was used and how many
+adt-android-coder subagents ran, so the user can gauge token cost.
