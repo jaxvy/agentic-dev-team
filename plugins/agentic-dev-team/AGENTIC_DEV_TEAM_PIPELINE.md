@@ -31,7 +31,10 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
   - `adt-android-architect` writes `pipeline_artifacts/{slug}/implementation-plan.md`. Its `## 0. Verification Commands` block is the run's authority for the named commands below.
   - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`.
   - `adt-android-coder` produces no markdown — only uncommitted code changes in the working tree.
-  - `pipeline_artifacts/` must be git-ignored in the consuming project (install.sh adds it to the managed gitignore block automatically).
+  - `pipeline_artifacts/` must be git-ignored in the consuming project. Two mechanisms cover this, and they are deliberately redundant:
+    - `install.sh` adds `/pipeline_artifacts/` to the managed `.gitignore` block. This covers the per-project install path only.
+    - Whichever agent first creates the directory (`adt-android-pm`, or `adt-android-architect` in the auto flows) also writes `pipeline_artifacts/.gitignore` containing a single `*` line, which ignores the directory's contents and itself. This is the only thing covering a **plugin-only install**, where no `install.sh` run ever happened and the project's `.gitignore` is untouched.
+    - Why it matters: artifacts left visible to git land in the changed-file manifest below as untracked files, and the Coder's no-commit rule means a developer running `git add -A` would commit the run's scratch files into their repository.
 
 ## Handoff Protocol
 
@@ -45,18 +48,23 @@ These are the only Gradle verification commands the pipeline runs. Refer to
 them by name everywhere else — agent prompts and commands must not restate the
 commands themselves.
 
-- **The build gate** — the full end-of-work check. `adt-android-coder` runs it
-  before declaring done, and `adt-android-code-reviewer` runs it as part of its
-  review — unless it can prove the Coder's run still covers the current tree
-  (see the DONE-marker contract below). Fix in-scope failures before handing off
-  to `adt-android-tester`.
+- **The build gate** — the full end-of-work check. Run by
+  `adt-android-coder` before declaring done **in a sequential run**, and by
+  `adt-android-code-reviewer` as part of every review. Fix in-scope failures
+  before handing off to `adt-android-tester`.
 
-- **The cross-section check** — the cheaper between-groups check. The
-  orchestrator runs it after each parallel coder group that contained more than
-  one section, to catch cross-section issues before starting the next group. A
-  group of exactly one section has no cross-section interaction and its coder
-  has already run the build gate on that same tree, so the check is skipped
-  there. It is the build gate minus the assemble task.
+  Coders running **in parallel do not run it** — see "Gradle in a Parallel Run"
+  below. In a parallel run the gate is the orchestrator's job.
+
+- **The cross-section check** — the between-groups check, run by the
+  orchestrator after **every** parallel coder group, including a group that
+  contained only one section. It is the build gate minus the assemble task;
+  because its unit-test leg compiles the main sources, a compile error still
+  fails it.
+
+  It is never skipped in a parallel run. Parallel coders run no Gradle at all,
+  so this check is the only thing standing between a group and the next one —
+  a skipped check means that group's work was never verified by anything.
 
 - **The install command** — how `adt-android-tester` puts the build on the
   device before driving it. A failure here is a STOP, not something to work
@@ -90,6 +98,45 @@ module-qualified tasks (`:app:assembleDebug`, `:app:lintDebug`). Running a task
 the project does not define fails the whole invocation, so a resolved command
 that names a non-existent task is a defect — never "the project's build is
 broken".
+
+## Gradle in a Parallel Run
+
+When the orchestrator spawns several `adt-android-coder` subagents for one
+Execution Group, they all share a single working tree and a single Gradle
+project. **Only the orchestrator runs Gradle in that mode. Parallel coders run
+none.**
+
+This is not a style preference — concurrent Gradle invocations against one
+project directory contend on the locks under `.gradle/` and write to the same
+`build/` outputs, so they produce lock timeouts and non-deterministic failures
+rather than a trustworthy result. Worse, each coder's build would be compiling
+files its siblings are still editing, so a failure would say nothing about the
+coder that ran it.
+
+The division of labour:
+
+- **Parallel coder**: implements its section, runs `git status` to confirm
+  nothing is staged, and declares `✅ CODER DONE`. No `./gradlew`.
+- **Sequential coder** (the `Parallel-safe: NO` path, a reviewer-driven fix
+  re-run, or a Tester-driven fix): runs the build gate as normal. It is the only
+  agent touching the tree, so the result is meaningful.
+- **Orchestrator**: runs the cross-section check after every group.
+
+### When the cross-section check fails
+
+A failure here is in scope for the run — it is what the check exists to catch —
+so the orchestrator resolves it rather than reporting and stopping:
+
+1. Attribute each failure to the section that owns the file, using the plan's
+   per-section file lists.
+2. Re-spawn the owning `adt-android-coder` — one at a time, sequentially, never
+   concurrently — passing the plan path, its section, and the failing output.
+   A sequential fix coder *does* run the build gate, per the rule above.
+3. Re-run the cross-section check. Allow **at most 2 such rounds**; if it still
+   fails, STOP and report the failing output and the sections involved.
+4. If a failure cannot be attributed to any one section (a genuine integration
+   defect, or a contradiction between two sections' public interfaces), STOP and
+   report it as a plan defect — do not guess which coder should absorb it.
 
 ## The Changed-File Manifest
 
@@ -286,7 +333,7 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
    - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows). Wait until it outputs `✅ ARCHITECT DONE`.
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. When you run the cross-section check yourself between groups, take its command from the plan's Section 0 like every other agent — not from Part A's defaults.
+   - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded

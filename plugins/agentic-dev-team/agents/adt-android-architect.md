@@ -139,7 +139,16 @@ Available Android skills (invoke by name):
 
 ## Process
 
-1. **Establish the feature directory.**
+1. **Establish the feature directory.** Check the revision case first — it
+   overrides both flows below.
+   - **Revision run** (the prompt gives you an existing plan path plus
+     reviewer or user feedback): you are being re-invoked to revise a plan
+     that already exists. Read that plan in full, apply the numbered feedback,
+     and **rewrite that same file in place**. Do NOT derive a new slug and do
+     NOT create a second artifact directory — the orchestrator is still
+     tracking the original path, and a fork orphans the run. Keep the existing
+     slug even if the feature name has drifted. If the path you were given does
+     not exist, STOP and report rather than starting a fresh plan.
    - In /build-guided flow: the prompt will include the artifact directory
      path (e.g. `pipeline_artifacts/background-link-checks/`). Read
      `{dir}/feature.md` completely. If neither the path nor the file
@@ -148,6 +157,12 @@ Available Android skills (invoke by name):
      (lowercase, hyphens, no special chars — e.g. `recently-played-carousel`),
      then `mkdir -p pipeline_artifacts/{slug}`. Use `pipeline_artifacts/{slug}/`
      as the artifact directory for this run.
+
+   Whenever you create `pipeline_artifacts/` (any flow), also ensure
+   `pipeline_artifacts/.gitignore` exists containing a single `*` line. The
+   artifact directory is scratch space for the run and must never enter the
+   consuming project's history or the changed-file manifest. This is
+   idempotent — if the file is already there, leave it alone.
 
 2. **Survey the current codebase.** Use Glob and Grep to find:
    - Existing modules that this feature touches or duplicates
@@ -184,9 +199,10 @@ Available Android skills (invoke by name):
      the failure will look like broken code rather than a bad plan.
 
 4. **Write `pipeline_artifacts/{slug}/implementation-plan.md`** with this exact
-   structure:
+   structure. The template below is fenced with four backticks so that the
+   three-backtick blocks inside it are part of the template, not its end:
 
-   ```
+   ````
    # Implementation Plan: <feature name>
 
    ## 0. Verification Commands
@@ -452,7 +468,7 @@ Available Android skills (invoke by name):
    beyond the six based on feature specifics. Every action step must reference a
    selector from the UI Selectors table — do not write steps like "tap the Save
    button" without a testTag.)
-   ```
+   ````
 
 5. After writing the plan, briefly show the user the section headings
    (not the full plan) and confirm completion.

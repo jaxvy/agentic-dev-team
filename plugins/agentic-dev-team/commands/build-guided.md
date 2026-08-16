@@ -76,10 +76,13 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
         instructions.
         Wait for all coders in the group to declare ✅ CODER DONE.
         Run the cross-section check (defined in the pipeline doc's Part A)
-        between groups — unless the group contained exactly one section, in
-        which case skip it: there is no cross-section interaction within a
-        single section, and the next group's boundary (or the final build
-        gate) covers it.
+        after EVERY group, including a group that contained only one
+        section. Parallel coders run no Gradle themselves, so this check is
+        the only verification that group gets; never skip it.
+        On failure, follow "When the cross-section check fails" in Part A:
+        attribute the failures to the owning sections, re-spawn those coders
+        sequentially (one at a time) with the failing output, and re-check —
+        at most 2 rounds, then STOP and report to the user.
 
   When all coders are done, show the user the list of modified files
   (grouped by which coder produced them) and ask:

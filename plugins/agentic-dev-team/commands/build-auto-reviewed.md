@@ -72,11 +72,15 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
           working on other sections concurrently."
       Wait for ALL coders in the group to declare ✅ CODER DONE before
       starting the next group.
-      After a group finishes, run the cross-section check (defined in the
-      pipeline doc's Part A) once at the orchestrator level — unless the
-      group contained exactly one section, in which case skip it: there is
-      no cross-section interaction within a single section, and the next
-      group's boundary (or the final build gate) covers it.
+      After EVERY group — including a group that contained only one
+      section — run the cross-section check (defined in the pipeline doc's
+      Part A) once at the orchestrator level. Parallel coders run no Gradle
+      themselves, so this check is the only verification that group gets;
+      never skip it.
+      On failure, follow "When the cross-section check fails" in Part A:
+      attribute the failures to the owning sections, re-spawn those coders
+      sequentially (one at a time) with the failing output, and re-check —
+      at most 2 rounds, then STOP and report.
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP rather than continuing.

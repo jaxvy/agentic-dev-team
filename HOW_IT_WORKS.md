@@ -92,6 +92,15 @@ Two additional changes happen via **marker-fenced managed blocks** (not symlinks
 - `.gitignore` gains a small block listing the symlink paths above (since
   the symlink targets are per-developer absolute paths and can't be
   committed) plus `/pipeline_artifacts/`.
+
+  This block only exists on the install.sh path. On a **plugin-only install**
+  no `.gitignore` is ever touched, so the pipeline covers itself a second way:
+  whichever agent first creates the artifact directory also writes
+  `pipeline_artifacts/.gitignore` containing `*`, which ignores the directory's
+  contents and itself. Both mechanisms are harmless together. Without one of
+  them, run artifacts would surface as untracked files in the code reviewer's
+  changed-file manifest, and a developer running `git add -A` over the Coder's
+  deliberately-uncommitted tree would commit them.
 - `.agents/agents.md` gains a block containing the inlined persona stubs
   from this repo's `.agents/AGENTIC_DEV_TEAM.md`. Antigravity auto-loads
   `agents.md` into the system prompt as user_rules, so this is how

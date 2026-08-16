@@ -117,7 +117,17 @@ not an order-taker.
 6. When you have enough:
    a. Derive a short feature slug: lowercase, hyphens, no special chars
       (e.g. "Automatic Background Link Checks" → `background-link-checks`).
-   b. Ensure the directory `pipeline_artifacts/{slug}/` exists.
+
+      **Revision run**: if the prompt gave you an existing `feature.md` path
+      plus user feedback (a `revise:` gate), you are revising that spec, not
+      writing a new one. Keep its existing slug, rewrite that same file in
+      place, and skip the slug derivation above — the orchestrator is still
+      tracking the original path, and a second directory orphans the run.
+   b. Ensure the directory `pipeline_artifacts/{slug}/` exists, and that
+      `pipeline_artifacts/.gitignore` exists containing a single `*` line.
+      The artifact directory is scratch space for the run and must never enter
+      the consuming project's history or the changed-file manifest. Creating
+      the ignore file is idempotent — if it is already there, leave it alone.
    c. Write `pipeline_artifacts/{slug}/feature.md` with:
 
    ```
