@@ -29,8 +29,11 @@ the request is vague, suggest the user run /build-guided instead.
   agent, passing it the reviewer's numbered feedback, and review again.
 - A gate allows **at most 2 re-runs** (3 production attempts total). If the
   reviewer still requests changes after the 2nd re-run, **STOP the whole
-  pipeline** and report to the user: the phase, the unresolved feedback, and
-  the current artifact/diff state. Do not proceed to later phases.
+  pipeline** and report the phase and the unresolved feedback. Do not proceed
+  to later phases.
+
+Every STOP below means: stop the pipeline and report using the **structured STOP
+report** defined in the pipeline doc's Part B.
 
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request.
@@ -56,6 +59,13 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
     Wait for ✅ CODER DONE.
 
   IF Parallel-safe is YES:
+    Parallel-safety pre-check, before spawning anything: extract each
+    section's file list from the plan and verify that no file appears in two
+    sections of the same group. This is a mechanical comparison of the file
+    lists, not a judgment call. On overlap, STOP naming the overlapping files
+    and the sections that claim them — do not spawn coders against a plan
+    with a parallelization bug.
+
     For each Execution Group in order (Group 1, then Group 2, etc):
       Spawn N `adt-android-coder` subagents IN PARALLEL — one per section in the group.
       Each coder receives:
@@ -77,8 +87,7 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
       group's boundary (or the final build gate) covers it.
 
   If any coder reports a problem with its section (e.g. spec issue,
-  unexpected file conflict), STOP the pipeline and report to the user
-  rather than continuing.
+  unexpected file conflict), STOP rather than continuing.
 
 Phase 2R — Code review gate (max 2 re-runs):
   After ALL coding for the feature is complete, delegate to the
@@ -104,9 +113,25 @@ Phase 3 — Tester:
   Pass: PLAN_PATH
   Wait for ✅ TESTER DONE.
 
-When complete, summarise the verdict from the test-results.md in the same
-directory as PLAN_PATH. Also report, for each review gate, how many re-runs were
-needed (0, 1, or 2) and whether parallel execution was used and how many
-adt-android-coder subagents ran, so the user can gauge token cost. If verdict is
-NEEDS FIXES, suggest re-running the adt-android-coder with the recommendations
-section as input.
+Phase 3F — Tester fix loop (max 2 iterations):
+  Read the verdict from `test-results.md`. On READY TO MERGE, go to the
+  summary. On NEEDS FIXES, iterate (N = 1, then 2):
+    Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
+    report's "Recommendations for Coder" section verbatim, instructing it to
+    fix exactly those failures. Wait for ✅ CODER DONE.
+    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    `test-results.md`, instructing it to re-run the failed cases and the
+    happy path — other previously-passing cases only if the fix plausibly
+    affects them. Wait for ✅ TESTER DONE.
+    On READY TO MERGE, go to the summary.
+  After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
+  declare the run complete, and do not start a 3rd iteration.
+
+  These fix iterations do not re-open Phase 2R: the code reviewer's bounded
+  re-runs and the Tester loop's are separate budgets.
+
+When complete, summarise the final verdict from the test-results.md in the same
+directory as PLAN_PATH, including how many fix iterations ran. Also report, for
+each review gate, how many re-runs were needed (0, 1, or 2) and whether parallel
+execution was used and how many adt-android-coder subagents ran, so the user can
+gauge token cost.
