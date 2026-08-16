@@ -24,6 +24,9 @@ After each phase, pause and ask the user to type one of:
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
+Every STOP below means: stop the pipeline and report using the **structured STOP
+report** defined in the pipeline doc's Part B.
+
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
@@ -48,6 +51,14 @@ Phase 2 — Architect (after approval):
 
 Phase 3 — Coder (after approval, execution strategy decided by Architect):
   Read PLAN_PATH Section 3. Check the **Parallel-safe** field.
+
+  If Parallel-safe is YES, run the parallel-safety pre-check before anything
+  else: extract each section's file list from the plan and verify that no
+  file appears in two sections of the same group. This is a mechanical
+  comparison of the file lists, not a judgment call. On overlap, STOP naming
+  the overlapping files and the sections that claim them — do not spawn
+  coders against a plan with a parallelization bug, and do not ask the user
+  to approve one.
 
   Before spawning coders, tell the user:
     "The Architect decided this feature is [Parallel-safe: YES/NO].
@@ -88,3 +99,18 @@ Phase 4 — Tester (after approval):
   Wait for ✅ TESTER DONE.
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH.
+  Then ask the user: `approve` to finish, `revise: <feedback>` to send the
+  failures back to the Coder, or `stop`.
+
+  On `revise:`, run the fix loop (max 2 iterations):
+    Spawn ONE `adt-android-coder` subagent with PLAN_PATH, the user's
+    feedback, and the test report's "Recommendations for Coder" section
+    verbatim, instructing it to fix exactly those failures. Wait for
+    ✅ CODER DONE.
+    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    `test-results.md`, instructing it to re-run the failed cases and the
+    happy path — other previously-passing cases only if the fix plausibly
+    affects them. Wait for ✅ TESTER DONE, then return to this gate with the
+    fresh results.
+    After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
+    3rd iteration.

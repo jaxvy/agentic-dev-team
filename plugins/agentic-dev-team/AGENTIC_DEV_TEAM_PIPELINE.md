@@ -148,6 +148,21 @@ reviewers, `sonnet` for adt-android-coder and adt-android-tester) are documented
 for reference; in Antigravity, all subagents inherit the user's globally selected
 model — select the strongest available model for full pipeline runs.
 
+## The Structured STOP Report
+
+Every STOP path in `/build-auto`, `/build-auto-reviewed`, and `/build-guided`
+ends with this block, so a stopped run is a resume point rather than a dead end:
+
+```
+⛔ PIPELINE STOPPED — <phase>
+Reason: <one line>
+Artifacts so far: <paths + git status summary>
+Resume: re-run /<command> <original argument> — it will resume at <phase>.
+```
+
+Use it verbatim — the same shape at every stop is what makes a stop readable
+without re-reading the transcript.
+
 ## Approval Gates
 
 For `/build-guided`, pause for explicit user approval between PM, Architect,
@@ -186,10 +201,10 @@ rounds), marking items the reviewer previously accepted as resolved.
 
 Each gate allows **at most 2 re-runs** (3 production attempts total). If the
 reviewer still requests changes after the 2nd re-run, the orchestrator **STOPS
-the entire pipeline** and reports to the user: the gate, the unresolved
-feedback, and the current artifact/diff state. It does not advance to later
-phases. Reviewers are read-only and the producing agent applies all fixes — see
-Part A, "Producing-Agent Obligations During a Reviewer Loop".
+the entire pipeline** with the structured STOP report above, naming the gate and
+the unresolved feedback. It does not advance to later phases. Reviewers are
+read-only and the producing agent applies all fixes — see Part A,
+"Producing-Agent Obligations During a Reviewer Loop".
 
 ## Orchestration Workflow (Antigravity)
 
@@ -200,9 +215,13 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
    - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows). Wait until it outputs `✅ ARCHITECT DONE`.
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`.
+   - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`.
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
+   - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded Coder →
+     re-test loop the command file defines (max 2 iterations), then STOP with the
+     structured STOP report if it is still failing. A run never ends by declaring
+     a `NEEDS FIXES` feature complete.
 3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
 
 ## Native Workflow Registration
