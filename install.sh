@@ -131,6 +131,29 @@ is_our_symlink() {
   esac
 }
 
+# Print a file's octal mode, or empty if it doesn't exist.
+# stat's flags differ between GNU (-c) and BSD/macOS (-f).
+file_mode() {
+  local p="$1"
+  [ -f "$p" ] || { echo ""; return; }
+  stat -c '%a' "$p" 2>/dev/null || stat -f '%Lp' "$p" 2>/dev/null || echo ""
+}
+
+# Move a temp file into place without inheriting mktemp's 0600. Restores the
+# destination's previous mode, or falls back to the user's umask for a new file.
+install_tmp_over() {
+  local tmp="$1" dest="$2"
+  local mode
+  mode="$(file_mode "$dest")"
+  mv "$tmp" "$dest"
+  if [ -n "$mode" ]; then
+    chmod "$mode" "$dest"
+  else
+    # New file: apply umask to 666 the way a normal shell redirect would.
+    chmod "$(printf '%o' $(( 0666 & ~$(umask) )))" "$dest"
+  fi
+}
+
 # Ensure parent directory exists.
 ensure_parent_dir() {
   local p="$1"
@@ -189,7 +212,7 @@ rewrite_gitignore_block() {
   fi
 
   if [ -s "$tmp" ] || [ -f "$gi" ]; then
-    mv "$tmp" "$gi"
+    install_tmp_over "$tmp" "$gi"
   else
     rm -f "$tmp"
   fi
@@ -210,6 +233,11 @@ rewrite_agents_block() {
       $0 == e { skip=0; next }
       !skip { print }
     ' "$af" > "$tmp"
+    # Trim trailing blank lines left behind by the removed block, so that
+    # repeated install/uninstall cycles don't accumulate them. Interior blank
+    # lines in the developer's own content are preserved.
+    awk 'BEGIN{blank=0} { if ($0=="") { blank++; next } else { for(i=0;i<blank;i++) print ""; blank=0; print } }' "$tmp" > "${tmp}.2"
+    mv "${tmp}.2" "$tmp"
   fi
 
   if [ -n "$content" ]; then
@@ -227,7 +255,7 @@ rewrite_agents_block() {
   # Check whether resulting file is empty / whitespace only.
   if [ -s "$tmp" ] && grep -q '[^[:space:]]' "$tmp"; then
     ensure_parent_dir "$af"
-    mv "$tmp" "$af"
+    install_tmp_over "$tmp" "$af"
   else
     rm -f "$tmp"
     [ -f "$af" ] && rm -f "$af"

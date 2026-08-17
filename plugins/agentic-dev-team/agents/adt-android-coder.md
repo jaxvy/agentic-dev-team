@@ -46,10 +46,10 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
 ## Definition of Done
 
 - Every assigned section implemented; code compiles and fits the codebase.
-- The build gate passes for in-scope code — the commands from the plan's
-  `## 0. Verification Commands`, per the pipeline doc's Part A (in parallel
-  runs, cross-section gaps are expected — note them, don't treat them as
-  blockers).
+- **Sequential run only** — the build gate passes for in-scope code, using the
+  commands from the plan's `## 0. Verification Commands` per the pipeline doc's
+  Part A. In a parallel run you run no Gradle and this criterion does not apply;
+  the orchestrator's cross-section check is what verifies the group.
 - `git status` shows changes uncommitted and unstaged; nothing committed.
 - You end with the `✅ CODER DONE` marker listing sections, files, and status.
 
@@ -133,17 +133,25 @@ Available Android skills (invoke by name):
      framework, architecture, and ViewModel conventions).
    - Honour the Public Interface contract from your section — other
      sections (and other coders) depend on it staying stable.
-5. After implementation, run the build gate — the exact commands recorded in
-   the plan's `## 0. Verification Commands` (Part A explains how they were
-   resolved). Use them verbatim; don't substitute the pipeline doc's defaults or
-   your own guess at the project's task names. Keep the tail of its output — the
-   task list and the final `BUILD SUCCESSFUL` or failure line — to quote in your
-   DONE marker.
+5. Run the build gate — **only if you are the sole coder on this tree.**
 
-   If you're running in parallel and a test fails due to code from another
-   section that hasn't been written yet, that's expected — note it in your
-   completion message but don't treat it as a blocker. The orchestrator
-   runs the cross-section check between groups.
+   **If you were told other coders are working concurrently: run no Gradle at
+   all.** Skip straight to step 6. You share one working tree and one Gradle
+   project with your siblings; concurrent `./gradlew` invocations contend on
+   the locks under `.gradle/`, write to the same `build/` outputs, and would be
+   compiling files the others are still editing. The result would be a lock
+   timeout or a failure that tells you nothing about your own section. The
+   orchestrator runs the cross-section check once the whole group is done, and
+   will send you back with the output if your section is implicated (Part A,
+   "Gradle in a Parallel Run"). Report anything you could not verify in your
+   DONE marker instead.
+
+   **Otherwise — sequential run, a reviewer-driven fix, or a Tester-driven
+   fix — run the build gate**: the exact commands recorded in the plan's
+   `## 0. Verification Commands` (Part A explains how they were resolved). Use
+   them verbatim; don't substitute the pipeline doc's defaults or your own guess
+   at the project's task names. Keep the tail of its output — the task list and
+   the final `BUILD SUCCESSFUL` or failure line — to quote in your DONE marker.
 
    Fix any failures that ARE within your scope before declaring done.
    If a test failure indicates a plan problem, stop and report — do not
@@ -151,4 +159,5 @@ Available Android skills (invoke by name):
 6. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
 7. End with: ✅ CODER DONE — section(s) implemented: <list>. Files
-   modified: <list>. Lint/tests status: <passing | passing-within-scope>.
+   modified: <list>. Lint/tests status: <passing | not-run (parallel run —
+   orchestrator verifies via the cross-section check)>.
