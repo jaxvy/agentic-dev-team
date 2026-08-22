@@ -169,6 +169,40 @@ single line of its implementation.
 **Invariant**: every file this run changed is in the manifest, and every file in
 the manifest is reviewed.
 
+## Required Unit Tests
+
+Unit tests are **specified by `adt-android-architect` and written by
+`adt-android-coder`**. No other agent authors them: reviewers are read-only, and
+`adt-android-tester` drives the running app and writes no Kotlin at all. The
+contract runs through the plan, so every link has to hold:
+
+- **Section 1** of `implementation-plan.md` records the project's **Test
+  Stack** — the assertion, mocking, coroutine, and runner libraries the project
+  already uses, plus an existing test to mirror. Discovered from the version
+  catalog and test source sets, never assumed.
+- **Section 3** gives every section a **Tests required** field: the test file
+  path and one line per case, or `None — <reason>` where the section holds no
+  logic worth testing. `None` is a legitimate answer for pure wiring; padding a
+  section with tests that cannot fail is not.
+- **`adt-android-coder`** implements those cases as part of the section, using
+  only the libraries the plan names. A section whose required tests are missing
+  is not done.
+- **`adt-android-code-reviewer`** verifies they exist and are meaningful. A
+  missing case is a finding; so is a test that passes regardless of whether the
+  logic is correct; so is a testing dependency the plan never named.
+- **`adt-android-architect-reviewer`** verifies the fields were filled in at
+  all, since an empty field ships a section with no tests and nothing
+  downstream would notice.
+
+**Invariant**: every unit test the plan requires exists in the tree the
+developer is handed, and no agent introduces a testing dependency the plan did
+not name.
+
+The build gate's unit-test leg runs whatever tests exist in the tree — it
+cannot fail for a test that was never written. That is precisely why the
+requirement is carried in the plan and checked by a reviewer, rather than left
+to the gate.
+
 ## Verdict and DONE Markers
 
 Each producing agent ends its turn with its own DONE marker; the orchestrator

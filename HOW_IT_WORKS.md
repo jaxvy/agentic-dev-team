@@ -98,6 +98,37 @@ Without that rule a run can reach `READY TO MERGE` carrying code no reviewer eve
 read. Tests prove the feature behaves, not that the code making it behave is
 sound.
 
+### Required unit tests
+
+Unit tests are specified by the Architect and written by the Coder. No other
+agent authors them — reviewers are read-only, and the Tester drives the running
+app rather than writing Kotlin.
+
+The requirement travels in the plan. Section 1 records the project's **Test
+Stack**, discovered from its version catalog and an existing test, so the Coder
+uses the libraries the project already has rather than picking its own. Each
+section in Section 3 then carries a **Tests required** field naming the test
+file and one line per case.
+
+| Field value | What the Coder does |
+|---|---|
+| Concrete cases | Writes exactly those, with the Test Stack's libraries |
+| `None — <reason>` | Writes none, and says so in its DONE marker |
+| Empty or missing | Caught by the plan reviewer as a blocker |
+
+Both reviewers hold a side of this. The plan reviewer checks the fields were
+filled in and that the cases are worth writing — a case that only asserts a
+constructor assigned its arguments is flagged as fluff, and a `None` on a
+ViewModel full of state transitions is a blocker. The code reviewer then checks
+the tests actually exist and that each one would fail if the logic were wrong.
+
+> **Invariant:** every unit test the plan requires exists in the tree you are
+> handed, and no agent adds a testing dependency the plan did not name.
+
+The build gate runs the project's unit-test task, but that only executes tests
+that exist — it can never fail for one that was never written. That is why the
+requirement lives in the plan and is checked by a reviewer instead.
+
 ### Blocking findings and observations
 
 The Tester classifies everything it finds, and only one class drives code

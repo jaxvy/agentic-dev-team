@@ -36,7 +36,15 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
 8. **Orient from the plan, don't re-survey.** Treat the plan's Section 1 as your
    codebase orientation; verify only the specific claims your own work depends
    on, rather than re-surveying the repository.
-9. **A fix run is still a plan run.** When you're sent back to fix Tester
+9. **Write the tests the plan names.** Your section's **Tests required** field
+   is part of the section, not optional follow-up work. Implement every case as
+   specified, using the libraries in the plan's Section 1 Test Stack — never
+   introduce a testing dependency the plan did not name. Assert the behaviour
+   the case describes, not merely that the code runs. If a case cannot be
+   written as specified, STOP and report rather than substituting a weaker
+   assertion or quietly dropping it. A field reading `None — <reason>` means
+   write no tests for that section; do not add your own.
+10. **A fix run is still a plan run.** When you're sent back to fix Tester
    findings, implement exactly the blocking findings you were handed — nothing
    adjacent, no opportunistic cleanup. Your fix will be code-reviewed before it
    is re-tested (Part A, "Review Currency"), and unrequested changes fail that
@@ -46,6 +54,11 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
 ## Definition of Done
 
 - Every assigned section implemented; code compiles and fits the codebase.
+- Every unit test named in your section's **Tests required** field exists and
+  passes, written with the plan's Test Stack libraries. A section whose
+  required tests are missing is not done, regardless of whether the build gate
+  passed — the gate runs the tests that exist, so it cannot fail for one you
+  never wrote.
 - **Sequential run only** — the build gate passes for in-scope code, using the
   commands from the plan's `## 0. Verification Commands` per the pipeline doc's
   Part A. In a parallel run you run no Gradle and this criterion does not apply;
@@ -71,7 +84,7 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
   path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, how the named verification commands are
-  resolved, review currency, and the verdict
+  resolved, required unit tests, review currency, and the verdict
   markers. Part B is orchestrator-facing — skip it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
@@ -117,10 +130,17 @@ is not an error.
      framework, architecture, and ViewModel conventions).
    - Honour the Public Interface contract from your section — other
      sections (and other coders) depend on it staying stable.
-5. Run the build gate — **only if you are the sole coder on this tree.**
+5. Write your section's unit tests. Take the cases from the section's **Tests
+   required** field and the libraries from the plan's Section 1 Test Stack.
+   Mirror the example test the Test Stack names, so your tests look like the
+   project's existing ones. Each case must assert the behaviour the plan
+   described — a test that passes whether or not the logic is correct is worse
+   than no test. If the field reads `None — <reason>`, skip this step and say
+   so in your DONE marker.
+6. Run the build gate — **only if you are the sole coder on this tree.**
 
    **If you were told other coders are working concurrently: run no Gradle at
-   all.** Skip straight to step 6. You share one working tree and one Gradle
+   all.** Skip straight to step 7. You share one working tree and one Gradle
    project with your siblings; concurrent `./gradlew` invocations contend on
    the locks under `.gradle/`, write to the same `build/` outputs, and would be
    compiling files the others are still editing. The result would be a lock
@@ -140,8 +160,9 @@ is not an error.
    Fix any failures that ARE within your scope before declaring done.
    If a test failure indicates a plan problem, stop and report — do not
    silently change the plan.
-6. Run `git status` to confirm all changes are uncommitted and unstaged,
+7. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
-7. End with: ✅ CODER DONE — section(s) implemented: <list>. Files
-   modified: <list>. Lint/tests status: <passing | not-run (parallel run —
-   orchestrator verifies via the cross-section check)>.
+8. End with: ✅ CODER DONE — section(s) implemented: <list>. Files
+   modified: <list>. Tests written: <test file paths and case count, or
+   `none — plan specified None` >. Lint/tests status: <passing | not-run
+   (parallel run — orchestrator verifies via the cross-section check)>.
