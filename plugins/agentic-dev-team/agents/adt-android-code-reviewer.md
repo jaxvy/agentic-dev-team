@@ -51,8 +51,8 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
 5. **Build & test gate.** Run the build gate — resolved per the pipeline doc's
    Part A, which means the plan's `## 0. Verification Commands` block when a
    plan exists. Never substitute your own guess at the project's Gradle tasks.
-   In-scope failures are blockers. Use the Skill tool for any Android area a
-   skill covers when judging API usage.
+   In-scope failures are blockers. Use the Skill tool for any area a skill
+   covers when judging API usage.
 
 ## Targeted Re-Review (after a Tester-driven fix)
 

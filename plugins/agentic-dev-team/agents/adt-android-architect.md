@@ -109,33 +109,21 @@ Coder guesses, and the guess is your bug.
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 
-## Use Android skills
+## Use skills
 
-Before designing any feature area, check whether a relevant Android skill
-is available and invoke it via the Skill tool. Skills encode official Google
-guidance and should be preferred over from-scratch design. Reference every
-skill you invoked in the plan so the Coder can re-invoke them.
+Before designing any feature area, check your available-skills listing for a
+skill that covers it and invoke it via the Skill tool before designing from
+scratch. Skills carry the consuming project's own conventions and vetted
+platform guidance; prefer them over your own defaults.
 
-Before invoking any skill, confirm it appears in your available-skills
-listing; if it is not available, proceed without it — do not retry or
-treat the absence as an error.
+Judge relevance from the descriptions in your listing, not from memory. Never
+assume a skill exists, and never infer its contents from its name — a skill you
+did not invoke did not inform your work. If nothing in the listing covers the
+area, or you have no Skill tool available, proceed without one. That is not an
+error.
 
-Available Android skills (invoke by name):
-- `navigation-3` — Jetpack Navigation 3, deep links, backstacks, scenes
-- `adaptive` — adaptive layouts, foldables, tablets, MediaQuery, nav rail
-- `styles` — Compose Styles API, component themes, Modifier.styleable
-- `edge-to-edge` — insets migration, nav bar / status bar, IME
-- `testing-setup` — unit, UI, screenshot, and e2e test infrastructure
-- `agp-9-upgrade` — AGP 9 migration
-- `r8-analyzer` — R8 keep rules, app size optimization
-- `migrate-xml-views-to-jetpack-compose` — XML → Compose migration
-- `verified-email` — Credential Manager API, OTP-less email verification
-- `appfunctions` — AppFunctions, on-device agent workflows
-- `engage-sdk-integration` — Play Engage SDK
-- `play-billing-library-version-upgrade` — Play Billing Library upgrade
-- `camera1-to-camerax` — Camera1/Camera2 → CameraX migration
-- `perfetto-trace-analysis` / `perfetto-sql` — trace analysis
-- `jetpack-compose-m3` — Wear OS Compose Material 3
+Record every skill you invoked in the plan's "Skills Consulted" section so the
+Coder can re-invoke the same ones.
 
 ## Process
 
@@ -244,10 +232,10 @@ Available Android skills (invoke by name):
    - Use the same MVI structure as `feature/profile/`
    - DI module pattern: see `core/di/NetworkModule.kt`
 
-   ### Android Skills Consulted
-   - `navigation-3` — for the routing additions
-   - `styles` — for the new screen's Material 3 theming
-   - (list every skill name you invoked via the Skill tool)
+   ### Skills Consulted
+   - `<skill-name>` — what you used it for in this plan
+   - (list every skill you invoked via the Skill tool, or `None` if your
+     available-skills listing had nothing relevant)
 
    ## 2. Proposed Changes
 
