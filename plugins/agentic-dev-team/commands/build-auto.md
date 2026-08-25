@@ -20,12 +20,26 @@ subagent you spawn, alongside the artifact paths you already pass.
 This is the /build-auto flow — assumes the feature is already understood.
 No PM phase. If the request is vague, suggest the user run /build-guided instead.
 
+Design doc: **off** by default for this command. This is the speed path — no
+human gate and no reviewer waits on the run, so nobody is reading a design
+document while it happens, and generating one would cost tokens for an artifact
+nothing consumes. `$ARGUMENTS` may carry `doc: on` (or an explicit `doc: off`)
+anywhere in the text — read it, remove that token before you use the rest as the
+feature request, and let it override the default. Store the result as
+DESIGN_DOC (`on` or `off`).
+
 Phase 1 — Architect:
-  Delegate to the `adt-android-architect` subagent with the feature request.
+  Delegate to the `adt-android-architect` subagent with the feature request
+  (with the `doc:` token removed), PIPELINE_DOC, and the line `DESIGN_DOC: off`
+  or `DESIGN_DOC: on` to match what you resolved above. Pass it explicitly —
+  an Architect told nothing writes both documents.
   Wait for ✅ ARCHITECT DONE.
-  Parse the artifact directory from the DONE message — it will say:
+  Parse the artifact paths from the DONE message — it will say:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
+    "design doc at pipeline_artifacts/{slug}/design-doc.md" (present only when
+    DESIGN_DOC is on)
   Store the plan path: PLAN_PATH = pipeline_artifacts/{slug}/implementation-plan.md
+  Store the design doc path: DOC_PATH (on only)
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
   Read PLAN_PATH Section 3 ("Work Breakdown & Execution Strategy").
@@ -86,6 +100,16 @@ Phase 3F — Tester fix loop (max 2 iterations):
     On READY TO MERGE, go to the summary.
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
+
+Close the run — before the summary below, and on any exit path including a STOP:
+  Only if DESIGN_DOC is on and the Architect wrote one — the default run
+  produces no design doc and skips this entirely. Append to DOC_PATH's
+  `## Implementation Notes` section what actually diverged from the document:
+  Coder work that departed from the approach, and Tester fix-loop changes. You
+  have this in your own run history; do not re-read the diff to reconstruct it.
+  Edit that section only, and write "No divergence — the run implemented this
+  document as written." when there is nothing to record. Report DOC_PATH with
+  the summary.
 
 When complete, summarise the final verdict from the test-results.md in the same
 directory as PLAN_PATH, including how many fix iterations ran, and list any

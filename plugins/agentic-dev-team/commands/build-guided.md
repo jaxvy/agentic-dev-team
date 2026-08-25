@@ -24,6 +24,12 @@ After each phase, pause and ask the user to type one of:
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
+Design doc: **on** by default for this command — the plan gate is where a human
+decides whether the approach is right, so it is the gate that most needs one.
+`$ARGUMENTS` may carry `doc: on` or `doc: off` anywhere in the text — read it,
+remove that token before you use the rest as the user's idea, and let it
+override the default. Store the result as DESIGN_DOC (`on` or `off`).
+
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
@@ -39,12 +45,35 @@ Phase 1 — PM (kickoff):
 
 Phase 2 — Architect (after approval):
   Delegate to the `adt-android-architect` subagent.
-  Pass: the path FEATURE_DIR/feature.md
-  When ✅ ARCHITECT DONE, parse the plan path from the DONE message:
+  Pass: the path FEATURE_DIR/feature.md, PIPELINE_DOC, and the line
+  `DESIGN_DOC: on` or `DESIGN_DOC: off` to match what you resolved above.
+  When ✅ ARCHITECT DONE, parse the artifact paths from the DONE message:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
+    "design doc at pipeline_artifacts/{slug}/design-doc.md" (present only when
+    DESIGN_DOC is on)
   Store: PLAN_PATH = pipeline_artifacts/{slug}/implementation-plan.md
-  Show the user the section headings of PLAN_PATH and ask:
-  "Approve the plan to proceed to Coder, or revise?"
+  Store: DOC_PATH = pipeline_artifacts/{slug}/design-doc.md (on only)
+
+  The plan gate — this is a design decision, so present the design doc, not a
+  heading dump. Read DOC_PATH and show the user, in this order:
+    - its **Summary**
+    - **What the User Sees**
+    - **Alternatives Considered**
+    - **Blast Radius**
+    - the **Parallel-safe** decision and the number of Coders it implies —
+      orchestrator facts, read from PLAN_PATH Section 3, not from the design doc
+    - the path to DOC_PATH (to read in full) and to PLAN_PATH (for the
+      file-by-file detail)
+  With `doc: off`, fall back to showing the section headings of PLAN_PATH.
+  Then ask: "Approve the plan to proceed to Coder, or revise?"
+
+  On `revise: <feedback>`, re-run the `adt-android-architect` subagent with
+  PLAN_PATH, DOC_PATH, and the feedback as a numbered list, instructing it to
+  rewrite **both** files in place. Feedback it does not adopt must come back
+  recorded under the design doc's Non-Goals with the reason — see the pipeline
+  doc's Part A, "Feedback Lands in the Documents". Then return to this gate with
+  the revised documents. Keep a note of what each revision changed; it belongs
+  in the design doc's Implementation Notes at the end of the run (Phase 5).
 
 Phase 3 — Coder (after approval, execution strategy decided by Architect):
   Read PLAN_PATH Section 3. Check the **Parallel-safe** field.
@@ -57,7 +86,8 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
   coders against a plan with a parallelization bug, and do not ask the user
   to approve one.
 
-  Before spawning coders, tell the user:
+  Before spawning coders, tell the user. The plan gate already showed them this
+  decision; this gate is where they approve the token cost of executing it:
     "The Architect decided this feature is [Parallel-safe: YES/NO].
     [If YES] I will spawn N adt-android-coder subagents in parallel across M groups.
     This will use more tokens than sequential execution. Type `approve`
@@ -114,3 +144,17 @@ Phase 4 — Tester (after approval):
     fresh results.
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
+
+Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
+`stop`, or on a STOP of your own):
+  Skip this phase entirely when there is no design doc to close out — DESIGN_DOC
+  is off, or the run stopped before the Architect wrote one.
+  Otherwise append to DOC_PATH's `## Implementation Notes` section
+  what actually diverged from the document — Architect revisions the user asked
+  for after the plan gate, Coder work that departed from the approach, and any
+  Tester fix-loop changes. You have all of this in your own run history; do not
+  re-read the diff to reconstruct it. Edit that section only, leave every other
+  section as the Architect wrote it, and write "No divergence — the run
+  implemented this document as written." when there is nothing to record.
+  Then report DOC_PATH to the user as the document to review this work from,
+  alongside the test verdict and the list of changed files.

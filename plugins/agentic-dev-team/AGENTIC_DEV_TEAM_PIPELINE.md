@@ -29,6 +29,7 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
   - The feature slug is short, lowercase, hyphen-separated (e.g. `background-link-checks`).
   - `adt-android-pm` writes `pipeline_artifacts/{slug}/feature.md`.
   - `adt-android-architect` writes `pipeline_artifacts/{slug}/implementation-plan.md`. Its `## 0. Verification Commands` block is the run's authority for the named commands below.
+  - `adt-android-architect` also writes `pipeline_artifacts/{slug}/design-doc.md` — the human-facing design document — whenever the orchestrator asks for it. See "The Two Architect Artifacts" below.
   - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`.
   - `adt-android-coder` produces no markdown — only uncommitted code changes in the working tree.
   - `pipeline_artifacts/` must be git-ignored in the consuming project. Two mechanisms cover this, and they are deliberately redundant:
@@ -41,6 +42,61 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
 - **Read-before-write**: Every agent must read the prior phase artifact in full before starting. A missing required artifact is a STOP condition — report to the user, do not proceed by guessing.
 - **No-commit rule for adt-android-coder**: The Coder must never run `git add`, `git commit`, or any staging command. Changes stay uncommitted for human review.
 - **Manual verification**: `adt-android-tester` must perform manual verification through the `auto-mobile` MCP server when that server is available and the consuming project's `AGENTS.md` / `CLAUDE.md` requires it.
+
+## The Two Architect Artifacts
+
+`adt-android-architect` produces two documents in one invocation, and they have
+different readers:
+
+| Artifact | Read by | What it is |
+|---|---|---|
+| `design-doc.md` | **Humans only** — the approval gate, the PR reviewer, whoever maintains this later | Why this change, what the user sees, how it works, what was rejected. Prose plus one diagram. |
+| `implementation-plan.md` | `adt-android-coder`, both reviewers, `adt-android-tester` | The build contract: file paths, line numbers, code, selectors, execution groups. |
+
+No agent downstream of the Architect consumes the design doc; they all keep
+reading the plan. The single exception is
+`adt-android-architect-reviewer`, which reviews both because the rejected
+alternatives live in the design doc.
+
+**The orchestrator decides whether the design doc is written**, and says so
+explicitly in the prompt it spawns the Architect with:
+
+- `DESIGN_DOC: on` — write `design-doc.md` first, then `implementation-plan.md`.
+- `DESIGN_DOC: off` — write `implementation-plan.md` only.
+- `DESIGN_DOC: only` — a plan already exists; write `design-doc.md` beside it
+  and do not modify that plan.
+- `DESIGN_DOC: from-design-doc` — `implementation-plan.md` for the design doc path
+  you were given — and **do not modify that design doc**.
+
+An Architect invoked with no `DESIGN_DOC` value at all — a bare
+`@adt-android-architect` mention, say — writes both. `/plan-design` auto-detects
+the input and picks the right value. Per-command defaults are in Part B.
+
+**The order is load-bearing.** The design doc is written **before** the plan,
+never summarised from it. The Architect has just surveyed the codebase and
+weighed the alternatives at that point; written afterwards, the document
+degrades into a digest of the plan's headings, which is the one thing it must
+not be.
+
+### Anti-Drift Rule
+
+`implementation-plan.md` remains the sole contract for implementation. The
+design doc explains the change and links into the plan for detail; where the two
+disagree, **the plan wins**. Never hand-edit `design-doc.md` expecting the change
+to reach the Coder — feedback goes through the approval gate, which re-runs the
+Architect and updates both together.
+
+### Feedback Lands in the Documents
+
+Feedback given at an approval gate must land in the documents. When a human
+responds `revise: <feedback>`, the Architect re-runs and rewrites **both** files
+in place: an accepted point changes the design doc and the plan; a **declined**
+point — whether the human withdrew it or the Architect judged it out of scope —
+is recorded under the design doc's **Non-Goals** with the justification for
+declining it.
+
+Feedback that lives only in the chat transcript is lost the moment the run ends,
+and a design doc that silently absorbs every request is how scope creep enters.
 
 ## The Three Named Commands
 
@@ -302,6 +358,9 @@ model — select the strongest available model for full pipeline runs.
 
 For `/build-guided`, pause for explicit user approval between PM, Architect,
 Coder, and Tester phases. Accept `approve`, `revise: <feedback>`, or `stop`.
+At the Architect gate the artifact presented is `design-doc.md` — the plan is a
+link for anyone who wants the file-by-file detail. A `revise:` there re-runs the
+Architect under Part A's "Feedback Lands in the Documents" rule.
 
 For `/build-auto`, skip the PM phase. If the feature description is too vague
 for the Architect to produce a concrete plan, stop and suggest `/build-guided`
@@ -311,13 +370,40 @@ For `/build-auto-reviewed`, skip the PM phase and run no human gates — but
 insert an automated reviewer after each producing phase, per the Reviewer-Loop
 Protocol below.
 
+## Design Doc Defaults Per Command
+
+The rule is **the design doc follows review intent**: a flow with a review step
+gets one, and the pure-speed flow does not.
+
+| Command | Default | Where the human reads it |
+|---|---|---|
+| `/plan-design` | auto-detected from input | printed to chat upon completion |
+| `/build-guided` | on | at the plan approval gate, before any code is written |
+| `/build-auto-reviewed` | off | not generated |
+| `/build-auto` | off | not generated |
+
+`doc: on` / `doc: off` anywhere in `$ARGUMENTS` overrides the default in the
+pipeline commands. The orchestrator strips that token from the text before
+using the rest as the feature request, and translates it into the `DESIGN_DOC`
+value it passes to the Architect (Part A, "The Two Architect Artifacts").
+
+**Implementation Notes at end of run.** In the three build commands, when a
+design doc was produced, the orchestrator — not an agent — appends to the
+document's `## Implementation Notes` section what actually diverged from it:
+reviewer bounces that changed the approach, Tester fix-loop changes, and any
+approved `revise:` that landed after the plan gate. It has this in its own run
+history; no re-reading of the diff is required. It edits that section only, and
+writes "No divergence — the run implemented this document as written." when
+there is nothing to record.
+
 ## Reviewer-Loop Protocol
 
 Used by `/build-auto-reviewed`. After a producing agent finishes, the
 orchestrator delegates to that agent's reviewer before proceeding:
 
 - `adt-android-architect` → reviewed by `adt-android-architect-reviewer`
-  (reviews `implementation-plan.md`).
+  (reviews `implementation-plan.md`, plus `design-doc.md` when the run produced
+  one — pass both paths).
 - `adt-android-coder` (all coding complete) → reviewed by
   `adt-android-code-reviewer` (reviews the uncommitted diff against the plan).
 
@@ -369,8 +455,8 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
 1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`.
 2. **Execute Phases**:
    - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
-   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows). Wait until it outputs `✅ ARCHITECT DONE`.
-   - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
+   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows) and the `DESIGN_DOC` value this command defaults to (see "Design Doc Defaults Per Command"). Wait until it outputs `✅ ARCHITECT DONE`, and parse the artifact paths out of that marker — the plan path always, and the design doc path when one was requested.
+   - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
@@ -382,12 +468,14 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
      reviewed after its last mutation. A run never ends by declaring a
      `NEEDS FIXES` feature complete.
 3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
+4. **Close the run**: when a design doc was produced, append its Implementation Notes before reporting the final summary (see "Design Doc Defaults Per Command"), and report the design doc path alongside the verdict.
 
 ## Native Workflow Registration
 
 `/build-auto`, `/build-auto-reviewed`, and `/build-guided` slash commands (along
-with `/plan-research` and `/plan-design`) are registered natively in Antigravity
-via symlinks in `.agents/workflows/` that point to `.claude/commands/`. Team personas are inlined into the consuming project's
+with `/plan-research` and `/plan-design`) are registered natively
+in Antigravity via symlinks in `.agents/workflows/` that point to
+`.claude/commands/`. Team personas are inlined into the consuming project's
 `.agents/agents.md` (inside a marker-fenced block managed by install.sh),
 sourced from `.agents/AGENTIC_DEV_TEAM.md` in this repo. Each persona stub
 references the canonical detailed prompt at `.claude/agents/adt-*.md`.

@@ -14,9 +14,12 @@ Every run is the same chain of handoffs. Each agent reads the previous agent's
 output in full before it starts, so the spec constrains the plan, the plan
 constrains the code, and the plan's test cases are what the Tester actually runs.
 
-```
-   PM   ->   Architect   ->   Coder   ->   Tester
-feature.md  impl-plan.md    the code    test-results.md
+```mermaid
+flowchart LR
+  PM["pm"] -->|"feature.md"| AR["architect"]
+  AR -->|"implementation-plan.md<br/>& design-doc.md"| CO["coder"]
+  CO -->|"uncommitted code"| TE["tester"]
+  TE -->|"test-results.md"| OUT(["diff + report"])
 ```
 
 You decide how much of that chain runs and who approves each step. One command
@@ -37,6 +40,9 @@ separate mandates, and puts a reviewer between them.
 * The Architect reads your codebase and writes the plan before any code exists.
   It names exact files and line numbers, and records the manual test plan up
   front.
+* In guided and plan commands, what you review is a design document, not a diff.
+  Deciding an approach is wrong is cheapest before the code exists, and a diff is
+  the most expensive place to discover it.
 * In the reviewed flow, code review always covers the final state of the tree,
   including fixes made after testing.
 * The Tester drives the real app on a device or emulator, not a mocked harness.
@@ -50,7 +56,7 @@ separate mandates, and puts a reviewer between them.
 | Agent | Role | Output |
 |---|---|---|
 | `adt-android-pm` | Principal Product Manager | `feature.md`, an unambiguous spec |
-| `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md`, with exact file changes and a manual test plan |
+| `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md`, with exact file changes and a manual test plan, plus `design-doc.md` for human review |
 | `adt-android-architect-reviewer` | Plan reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-coder` | Implementer | Uncommitted code in your working tree |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
@@ -70,9 +76,9 @@ Five slash commands. Three run the full pipeline, two stop after a single phase.
 | `/build-auto` | Architect, Coder, Tester | Nobody, it runs start to finish | A feature you have already specified precisely |
 | `/build-auto-reviewed` | Architect, Coder, Tester, plus a reviewer after the first two | Reviewer agents, with no human pause | An unattended run you want to trust. Costs more tokens |
 | `/plan-research` | PM only | n/a | Turning a vague idea into a spec and nothing more |
-| `/plan-design` | Architect only | n/a | Turning a spec into a plan and nothing more |
+| `/plan-design` | Architect only | n/a | Auto-detects input: produces whichever of the plan and design doc is missing |
 
-The two `plan-*` commands write their artifact and stop. Their output feeds
+The two single-phase commands write their artifact and stop. Their output feeds
 straight into a `build-*` command later, or into each other.
 
 ### /build-guided
@@ -86,6 +92,21 @@ reply `approve`, `revise: <feedback>`, or `stop`. Before the Coder runs, you als
 see whether the Architect judged the work parallel-safe and how many coder agents
 that implies. Reply `force-sequential` to override it and spend fewer tokens.
 
+```mermaid
+flowchart LR
+  I(["idea"]) --> PM["pm"]
+  PM -->|"spec gate"| AR["architect"]
+  AR -->|"plan gate"| CO["coder"]
+  CO -->|"code gate"| TE["tester"]
+  TE -->|"results gate"| E(["done"])
+```
+
+The plan gate shows you the design doc rather than a dump of plan headings, so
+the decision is made at design altitude while changing course is still cheap.
+Feedback you give there is rewritten into both documents, including scope you
+decline, which is recorded under **Non-Goals** with your reason rather than
+dropped.
+
 ### /build-auto
 
 ```
@@ -95,6 +116,16 @@ that implies. Reply `force-sequential` to override it and spend fewer tokens.
 
 No PM phase and no pauses. If the request turns out to be too vague for the
 Architect to plan concretely, the run stops and points you at `/build-guided`.
+This is the speed path, so it writes no design doc by default. Pass `doc: on` if
+you want one.
+
+```mermaid
+flowchart LR
+  I(["feature"]) --> AR["architect"]
+  AR -->|"implementation-plan.md"| CO["coder"]
+  CO -->|"uncommitted code"| TE["tester"]
+  TE -->|"test-results.md"| E(["done"])
+```
 
 ### /build-auto-reviewed
 
@@ -104,23 +135,57 @@ Architect to plan concretely, the run stops and points you at `/build-guided`.
 ```
 
 Same shape as `/build-auto`, with an automated reviewer after each producing
-phase. The plan reviewer reads the plan. The code reviewer reads the full set of
-changes, which includes every new untracked file, not just what shows up in
-`git diff`.
+phase. The plan reviewer checks the plan against the codebase, Section 0 verification
+tasks, and pattern-fit. The code reviewer reads the full set of changes, which includes
+every new untracked file, not just what shows up in `git diff`.
 
 When a reviewer requests changes, the producing agent re-runs with that feedback,
 at most twice per gate. If the reviewer is still unsatisfied after the second
 re-run, the pipeline stops and reports instead of shipping rejected work.
+
+```mermaid
+flowchart LR
+  I(["specified feature"]) --> AR["architect"]
+  AR -->|"plan review<br/>(max 2)"| AR
+  AR -->|"implementation-plan.md"| CO["coder"]
+  CO -->|"code review<br/>(max 2)"| CO
+  CO -->|"uncommitted diff"| TE["tester"]
+  TE -->|"test-results.md"| E(["done"])
+```
 
 ### /plan-research and /plan-design
 
 ```
 /plan-research add a recently-played carousel to the home screen
 /plan-design   pipeline_artifacts/recently-played-carousel/feature.md
+/plan-design   pipeline_artifacts/recently-played-carousel/implementation-plan.md
+/plan-design   pipeline_artifacts/recently-played-carousel/design-doc.md
 ```
 
-These run the PM alone, or the Architect alone. Use them to think a feature
-through, or to size the work, without committing to a build.
+/plan-research runs the PM alone. `/plan-design` runs the Architect alone. Use
+them to think a feature through, or to size the work, without committing to a
+build. `/plan-design` produces both of the Architect's files by default, but if
+you give it an existing plan or design doc, it writes only the missing one.
+
+`/plan-design` auto-detects what it receives. Hand it an existing
+`implementation-plan.md` and it writes the design doc without re-planning. Hand
+it an existing `design-doc.md` and it writes the plan without touching the doc.
+
+### The design doc
+
+The Architect writes `implementation-plan.md` (the build contract for agents) and
+can also emit `design-doc.md` (for human review). Depending on the command used,
+it produces or skips the design doc:
+
+| Command | Design doc | Where you read it |
+|---|---|---|
+| `/plan-design` | auto-detected | printed to chat upon completion |
+| `/build-guided` | on | at the plan approval gate, before any code is written |
+| `/build-auto-reviewed` | off | not generated |
+| `/build-auto` | off | not generated |
+
+Pass `doc: on` or `doc: off` in the command arguments to override the default for a run.
+Where the two documents differ, the implementation plan is the source of truth for code.
 
 ## What a run leaves behind
 
@@ -130,6 +195,7 @@ Artifacts land in `pipeline_artifacts/<feature-slug>/`, which is git-ignored:
 pipeline_artifacts/recently-played-carousel/
 ├── feature.md              # the spec (PM phases only)
 ├── implementation-plan.md  # the plan, including the manual test plan
+├── design-doc.md           # the same design, written for you
 └── test-results.md         # per-case results, verdict, observations
 ```
 

@@ -22,6 +22,12 @@ no human gates), but each producing phase is followed by an automated reviewer
 that can send the work back. It assumes the feature is already understood. If
 the request is vague, suggest the user run /build-guided instead.
 
+Design doc: **off** by default for this command. This is an unattended auto flow,
+so no design doc is generated unless explicitly requested. `$ARGUMENTS` may carry
+`doc: on` (or `doc: off`) anywhere in the text — read it, remove that token before
+you use the rest as the feature request, and let it override the default. Store the
+result as DESIGN_DOC (`on` or `off`).
+
 **Reviewer-loop protocol (applies to every gate below):**
 - After the producing agent finishes, delegate to its reviewer.
 - If the reviewer ends with `✅ ... APPROVED`, proceed to the next phase.
@@ -33,18 +39,30 @@ the request is vague, suggest the user run /build-guided instead.
   to later phases.
 
 Phase 1 — Architect:
-  Delegate to the `adt-android-architect` subagent with the feature request.
+  Delegate to the `adt-android-architect` subagent with the feature request
+  (with the `doc:` token removed), PIPELINE_DOC, and the line `DESIGN_DOC: on`
+  or `DESIGN_DOC: off` to match what you resolved above.
   Wait for ✅ ARCHITECT DONE.
-  Parse the artifact directory from the DONE message — it will say:
+  Parse the artifact paths from the DONE message — it will say:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
+    "design doc at pipeline_artifacts/{slug}/design-doc.md" (present only when
+    DESIGN_DOC is on)
   Store the plan path: PLAN_PATH = pipeline_artifacts/{slug}/implementation-plan.md
+  Store the design doc path: DOC_PATH = pipeline_artifacts/{slug}/design-doc.md
+  (on only)
 
 Phase 1R — Architect review gate (max 2 re-runs):
-  Delegate to the `adt-android-architect-reviewer` subagent. Pass PLAN_PATH.
+  Delegate to the `adt-android-architect-reviewer` subagent. Pass PLAN_PATH and,
+  when DESIGN_DOC is on, DOC_PATH — the rejected alternatives live in the design
+  doc, so a reviewer without it cannot check them.
   - On `✅ PLAN APPROVED`: continue to Phase 2.
   - On `🔧 PLAN CHANGES REQUESTED`: re-run `adt-android-architect` with the
-    reviewer's feedback and the instruction to revise PLAN_PATH in place, then
-    review again. After the 2nd failed re-run, STOP and report (see protocol).
+    reviewer's feedback and the instruction to revise PLAN_PATH in place — and
+    DOC_PATH with it, in the same invocation, so the document a human ends up
+    reading is the approved version rather than the first draft. Then review
+    again. After the 2nd failed re-run, STOP and report (see protocol).
+    Note which bounces changed the approach; that belongs in the design doc's
+    Implementation Notes at the end of the run.
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
   Read PLAN_PATH Section 3 ("Work Breakdown & Execution Strategy").
@@ -135,8 +153,21 @@ Phase 3F — Tester fix loop (max 2 iterations):
   2R's — a targeted re-review never re-opens Phase 2R's own budget, and never
   re-reviews the whole feature.
 
+Close the run — before the summary below, and on any exit path including a STOP:
+  Skip this entirely when there is no design doc to close out — DESIGN_DOC is
+  off, or the run stopped before the Architect wrote one. Otherwise append to
+  DOC_PATH's `## Implementation Notes` section what actually diverged from the
+  document — architect-reviewer bounces that changed the approach, code-reviewer
+  feedback that changed it, and Tester fix-loop changes. You have all of this in
+  your own run history; do not re-read the diff to reconstruct it. Edit that
+  section only, leave every other section as the Architect wrote it, and write
+  "No divergence — the run implemented this document as written." when there is
+  nothing to record.
+
 When complete, summarise the final verdict from the test-results.md in the same
-directory as PLAN_PATH, including how many fix iterations ran and, for each one,
+directory as PLAN_PATH, report DOC_PATH — when the run produced one — as the
+document to review this work from, and include how many fix iterations ran and,
+for each one,
 the targeted re-review's verdict — so the user can see the final tree was
 reviewed after its last change. Note any Observations the Tester recorded as
 non-blocking, since those are decisions waiting on the user rather than work the
