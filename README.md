@@ -151,7 +151,10 @@ scope mid-run.
 
 The Architect names the unit tests each section needs, using the libraries your
 project already uses — discovered from your version catalog, not chosen from a
-default list. The Coder writes exactly those, and both reviewers check them:
+default list. Every case is phrased GIVEN / WHEN / THEN, and that line becomes
+the test's name and the shape of its body, so a failing test says which
+behaviour broke without anyone opening the file. The Coder writes exactly
+those, and both reviewers check them:
 the plan reviewer that the cases are worth writing, the code reviewer that they
 exist and would fail if the logic were wrong. A section with no logic worth
 testing says so explicitly rather than padding itself with tests that cannot

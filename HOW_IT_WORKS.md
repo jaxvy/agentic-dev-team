@@ -108,7 +108,30 @@ The requirement travels in the plan. Section 1 records the project's **Test
 Stack**, discovered from its version catalog and an existing test, so the Coder
 uses the libraries the project already has rather than picking its own. Each
 section in Section 3 then carries a **Tests required** field naming the test
-file and one line per case.
+file and one case per line.
+
+Every case is phrased GIVEN / WHEN / THEN — starting state, the single action
+under test, observable result — and that line becomes the test's name
+unchanged, with the body repeating the three steps as commented blocks:
+
+```kotlin
+@Test
+fun `GIVEN the cache holds items WHEN the refresh fails THEN the cached items are returned`() = runTest {
+    // GIVEN
+    val repository = NewsRepository(api = FailingApi(), cache = cache)
+
+    // WHEN
+    val result = repository.refresh()
+
+    // THEN
+    assertThat(result).isEqualTo(cachedItems)
+}
+```
+
+The point is not ceremony. A case that cannot be phrased this way usually is
+not a behaviour, so the format catches empty tests at planning time, before
+anyone writes them. And when one fails months later, the name alone says which
+behaviour broke and under what starting state.
 
 | Field value | What the Coder does |
 |---|---|

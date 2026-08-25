@@ -55,9 +55,16 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    it to return, or that never exercises the failure branch the plan named is
    not coverage, and passing tests of that shape are a finding. A section whose
    field reads `None — <reason>` needs no tests: do not invent a requirement the
-   plan declined. A testing dependency that appears in the diff without being
-   named in the plan's Section 2 is a finding, as is a second assertion or
-   mocking library alongside the one in Section 1's Test Stack.
+   plan declined. Each test must be named and structured GIVEN / WHEN / THEN:
+   the three clauses in the name, matching the plan's case line rather than a
+   reworded version of it, and the three commented blocks in the body in that
+   order. A test with setup hidden after its WHEN, with assertions in its
+   GIVEN, or with two unrelated actions under one WHEN is a finding — those are
+   the shapes that make a failure ambiguous about which behaviour broke.
+
+   A testing dependency that appears in the diff without being named in the
+   plan's Section 2 is a finding, as is a second assertion or mocking library
+   alongside the one in Section 1's Test Stack.
 6. **Build & test gate.** Run the build gate — resolved per the pipeline doc's
    Part A, which means the plan's `## 0. Verification Commands` block when a
    plan exists. Never substitute your own guess at the project's Gradle tasks.

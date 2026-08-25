@@ -40,7 +40,8 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
    is part of the section, not optional follow-up work. Implement every case as
    specified, using the libraries in the plan's Section 1 Test Stack — never
    introduce a testing dependency the plan did not name. Assert the behaviour
-   the case describes, not merely that the code runs. If a case cannot be
+   the case describes, not merely that the code runs, and name and structure
+   every test GIVEN / WHEN / THEN (step 5). If a case cannot be
    written as specified, STOP and report rather than substituting a weaker
    assertion or quietly dropping it. A field reading `None — <reason>` means
    write no tests for that section; do not add your own.
@@ -140,6 +141,34 @@ is not an error.
    described — a test that passes whether or not the logic is correct is worse
    than no test. If the field reads `None — <reason>`, skip this step and say
    so in your DONE marker.
+
+   **Name and structure every test GIVEN / WHEN / THEN.** The plan's case line
+   is the test name — transcribe it, do not reword it — and the body repeats
+   the same three steps as commented blocks in the same order:
+
+   ```kotlin
+   @Test
+   fun `GIVEN the cache holds items WHEN the refresh fails THEN the cached items are returned`() = runTest {
+       // GIVEN
+       val repository = NewsRepository(api = FailingApi(), cache = cache)
+
+       // WHEN
+       val result = repository.refresh()
+
+       // THEN
+       assertThat(result).isEqualTo(cachedItems)
+   }
+   ```
+
+   One WHEN per test: a single action, though it may be the same call twice
+   where the repetition is itself the behaviour under test. No assertions in
+   GIVEN, and no fresh setup after WHEN — if you need either, it is two tests.
+   Use backticked names as above unless the Test Stack records that this
+   project uses an identifier style
+   (`givenTheCacheHoldsItems_whenTheRefreshFails_thenTheCachedItemsAreReturned`);
+   the three clauses are required either way. Mirroring the Test Stack's
+   example test still governs everything else — imports, dispatcher rules,
+   fake construction.
 
    Your section's test files are part of its file list, so writing them is in
    scope. If the plan names a test file that is *not* in your section's file

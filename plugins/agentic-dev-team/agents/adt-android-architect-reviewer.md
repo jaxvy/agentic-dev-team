@@ -86,6 +86,11 @@ against the actual codebase. Judge it on:
    - A test library named in a section but absent from both Section 1's Test
      Stack and Section 2's dependency changes is a blocker — the Coder is
      forbidden from choosing one, so the plan must.
+   - A case not phrased GIVEN / WHEN / THEN is a finding. The Coder transcribes
+     the line as the test name, so a line that omits the starting state or the
+     observable result becomes a test that documents nothing — and a filler
+     clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
+     an omission, since it looks compliant.
    - A test file named in **Tests required** but absent from that section's
      **Files** list is a blocker. Scope, the parallel-safety overlap pre-check,
      and cross-section failure attribution all read **Files**: leave the test

@@ -183,15 +183,17 @@ contract runs through the plan, so every link has to hold:
   already uses, plus an existing test to mirror. Discovered from the version
   catalog and test source sets, never assumed.
 - **Section 3** gives every section a **Tests required** field: the test file
-  path and one line per case, or `None — <reason>` where the section holds no
-  logic worth testing. `None` is a legitimate answer for pure wiring; padding a
-  section with tests that cannot fail is not.
+  path and one GIVEN / WHEN / THEN line per case, or `None — <reason>` where
+  the section holds no logic worth testing. `None` is a legitimate answer for
+  pure wiring; padding a section with tests that cannot fail is not.
 - **`adt-android-coder`** implements those cases as part of the section, using
-  only the libraries the plan names. A section whose required tests are missing
-  is not done.
+  only the libraries the plan names. Each test is named with the plan's case
+  line and structured as `// GIVEN`, `// WHEN`, `// THEN` blocks in that order,
+  one action per WHEN. A section whose required tests are missing is not done.
 - **`adt-android-code-reviewer`** verifies they exist and are meaningful. A
   missing case is a finding; so is a test that passes regardless of whether the
-  logic is correct; so is a testing dependency the plan never named.
+  logic is correct; so is one that departs from the GIVEN / WHEN / THEN name or
+  structure; so is a testing dependency the plan never named.
 - **`adt-android-architect-reviewer`** verifies the fields were filled in at
   all, since an empty field ships a section with no tests and nothing
   downstream would notice.

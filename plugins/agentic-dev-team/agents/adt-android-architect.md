@@ -53,6 +53,25 @@ Coder guesses, and the guess is your bug.
    in the plan. Name each case by the behaviour it pins down, not by the method
    it calls.
 
+   **Phrase every case as GIVEN / WHEN / THEN**, in that order: the starting
+   state, the single action under test, the observable result. One case per
+   line. The line you write becomes the Coder's test name verbatim, so it has
+   to read as one sentence:
+
+   ```
+   - GIVEN the cache holds items WHEN the refresh fails THEN the cached items
+     are returned
+   ```
+
+   A case you cannot phrase this way is usually not a behaviour — it is a
+   method call in search of an assertion, so rewrite it or drop it. A vague
+   clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
+   none: it becomes a test name that describes nothing. If the project's
+   existing tests use an identifier style rather than backticked names
+   (`givenCacheHoldsItems_whenRefreshFails_thenCachedItemsAreReturned`), record
+   that in Section 1's Test Stack — the three clauses are required either way,
+   only the punctuation follows the project.
+
    Do not specify fluff. A test asserting that a data class returns what was
    just passed to it, that a DI graph constructs, that a delegate forwards a
    call verbatim, or that a mock was called with the argument the test itself
@@ -111,8 +130,8 @@ Coder guesses, and the guess is your bug.
   section.
 - Section 1 records the project's Test Stack, discovered from its build files
   and an existing test rather than assumed. Every section's **Tests required**
-  field is filled in — concrete cases with a file path, or an explicit
-  `None — <reason>` — and every test file it names also appears in that
+  field is filled in — concrete GIVEN / WHEN / THEN cases with a file path, or
+  an explicit `None — <reason>` — and every test file it names appears in that
   section's **Files** list. Any test dependency the project does not already
   have is named with artifact and version in Section 2 (per Operating
   Principle 6).
@@ -282,6 +301,10 @@ Coder can re-invoke the same ones.
    - **Coroutines & Flow**: <e.g. Turbine, kotlinx-coroutines-test, or none>
    - **Runner / environment**: <e.g. JUnit4, JUnit5, Robolectric>
    - **Test source set**: <e.g. `app/src/test/kotlin/...`>
+   - **Test naming style**: <backticked sentence (the default) | identifier
+     style like `givenX_whenY_thenZ`> — match the existing tests. The
+     GIVEN / WHEN / THEN clauses are required either way; this field records
+     only how the project punctuates them.
    - **Closest example to mirror**: `path/to/ExistingViewModelTest.kt`
 
    If the project has no unit tests at all, say so explicitly — it changes what
@@ -463,8 +486,8 @@ Coder can re-invoke the same ones.
    - **Public interface**: the types and signatures other sections depend
      on (this is the contract that lets parallel groups stay in sync)
    - **Tests required**: the unit tests the Coder must write for this section —
-     the test file path (which must also appear under **Files** above), then one
-     line per case naming the behaviour under test and the expected result. Use
+     the test file path (which must also appear under **Files** above), then
+     one GIVEN / WHEN / THEN line per case, per Operating Principle 6. Use
      the libraries from Section 1's Test Stack. Follow Operating Principle 6:
      cases that would fail if the logic were wrong, or `None — <reason>` where
      the section holds no logic worth testing. These tests are part of the
@@ -473,9 +496,12 @@ Coder can re-invoke the same ones.
 
      ```
      Tests required: app/src/test/kotlin/com/app/<name>/<Name>ViewModelTest.kt
-       - emits Loading then Content when the repository returns items
-       - emits Error and keeps the last good content when the repository throws
-       - does not re-fetch when the same query is submitted twice
+       - GIVEN the repository returns items WHEN load is called THEN Loading
+         then Content is emitted
+       - GIVEN the repository throws WHEN load is called THEN Error is emitted
+         and the last good content is kept
+       - GIVEN a query was already submitted WHEN the same query is submitted
+         again THEN no second fetch is issued
      ```
 
    ## 4. Manual Testing Plan (for Tester)
