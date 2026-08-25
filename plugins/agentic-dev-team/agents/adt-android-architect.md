@@ -112,8 +112,10 @@ Coder guesses, and the guess is your bug.
 - Section 1 records the project's Test Stack, discovered from its build files
   and an existing test rather than assumed. Every section's **Tests required**
   field is filled in — concrete cases with a file path, or an explicit
-  `None — <reason>`. Any test dependency the project does not already have is
-  named with artifact and version in Section 2 (per Operating Principle 6).
+  `None — <reason>` — and every test file it names also appears in that
+  section's **Files** list. Any test dependency the project does not already
+  have is named with artifact and version in Section 2 (per Operating
+  Principle 6).
 - The Manual Testing Plan addresses all six risk categories: happy path,
   offline, process death, permission denied, config change, and error state —
   each as a real test case, or as an explicit `N/A — <reason>` where the
@@ -424,7 +426,8 @@ Coder can re-invoke the same ones.
    ```
    Group 1 (run in parallel):
    - Section A: Data Layer
-     - Files: <Name>Repository.kt, <Name>Api.kt, <Name>Module.kt
+     - Files: <Name>Repository.kt, <Name>Api.kt, <Name>Module.kt,
+       <Name>RepositoryTest.kt
      - Estimated complexity: medium
      - Public interface (contract for downstream groups):
        interface <Name>Repository {
@@ -448,17 +451,25 @@ Coder can re-invoke the same ones.
    ```
 
    For each section in any group, you must specify:
-   - **Files**: exact paths (so the workflow can detect overlap)
+   - **Files**: exact paths (so the workflow can detect overlap) — including
+     the test files this section's **Tests required** field names. The Coder
+     creates those files, and every downstream rule keys off this list: scope
+     ("modify nothing outside your section's list"), the parallel-safety
+     overlap pre-check, and the attribution of a cross-section check failure
+     to an owning section. A test file missing from this list puts the Coder
+     outside its scope the moment it writes the test, and leaves a failing
+     test with no section to send back.
    - **Estimated complexity**: small/medium/large
    - **Public interface**: the types and signatures other sections depend
      on (this is the contract that lets parallel groups stay in sync)
    - **Tests required**: the unit tests the Coder must write for this section —
-     the test file path, then one line per case naming the behaviour under test
-     and the expected result. Use the libraries from Section 1's Test Stack.
-     Follow Operating Principle 6: cases that would fail if the logic were
-     wrong, or `None — <reason>` where the section holds no logic worth
-     testing. These tests are part of the section, not follow-up work — a
-     section is not implemented until they exist and pass. For example:
+     the test file path (which must also appear under **Files** above), then one
+     line per case naming the behaviour under test and the expected result. Use
+     the libraries from Section 1's Test Stack. Follow Operating Principle 6:
+     cases that would fail if the logic were wrong, or `None — <reason>` where
+     the section holds no logic worth testing. These tests are part of the
+     section, not follow-up work — a section is not implemented until they
+     exist and pass. For example:
 
      ```
      Tests required: app/src/test/kotlin/com/app/<name>/<Name>ViewModelTest.kt

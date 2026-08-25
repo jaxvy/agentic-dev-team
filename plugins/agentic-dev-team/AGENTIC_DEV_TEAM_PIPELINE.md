@@ -128,7 +128,9 @@ A failure here is in scope for the run — it is what the check exists to catch 
 so the orchestrator resolves it rather than reporting and stopping:
 
 1. Attribute each failure to the section that owns the file, using the plan's
-   per-section file lists.
+   per-section file lists. A failing unit test is attributed the same way, by
+   the section whose file list holds that test file — which is why the
+   Architect lists each section's test files there alongside its source files.
 2. Re-spawn the owning `adt-android-coder` — one at a time, sequentially, never
    concurrently — passing the plan path, its section, and the failing output.
    A sequential fix coder *does* run the build gate, per the rule above.

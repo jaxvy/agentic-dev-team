@@ -86,6 +86,11 @@ against the actual codebase. Judge it on:
    - A test library named in a section but absent from both Section 1's Test
      Stack and Section 2's dependency changes is a blocker — the Coder is
      forbidden from choosing one, so the plan must.
+   - A test file named in **Tests required** but absent from that section's
+     **Files** list is a blocker. Scope, the parallel-safety overlap pre-check,
+     and cross-section failure attribution all read **Files**: leave the test
+     file out and the Coder is writing outside its assigned scope, while a
+     failure in that test belongs to no section.
 
 ## Definition of Done
 

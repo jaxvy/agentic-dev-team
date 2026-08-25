@@ -263,7 +263,8 @@ A failure here is in scope for the run, since catching it is what the check
 exists for. The orchestrator resolves it rather than reporting and stopping:
 
 1. Attribute each failure to the section that owns the file, using the plan's
-   per-section file lists.
+   per-section file lists. A failing unit test is attributed the same way, by
+   the section whose file list holds that test file.
 2. Re-spawn the owning coder, one at a time and never concurrently. A sequential
    fix coder does run the build gate.
 3. Re-run the check. Allow at most 2 rounds, then stop.

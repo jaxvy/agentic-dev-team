@@ -140,6 +140,11 @@ is not an error.
    described — a test that passes whether or not the logic is correct is worse
    than no test. If the field reads `None — <reason>`, skip this step and say
    so in your DONE marker.
+
+   Your section's test files are part of its file list, so writing them is in
+   scope. If the plan names a test file that is *not* in your section's file
+   list, STOP and report it — that is a plan defect, not something to work
+   around by writing outside your scope.
 6. Run the build gate — **only if you are the sole coder on this tree.**
 
    **If you were told other coders are working concurrently: run no Gradle at
