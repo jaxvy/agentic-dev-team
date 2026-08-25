@@ -19,6 +19,7 @@ links are present and who approves each one.
 ```
    PM   ->   Architect   ->   Coder   ->   Tester   ->   your diff
 feature.md  impl-plan.md    the code    test-results.md
+            design-doc.md
 ```
 
 | Command | PM | Architect | Plan review | Coder | Code review | Tester | Gates |
@@ -41,7 +42,7 @@ with the slug lowercase and hyphenated (for example `background-link-checks`).
 | Agent | Writes | DONE marker |
 |---|---|---|
 | `adt-android-pm` | `feature.md` | `✅ PM DONE` |
-| `adt-android-architect` | `implementation-plan.md` | `✅ ARCHITECT DONE` |
+| `adt-android-architect` | `implementation-plan.md`, and `design-doc.md` when the command asks for one | `✅ ARCHITECT DONE` |
 | `adt-android-coder` | Nothing. Only uncommitted code | `✅ CODER DONE` |
 | `adt-android-tester` | `test-results.md` | `✅ TESTER DONE` |
 
@@ -56,6 +57,45 @@ exactly one verdict marker.
 A `🔧 CHANGES REQUESTED` verdict is always followed by a numbered list. The
 producing agent applies every fix, since a reviewer never edits what it reviewed.
 
+### Artifacts and their audiences
+
+Each artifact has exactly one intended reader, and that is what shapes how it is
+written.
+
+| Artifact | Written by | Read by |
+|---|---|---|
+| `feature.md` | PM | The Architect, and you at the spec gate |
+| `implementation-plan.md` | Architect | The Coder, both reviewers, and the Tester |
+| `design-doc.md` | Architect | **You.** Whoever maintains this later |
+| `test-results.md` | Tester | The Coder on failures, and you |
+
+```mermaid
+flowchart LR
+  A["architect"] --> P["implementation-plan.md"] --> C["coder"] --> T["tester"]
+  A --> D["design-doc.md"] --> H["human review"]
+  D -. "links into" .-> P
+```
+
+`implementation-plan.md` is a build contract: exact paths, line numbers, code,
+and UI selectors. That is the right document for a Coder and the wrong one to
+hand a senior engineer who has to decide whether the approach is sound. The
+design doc is that second document — prose, one diagram, the alternatives that
+lost, the blast radius, and the rollback story, in 1500 to 3500 words.
+
+The Architect writes both in one phase, **the design doc first**. It has just
+surveyed the codebase and weighed the alternatives at that point; a document
+summarised from the plan afterwards degrades into a digest of the plan's
+headings, which is the one thing it must not be.
+
+Nothing downstream consumes the design doc. The Coder, the Tester, and the code
+reviewer all keep reading the plan. The plan reviewer also reviews the design doc
+when one was generated.
+
+Which commands produce one, and how to override that per run, is in
+[README.md](README.md#the-design-doc). The rules the Architect and the
+orchestrator follow are in Part A of the pipeline doc, under "The Two Architect
+Artifacts".
+
 ### Handoff rules
 
 **Read before write.** Every agent reads the prior phase's artifact in full
@@ -65,6 +105,20 @@ to guess around.
 **The Coder never commits.** No `git add`, no `git commit`, no staging of any
 kind. Work stays uncommitted for you to review, and anything found staged is
 itself a review finding.
+
+**The plan wins.** Two documents describing one feature is one chance to
+disagree, so `implementation-plan.md` stays the sole contract for
+implementation. The design doc explains the change and links into the plan for
+detail, and where the two differ the plan is what the Coder builds. Hand-editing
+`design-doc.md` never reaches the Coder.
+
+**Feedback lands in the documents.** Answering an approval gate with
+`revise: <feedback>` re-runs the Architect, which rewrites both files in place.
+Scope that is *declined* — by you withdrawing it, or by the Architect judging it
+out of scope — is recorded under the design doc's **Non-Goals** with the
+justification, rather than dropped. Feedback that lives only in the chat
+transcript is lost the moment the run ends, and a design doc that absorbs every
+request without argument is how scope creep enters.
 
 **Artifacts stay out of git.** `pipeline_artifacts/` is ignored two redundant
 ways. `install.sh` adds it to the managed `.gitignore` block, and whichever agent

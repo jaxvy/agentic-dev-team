@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "adt-pipeline",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reusable PM → Architect → Coder → Tester pipeline for Android, working in Claude Code, Antigravity, and opencode.",
   "owner": {
     "name": "jaxvy"
