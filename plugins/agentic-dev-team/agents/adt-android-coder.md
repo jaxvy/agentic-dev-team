@@ -55,10 +55,13 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
 
 - Every assigned section implemented; code compiles and fits the codebase.
 - Every unit test named in your section's **Tests required** field exists and
-  passes, written with the plan's Test Stack libraries. A section whose
-  required tests are missing is not done, regardless of whether the build gate
-  passed — the gate runs the tests that exist, so it cannot fail for one you
-  never wrote.
+  passes, written with the plan's Test Stack libraries. In a sequential run the
+  build gate is how you confirm they pass. In a parallel run you run no Gradle,
+  so the orchestrator's cross-section check confirms it for you — write the
+  tests, name them in your DONE marker, and the orchestrator will send you back
+  with the output if one fails. A section whose required tests are missing is
+  not done either way, regardless of whether the build gate passed — the gate
+  runs the tests that exist, so it cannot fail for one you never wrote.
 - **Sequential run only** — the build gate passes for in-scope code, using the
   commands from the plan's `## 0. Verification Commands` per the pipeline doc's
   Part A. In a parallel run you run no Gradle and this criterion does not apply;
