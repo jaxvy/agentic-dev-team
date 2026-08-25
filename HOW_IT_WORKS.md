@@ -98,6 +98,60 @@ Without that rule a run can reach `READY TO MERGE` carrying code no reviewer eve
 read. Tests prove the feature behaves, not that the code making it behave is
 sound.
 
+### Required unit tests
+
+Unit tests are specified by the Architect and written by the Coder. No other
+agent authors them — reviewers are read-only, and the Tester drives the running
+app rather than writing Kotlin.
+
+The requirement travels in the plan. Section 1 records the project's **Test
+Stack**, discovered from its version catalog and an existing test, so the Coder
+uses the libraries the project already has rather than picking its own. Each
+section in Section 3 then carries a **Tests required** field naming the test
+file and one case per line.
+
+Every case is phrased GIVEN / WHEN / THEN — starting state, the single action
+under test, observable result — and that line becomes the test's name
+unchanged, with the body repeating the three steps as commented blocks:
+
+```kotlin
+@Test
+fun `GIVEN the cache holds items WHEN the refresh fails THEN the cached items are returned`() = runTest {
+    // GIVEN
+    val repository = NewsRepository(api = FailingApi(), cache = cache)
+
+    // WHEN
+    val result = repository.refresh()
+
+    // THEN
+    assertThat(result).isEqualTo(cachedItems)
+}
+```
+
+The point is not ceremony. A case that cannot be phrased this way usually is
+not a behaviour, so the format catches empty tests at planning time, before
+anyone writes them. And when one fails months later, the name alone says which
+behaviour broke and under what starting state.
+
+| Field value | What the Coder does |
+|---|---|
+| Concrete cases | Writes exactly those, with the Test Stack's libraries |
+| `None — <reason>` | Writes none, and says so in its DONE marker |
+| Empty or missing | Caught by the plan reviewer as a blocker |
+
+Both reviewers hold a side of this. The plan reviewer checks the fields were
+filled in and that the cases are worth writing — a case that only asserts a
+constructor assigned its arguments is flagged as fluff, and a `None` on a
+ViewModel full of state transitions is a blocker. The code reviewer then checks
+the tests actually exist and that each one would fail if the logic were wrong.
+
+> **Invariant:** every unit test the plan requires exists in the tree you are
+> handed, and no agent adds a testing dependency the plan did not name.
+
+The build gate runs the project's unit-test task, but that only executes tests
+that exist — it can never fail for one that was never written. That is why the
+requirement lives in the plan and is checked by a reviewer instead.
+
 ### Blocking findings and observations
 
 The Tester classifies everything it finds, and only one class drives code
@@ -232,7 +286,8 @@ A failure here is in scope for the run, since catching it is what the check
 exists for. The orchestrator resolves it rather than reporting and stopping:
 
 1. Attribute each failure to the section that owns the file, using the plan's
-   per-section file lists.
+   per-section file lists. A failing unit test is attributed the same way, by
+   the section whose file list holds that test file.
 2. Re-spawn the owning coder, one at a time and never concurrently. A sequential
    fix coder does run the build gate.
 3. Re-run the check. Allow at most 2 rounds, then stop.

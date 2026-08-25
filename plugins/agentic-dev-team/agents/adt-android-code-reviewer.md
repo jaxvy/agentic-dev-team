@@ -48,11 +48,28 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
 4. **Correctness.** Logic is right; edge cases the plan named are handled; no
    obvious bugs, race conditions, leaked resources, or null/lifecycle hazards.
    No `git add`/`git commit` was run by the Coder (changes must be uncommitted).
-5. **Build & test gate.** Run the build gate — resolved per the pipeline doc's
+5. **Required tests.** For every section the Coder implemented, the unit tests
+   named in the plan's **Tests required** field exist, and each named case is
+   actually present. Judge substance, not count — a test that asserts a
+   constructor assigned its arguments, that a mock returned what the test told
+   it to return, or that never exercises the failure branch the plan named is
+   not coverage, and passing tests of that shape are a finding. A section whose
+   field reads `None — <reason>` needs no tests: do not invent a requirement the
+   plan declined. Each test must be named and structured GIVEN / WHEN / THEN:
+   the three clauses in the name, matching the plan's case line rather than a
+   reworded version of it, and the three commented blocks in the body in that
+   order. A test with setup hidden after its WHEN, with assertions in its
+   GIVEN, or with two unrelated actions under one WHEN is a finding — those are
+   the shapes that make a failure ambiguous about which behaviour broke.
+
+   A testing dependency that appears in the diff without being named in the
+   plan's Section 2 is a finding, as is a second assertion or mocking library
+   alongside the one in Section 1's Test Stack.
+6. **Build & test gate.** Run the build gate — resolved per the pipeline doc's
    Part A, which means the plan's `## 0. Verification Commands` block when a
    plan exists. Never substitute your own guess at the project's Gradle tasks.
-   In-scope failures are blockers. Use the Skill tool for any Android area a
-   skill covers when judging API usage.
+   In-scope failures are blockers. Use the Skill tool for any area a skill
+   covers when judging API usage.
 
 ## Targeted Re-Review (after a Tester-driven fix)
 
@@ -110,8 +127,8 @@ the gate, approve it — needless re-runs waste tokens and time.
   path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, the changed-file manifest, how the
-  named verification commands are resolved, review currency, and the verdict
-  markers. Part B is orchestrator-facing — skip it. If neither path
+  named verification commands are resolved, required unit tests, review
+  currency, and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 

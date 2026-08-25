@@ -66,6 +66,36 @@ against the actual codebase. Judge it on:
    step must include an element selector (`[testTag=foo]` / `[text="…"]`). A UI
    Selectors table must be present at the end of Section 2 listing every testTag
    introduced.
+7. **Required unit tests.** Section 1 records a Test Stack discovered from this
+   project's build files and an existing test — not a generic list, and not
+   silence. Every section in Section 3 has a **Tests required** field filled in
+   with concrete cases (test file path plus a line per behaviour) or an explicit
+   `None — <reason>`. An empty or missing field is a blocker: the Coder writes
+   what this field names and nothing else, so an omission ships a section with
+   no tests at all.
+
+   Judge substance here too:
+   - Cases that only assert construction, delegation, or that a value survives
+     a round trip are fluff — flag them, since the Coder will dutifully write
+     them and the project maintains them forever.
+   - A `None — <reason>` on a section that plainly holds logic — a ViewModel
+     with state transitions, a mapper, a retry policy, a cache — is a blocker.
+   - A `None` on genuine wiring (a nav-graph entry, a DI module, a theme
+     constant) is **correct and complete**, exactly like a well-reasoned `N/A`
+     above. Do not demand coverage for code that has no behaviour to pin down.
+   - A test library named in a section but absent from both Section 1's Test
+     Stack and Section 2's dependency changes is a blocker — the Coder is
+     forbidden from choosing one, so the plan must.
+   - A case not phrased GIVEN / WHEN / THEN is a finding. The Coder transcribes
+     the line as the test name, so a line that omits the starting state or the
+     observable result becomes a test that documents nothing — and a filler
+     clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
+     an omission, since it looks compliant.
+   - A test file named in **Tests required** but absent from that section's
+     **Files** list is a blocker. Scope, the parallel-safety overlap pre-check,
+     and cross-section failure attribution all read **Files**: leave the test
+     file out and the Coder is writing outside its assigned scope, while a
+     failure in that test belongs to no section.
 
 ## Definition of Done
 
@@ -95,8 +125,8 @@ If the plan is good, approve it — needless re-runs waste tokens and time.
 - Read **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC
   path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
   if none was given. It is the source of truth for the artifact layout,
-  read-before-write, the no-commit rule, the build gate, and the verdict
-  markers. Part B is orchestrator-facing — skip it. If neither path
+  read-before-write, the no-commit rule, the build gate, required unit tests,
+  and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 

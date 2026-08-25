@@ -147,6 +147,19 @@ opinion or an unspecified edge case, is recorded as an *observation* in
 `test-results.md` for you to decide on. QA finds defects. It does not get to add
 scope mid-run.
 
+### Unit tests are specified, not left to chance
+
+The Architect names the unit tests each section needs, using the libraries your
+project already uses — discovered from your version catalog, not chosen from a
+default list. Every case is phrased GIVEN / WHEN / THEN, and that line becomes
+the test's name and the shape of its body, so a failing test says which
+behaviour broke without anyone opening the file. The Coder writes exactly
+those, and both reviewers check them:
+the plan reviewer that the cases are worth writing, the code reviewer that they
+exist and would fail if the logic were wrong. A section with no logic worth
+testing says so explicitly rather than padding itself with tests that cannot
+fail.
+
 ### Reviews cover the final code
 
 An approval applies to the tree that existed when it was issued. When the Tester
