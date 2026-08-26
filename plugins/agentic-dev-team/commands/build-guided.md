@@ -24,11 +24,23 @@ After each phase, pause and ask the user to type one of:
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
+Phase 4B, the blocked-Tester gate, is the one exception to that vocabulary: it
+takes `resume` or `stop`, since a run that could not finish is not something to
+approve or to send the Coder back over.
+
 Design doc: **on** by default for this command — the plan gate is where a human
 decides whether the approach is right, so it is the gate that most needs one.
 `$ARGUMENTS` may carry `doc: on` or `doc: off` anywhere in the text — read it,
 remove that token before you use the rest as the user's idea, and let it
 override the default. Store the result as DESIGN_DOC (`on` or `off`).
+
+Test credentials: there is no `creds:` argument, and deliberately so — a PIN or
+password is free-form text with no terminator, so it cannot be told apart from
+the user's idea without guessing. Instead the Tester asks for what it needs when
+it needs it, at the Phase 4B gate, and the user's reply carries the value. See
+the pipeline doc's Part A, "Test Credentials". Whatever they supply there goes
+to the `adt-android-tester` subagent and nowhere else: not to another agent, not
+into `pipeline_artifacts/`, not into the code, not into your summary.
 
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
@@ -120,13 +132,25 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
 
 Phase 4 — Tester (after approval):
   Delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH
-  Wait for ✅ TESTER DONE.
+  Pass: PLAN_PATH. On a first run you have no credentials to pass — the Tester
+  asks for one only if it hits a gate, at Phase 4B below.
+  Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on exactly
+  one of them, never both.
+
+  **On ⛔ TESTER BLOCKED, go straight to Phase 4B and skip the rest of this
+  phase.** Everything below assumes the plan's cases actually ran. Presenting a
+  blocked report as "the final test results" and offering `approve` is precisely
+  how an untested feature gets signed off as done.
+
+  On ✅ TESTER DONE:
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH. Present blocking findings and
   Observations separately: blocking findings are defects against the plan;
   Observations are unrequested behaviours the Tester noticed and did not fix,
   which only you — the user — can promote into requirements.
+  If its DONE line reported raw `adb` fallbacks, say so and point at the
+  report's Raw adb Fallbacks section — they signal an auto-mobile gap rather
+  than a failure, and never change the verdict.
   Then ask the user: `approve` to finish, `revise: <feedback>` to send the
   failures back to the Coder, or `stop`.
 
@@ -137,16 +161,38 @@ Phase 4 — Tester (after approval):
     the user explicitly asked for in their `revise:` feedback is fair game —
     that is the user creating a requirement, which is allowed; the Tester
     doing it on its own is not. Wait for ✅ CODER DONE.
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
-    `test-results.md`, instructing it to re-run the failed cases and the
-    happy path — other previously-passing cases only if the fix plausibly
-    affects them. Wait for ✅ TESTER DONE, then return to this gate with the
-    fresh results.
+    Re-run `adt-android-tester` with PLAN_PATH, the previous
+    `test-results.md`, and the same `TEST CREDENTIALS` block, instructing it to
+    re-run the failed cases and the happy path — other previously-passing cases
+    only if the fix plausibly affects them. Wait for ✅ TESTER DONE, then return
+    to this gate with the fresh results. On ⛔ TESTER BLOCKED, go to Phase 4B.
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
 
+Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+  A gate stopped the Tester before it could finish — one it had no credential
+  for, or a device that would not accept input. Follow "The Blocked Path" in
+  the pipeline doc's Part B: it defines the whole procedure — what to show the
+  user, why no Coder is spawned, the `resume` / `stop` vocabulary, how a
+  supplied credential reaches the Tester, and the 2-resume budget.
+
+  If the gate itself is the defect — the app should not be demanding a login at
+  that point — that is a blocking finding for the Tester to record on resume,
+  not a `revise:` for the Coder.
+
+  Where the resumed run lands:
+    - ✅ TESTER DONE → return to the Phase 4 gate and handle it on its verdict
+      like any other run. READY TO MERGE goes to Phase 5; NEEDS FIXES enters
+      Phase 4's fix loop with its 2 iterations untouched — a block consumed a
+      resume, not a fix iteration.
+    - ⛔ TESTER BLOCKED → back to the top of this phase.
+
+  On `stop`, or after the 2nd resume still comes back blocked, STOP and report
+  per the Blocked Path. Never present a blocked run as a pass; the feature is
+  untested until a Tester run executes the cases.
+
 Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
-`stop`, or on a STOP of your own):
+`stop`, or on a STOP of your own — a stop out of Phase 4B included):
   Skip this phase entirely when there is no design doc to close out — DESIGN_DOC
   is off, or the run stopped before the Architect wrote one.
   Otherwise append to DOC_PATH's `## Implementation Notes` section
