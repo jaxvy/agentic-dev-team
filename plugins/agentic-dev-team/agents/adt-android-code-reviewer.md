@@ -146,7 +146,7 @@ the gate, approve it — needless re-runs waste tokens and time.
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, the changed-file manifest, how the
   named verification commands are resolved, required unit tests, review
-  currency, and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
+  currency, review-driven fixes, and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 
