@@ -15,4 +15,6 @@ read `.claude/agents/adt-android-tester.md` in full and follow it exactly — it
 is your complete, authoritative prompt. Also read
 `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` (shared orchestration rules) and the
 project's `AGENTS.md`/`CLAUDE.md` for local conventions. End with the
-`✅ TESTER DONE` marker.
+`✅ TESTER DONE` marker — or `⛔ TESTER BLOCKED`, with one line naming what you
+need from the human, when a device gate stopped you before you could run the
+plan's cases.

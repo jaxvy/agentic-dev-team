@@ -213,6 +213,26 @@ opinion or an unspecified edge case, is recorded as an *observation* in
 `test-results.md` for you to decide on. QA finds defects. It does not get to add
 scope mid-run.
 
+### A test that could not run never counts as a pass
+
+The Tester depends on hardware, and hardware stalls: an emulator stops taking
+input, a keyguard appears, a screen asks for an account. When that happens it
+stops on a third verdict, `BLOCKED`, and ends on `⛔ TESTER BLOCKED` with one
+concrete ask — the credential it needs, by name, or the thing only you can do.
+Every flow puts that to you and waits, `resume` picks it back up, and two
+resumes is the limit. A blocked run is never rounded up to `READY TO MERGE`, and it never
+sends a Coder to change working code over a locked screen.
+
+Because these are development builds on development devices, you can also just
+tell it the PIN. The blocked run asks for what it needs and your reply carries
+it — `resume: the PIN is 1234` — and it picks back up where it stopped. That
+holds in the unattended flows too: they skip *approval* gates, but a run that
+cannot proceed is worth one question rather than a discarded Architect and
+Coder phase. There is no credential syntax on the commands themselves, so there
+is nothing to fumble: it types only what you sent in answer to its question,
+never guesses a PIN, never lifts one out of your repository or environment, and
+never writes one into `test-results.md`, a screenshot, or its summary.
+
 ### Unit tests are specified, not left to chance
 
 The Architect names the unit tests each section needs, using the libraries your

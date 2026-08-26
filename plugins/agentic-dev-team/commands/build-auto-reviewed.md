@@ -28,6 +28,13 @@ so no design doc is generated unless explicitly requested. `$ARGUMENTS` may carr
 you use the rest as the feature request, and let it override the default. Store the
 result as DESIGN_DOC (`on` or `off`).
 
+Test credentials: there is no `creds:` argument, and deliberately so — a PIN or
+password is free-form text with no terminator, so it cannot be told apart from
+the feature request without guessing. Instead the Tester asks for what it needs
+when it needs it, at the Phase 3B gate, and the user's reply carries the value.
+See the pipeline doc's Part A, "Test Credentials". Whatever they supply there
+goes to the `adt-android-tester` subagent and nowhere else.
+
 **Reviewer-loop protocol (applies to every gate below):**
 - After the producing agent finishes, delegate to its reviewer.
 - If the reviewer ends with `✅ ... APPROVED`, proceed to the next phase.
@@ -117,8 +124,35 @@ Phase 2R — Code review gate (max 2 re-runs):
 
 Phase 3 — Tester:
   Delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH
-  Wait for ✅ TESTER DONE.
+  Pass: PLAN_PATH. On a first run you have no credentials to pass — the Tester
+  asks for one only if it hits a gate, at Phase 3B below.
+  Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on one or
+  the other; a blocked run never emits the DONE marker, so do not wait on it.
+
+Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+  A gate stopped the Tester before it could finish — one it had no credential
+  for, or a device that would not accept input. Follow "The Blocked Path" in
+  the pipeline doc's Part B: it defines the whole procedure — what to show the
+  user, why no Coder is spawned, the `resume` / `stop` vocabulary, how a
+  supplied credential reaches the Tester, and the 2-resume budget.
+
+  **This flow is unattended, and the blocked gate is its one exception.** It
+  approves nothing: nobody signs off on the plan, the code, or the results
+  here. The run has hit a wall it cannot pass, and the only choice is between
+  waiting for one short answer and throwing the run away. Stopping costs
+  strictly more — it discards a finished Architect phase and a finished Coder
+  phase that a re-run pays for again. If nobody is watching, the run waits,
+  and nothing is lost that stopping would have saved.
+
+  Where the resumed run lands:
+    - ✅ TESTER DONE → Phase 3F, handled on its verdict like any other run.
+      NEEDS FIXES enters the fix loop with its 2 iterations untouched — a block
+      consumed a resume, not a fix iteration.
+    - ⛔ TESTER BLOCKED → back to the top of this phase.
+
+  On `stop`, or after the 2nd resume still comes back blocked, **STOP** and
+  report per the Blocked Path, saying plainly that the feature is untested.
+  Run "Close the run" below on the way out.
 
 Phase 3F — Tester fix loop (max 2 iterations):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to the
@@ -139,10 +173,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
-    `test-results.md`, instructing it to re-run the failed cases and the
-    happy path — other previously-passing cases only if the fix plausibly
-    affects them. Wait for ✅ TESTER DONE.
+    Re-run `adt-android-tester` with PLAN_PATH, the previous
+    `test-results.md`, and any `TEST CREDENTIALS` a resume supplied,
+    instructing it to re-run the failed cases and the happy path — other
+    previously-passing cases only if the fix plausibly affects them. Wait for
+    ✅ TESTER DONE or ⛔ TESTER BLOCKED; on the latter, go to Phase 3B.
     On READY TO MERGE, go to the summary.
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
