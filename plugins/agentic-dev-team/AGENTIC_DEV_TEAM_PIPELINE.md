@@ -452,6 +452,47 @@ Tester hits a keyguard  →  ⛔ TESTER BLOCKED, "I need the device PIN"
 **Invariant**: every credential the Tester types was handed to it by a human
 for this run, and none of them survives the run in a file.
 
+## Review-Driven Fixes Are In Scope
+
+A code-review finding usually has no fix in the plan. The plan is written before
+the code exists, so it cannot anticipate the missing null check, the lifecycle
+correction, or the unhandled error branch a reviewer catches by reading the
+actual implementation. Under a strict reading of "build exactly what the plan
+specifies", the Coder would have to STOP on every such finding and the gate
+could never clear: the reviewer blocks on a real defect, the Coder is forbidden
+to fix it, and the run dies after three attempts having changed nothing.
+
+So: **a change made to satisfy a numbered item in a `🔧 CODE CHANGES REQUESTED`
+list is in scope by definition, whether or not the plan specifies it.** It is
+not scope creep, and `adt-android-code-reviewer` must not flag it as plan
+infidelity on a later pass — its own review asked for it.
+
+Four bounds keep this from becoming "the Coder does as it likes":
+
+1. **Only what the finding names.** The minimal fix for that item — no adjacent
+   cleanup, no opportunistic refactor of code the finding merely sits near.
+2. **Only from a reviewer.** The carve-out covers numbered items a reviewer
+   handed the Coder. It never licenses the Coder's own initiative during a first
+   implementation pass, where "stay in the plan" applies in full.
+3. **No new dependencies.** Section 2 of the plan owns the dependency set. A fix
+   needing a library the plan never named is an architectural decision, not a
+   fix — STOP and report it.
+4. **Correctness wins over the plan, and the departure is stated.** Where the
+   fix contradicts something the plan explicitly specifies — a named API that
+   does not exist, two sections whose public interfaces do not meet — the Coder
+   writes the correct code and says so plainly in its `✅ CODER DONE` marker.
+   The plan itself is not edited mid-run: it is the Tester's contract too, and
+   rewriting it under a run in progress leaves other agents reading a document
+   that changed beneath them.
+
+**Invariant**: a genuine defect the reviewer found is fixed in the tree the
+developer is handed, and anywhere the fix departed from the plan is named in the
+run's final summary rather than left for the developer to discover.
+
+This section applies only where a code reviewer exists, which is
+`/build-auto-reviewed`. It changes nothing in `/build-auto` or `/build-guided`,
+whose Coders never receive a code-review finding.
+
 ## Producing-Agent Obligations During a Reviewer Loop
 
 - Reviewers are read-only — they never edit the plan or the code. The producing

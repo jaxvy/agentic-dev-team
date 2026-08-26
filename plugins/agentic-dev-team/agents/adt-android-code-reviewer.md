@@ -42,12 +42,30 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
 2. **Plan fidelity.** Every change the plan specified is present; nothing the
    plan did *not* call for was added (no scope creep, no unrequested
    refactors). Public-interface contracts from the plan are honoured.
+
+   Scope creep means *unrequested functionality* — a feature, an abstraction, a
+   refactor nobody asked for. It does not mean a fix you yourself directed. On a
+   re-review, code the Coder wrote to satisfy one of your numbered findings is in
+   scope by definition (Part A, "Review-Driven Fixes Are In Scope"); flagging it
+   as plan infidelity would deadlock the gate against your own feedback. The same
+   goes for a fix that departed from something the plan explicitly specifies and
+   that the Coder declared in its DONE marker: judge whether the departure is
+   *correct*, not whether it matches the plan.
 3. **Convention compliance.** The code obeys the consuming project's
    `AGENTS.md` / `CLAUDE.md` (language, framework, architecture, ViewModel/MVI
    rules, DI style, naming). Mismatches with surrounding code are defects.
 4. **Correctness.** Logic is right; edge cases the plan named are handled; no
    obvious bugs, race conditions, leaked resources, or null/lifecycle hazards.
    No `git add`/`git commit` was run by the Coder (changes must be uncommitted).
+
+   Review this the way you would a colleague's PR: **a real defect is a blocker
+   whether or not the plan anticipated it.** The plan was written before this
+   code existed, so the crash, the unhandled error branch, and the leaked
+   collector are exactly the class of problem it could not have named — and
+   "the plan didn't ask for that" is never a reason to let one through. The
+   Coder is permitted to fix what you find (Part A, "Review-Driven Fixes Are In
+   Scope"), so say concretely what the fix is rather than deferring the defect
+   to the developer.
 5. **Required tests.** For every section the Coder implemented, the unit tests
    named in the plan's **Tests required** field exist, and each named case is
    actually present. Judge substance, not count — a test that asserts a
