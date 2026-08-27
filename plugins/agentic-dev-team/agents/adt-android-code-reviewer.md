@@ -111,6 +111,12 @@ the Coder worked from (the test report's blocking findings). In that mode:
   specified is scope creep arriving through the back door. Flag it: the Tester
   is not allowed to create requirements, so a blocking finding should always
   trace back to the feature request, the plan, or the project's conventions.
+
+  This bullet is about behaviour arriving from the **Tester**. Code the Coder
+  wrote to satisfy one of *your own* numbered findings is not drift — it is in
+  scope by definition (Part A, "Review-Driven Fixes Are In Scope"). Flagging it
+  here is worse than at the full gate: this loop has one re-run, so a bounce
+  against your own feedback ends the run.
 - **Re-run the build gate** — the same rule as a first-pass review.
 
 End with the usual verdict marker. Only `✅ CODE APPROVED` lets the re-test

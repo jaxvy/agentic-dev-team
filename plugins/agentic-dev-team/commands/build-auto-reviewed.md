@@ -174,7 +174,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
     given.
     - On `✅ CODE APPROVED`: proceed to the re-test below.
     - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
-      feedback, then re-review. This targeted loop allows **at most 1 re-run**.
+      feedback, then re-review. Say in that prompt — as in Phase 2R — that the
+      findings are in scope to fix even where the plan specifies no fix, since
+      a Coder in the fix loop is otherwise under the stricter "stay in the plan"
+      rule that governs Tester findings. This targeted loop allows **at most 1
+      re-run**.
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 
