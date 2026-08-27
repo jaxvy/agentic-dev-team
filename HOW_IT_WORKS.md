@@ -132,6 +132,36 @@ install, where no `install.sh` run ever happened. Without either one, run scratc
 files would show up in the reviewer's changed-file manifest, and in the commit of
 anyone who ran `git add -A` over the Coder's uncommitted tree.
 
+### Review-driven fixes
+
+Most of what a code reviewer finds has no fix in the plan. The plan is written
+before the code exists, so it cannot name the missing null check or the
+unhandled error branch a reviewer catches by reading the implementation. Read
+"build exactly what the plan specifies" strictly and the gate deadlocks: the
+reviewer blocks on a real defect, the Coder is forbidden to fix it, and the run
+dies after three attempts having changed nothing.
+
+So a change made to satisfy a numbered `🔧 CODE CHANGES REQUESTED` item counts
+as in scope, plan or no plan, and the reviewer does not flag it as scope creep on
+the next pass. Four bounds keep that narrow:
+
+| Bound | Effect |
+|---|---|
+| Only what the finding names | The minimal fix, no adjacent cleanup |
+| Only from a reviewer | The Coder's own initiative still stops, as before |
+| No new dependencies | The plan owns the dependency set; that is still a stop |
+| Correctness beats the plan, stated out loud | The Coder writes the right code and declares the departure |
+
+The plan is never rewritten mid-run — it is the Tester's contract too. Instead
+each departure is reported in the run summary, so the plan and the tree
+disagreeing somewhere is something you are told rather than something you find.
+
+This only exists where a code reviewer does, which is `/build-auto-reviewed`.
+`/build-auto` and `/build-guided` are unaffected.
+
+> **Invariant:** a genuine defect the reviewer found is fixed in the tree you are
+> handed, and every place a fix departed from the plan is named in the summary.
+
 ### Review currency
 
 A `✅ CODE APPROVED` verdict applies to the tree that existed when it was issued,

@@ -44,7 +44,9 @@ separate mandates, and puts a reviewer between them.
   Deciding an approach is wrong is cheapest before the code exists, and a diff is
   the most expensive place to discover it.
 * In the reviewed flow, code review always covers the final state of the tree,
-  including fixes made after testing.
+  including fixes made after testing. A defect the reviewer finds gets fixed
+  even when the plan never anticipated it, and anywhere a fix had to depart from
+  the plan is reported back to you.
 * The Tester drives the real app on a device or emulator, not a mocked harness.
 * Retry loops are bounded. Reviewers get at most two rounds, the fix loop gets at
   most two, and a run that still fails stops and explains why instead of
@@ -142,6 +144,12 @@ every new untracked file, not just what shows up in `git diff`.
 When a reviewer requests changes, the producing agent re-runs with that feedback,
 at most twice per gate. If the reviewer is still unsatisfied after the second
 re-run, the pipeline stops and reports instead of shipping rejected work.
+
+The code reviewer reviews the way a colleague would: a real bug is a blocker
+whether or not the plan anticipated it, and the Coder is allowed to fix what it
+finds even where the plan is silent. The plan is not rewritten mid-run, so on the
+rare occasion a fix has to contradict it, the run summary tells you where the two
+now disagree — along with the nits the reviewer raised but chose not to block on.
 
 ```mermaid
 flowchart LR

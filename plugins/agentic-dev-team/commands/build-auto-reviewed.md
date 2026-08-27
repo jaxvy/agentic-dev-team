@@ -119,8 +119,13 @@ Phase 2R — Code review gate (max 2 re-runs):
     spawn ONE `adt-android-coder` subagent with PLAN_PATH and the reviewer's
     numbered feedback, instructing it to fix exactly those points (regardless of
     the parallel-safety decision; fixes are usually small and cross-cutting).
-    Wait for ✅ CODER DONE, then review again. After the 2nd failed re-run,
-    STOP and report (see protocol).
+    State in that prompt that the numbered findings are in scope to fix **even
+    where the plan does not specify the fix** — Part A, "Review-Driven Fixes Are
+    In Scope" — so the Coder does not STOP on a defect the plan never
+    anticipated. Wait for ✅ CODER DONE, then review again. After the 2nd failed
+    re-run, STOP and report (see protocol).
+    Record the `Plan departures` field from each ✅ CODER DONE marker; it feeds
+    the final summary below.
 
 Phase 3 — Tester:
   Delegate to the `adt-android-tester` subagent.
@@ -169,7 +174,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
     given.
     - On `✅ CODE APPROVED`: proceed to the re-test below.
     - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
-      feedback, then re-review. This targeted loop allows **at most 1 re-run**.
+      feedback, then re-review. Say in that prompt — as in Phase 2R — that the
+      findings are in scope to fix even where the plan specifies no fix, since
+      a Coder in the fix loop is otherwise under the stricter "stay in the plan"
+      rule that governs Tester findings. This targeted loop allows **at most 1
+      re-run**.
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 
@@ -211,3 +220,16 @@ non-blocking, since those are decisions waiting on the user rather than work the
 pipeline did. Also report, for each review gate, how many re-runs were needed
 (0, 1, or 2) and whether parallel execution was used and how many
 adt-android-coder subagents ran, so the user can gauge token cost.
+
+Two things from the code review gate go in the summary as well, because the
+developer — not this pipeline — does the real review of the diff, and these are
+what they would otherwise have to rediscover:
+  - **Plan departures**: every `Plan departures` line the Coders reported across
+    the whole run, Phase 3F included. These are places a reviewer-directed fix
+    contradicted something PLAN_PATH explicitly specifies, so the plan and the
+    tree now disagree there — say what the plan said and what was built instead.
+    Write `none` when there were none.
+  - **Nits the reviewer declined to block on**: the items under the reviewer's
+    "Nits / optional" sub-heading, which never drove a re-run and are otherwise
+    lost when the run ends. They are suggestions for the developer, not
+    outstanding work.
