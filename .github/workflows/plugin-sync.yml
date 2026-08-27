@@ -1,0 +1,25 @@
+name: plugin-sync
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Antigravity package matches the canonical plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate marketplace and plugin manifests
+        run: |
+          for f in .claude-plugin/marketplace.json \
+                   .agents/plugins/marketplace.json \
+                   plugins/agentic-dev-team/.claude-plugin/plugin.json \
+                   plugins/agentic-dev-team-antigravity/plugin.json; do
+            python3 -m json.tool "$f" > /dev/null && echo "ok  $f"
+          done
+
+      - name: Check the generated Antigravity package is up to date
+        run: ./scripts/sync-antigravity-plugin.sh --check

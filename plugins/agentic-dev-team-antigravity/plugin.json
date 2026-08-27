@@ -1,0 +1,9 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "agentic-dev-team",
+  "description": "PM → Architect → Coder → Tester pipeline for Android, working in Claude Code, Antigravity, and opencode.",
+  "author": { "name": "jaxvy" },
+  "homepage": "https://github.com/jaxvy/agentic-dev-team",
+  "repository": "https://github.com/jaxvy/agentic-dev-team",
+  "license": "MIT"
+}

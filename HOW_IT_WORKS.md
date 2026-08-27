@@ -526,7 +526,9 @@ Each Android project that wants the pipeline links this repo's files into its ow
    user_rules. `install.sh` inlines the persona stubs from this repo's
    `.agents/AGENTIC_DEV_TEAM.md` into a marker-fenced block in your `agents.md`,
    so Antigravity sees them in context without loading another file. The
-   HTML-comment markers are ignored by Antigravity itself.
+   HTML-comment markers are ignored by Antigravity itself. `agy plugin install`
+   is the other route and needs no per-project setup — see
+   [The Antigravity package](#the-antigravity-package).
 4. **OpenCode discovery.** OpenCode scans `.opencode/commands/` for slash commands
    and `.opencode/agents/` for subagents. Each agent file is a `mode: subagent`
    stub whose body reads its canonical prompt from `.claude/agents/adt-*.md`, so
@@ -540,6 +542,59 @@ Each Android project that wants the pipeline links this repo's files into its ow
 6. **A managed `.gitignore` block.** Symlink targets are per-developer absolute
    paths such as `~/code/agentic-dev-team/...`, which would not resolve on a
    teammate's machine, so `install.sh` maintains a small block listing them.
+
+### The Antigravity package
+
+`agy plugin install https://github.com/jaxvy/agentic-dev-team` reads
+`.agents/plugins/marketplace.json` — Antigravity's equivalent of
+`.claude-plugin/marketplace.json` — and stages the package it names into
+`~/.gemini/antigravity-cli/plugins/agentic-dev-team/`.
+
+The two hosts cannot share one plugin directory. Both read `agents/` and
+`skills/` from it, but they disagree on what belongs in the frontmatter: Claude
+Code wants `tools:` and `model:`, while Antigravity resolves tool names against
+its own registry, where an unmapped name can hang the subagent mid-run. So the
+repo ships two packages, and the Antigravity one is generated:
+
+```
+plugins/agentic-dev-team/                 canonical — edit this one
+plugins/agentic-dev-team-antigravity/     generated — do not edit
+```
+
+`scripts/sync-antigravity-plugin.sh` performs the transform:
+
+| Canonical | Generated | Change |
+|---|---|---|
+| `.claude-plugin/plugin.json` | `plugin.json` | Antigravity reads the manifest from the plugin root |
+| `agents/*.md` | `agents/*.md` | drop `tools:` and `model:`, add `subagent: true` |
+| `commands/*.md` | `skills/<name>/SKILL.md` | Antigravity has no `commands/`; a skill is what becomes a slash command |
+| `.agents/AGENTIC_DEV_TEAM.md` | `rules/agentic-dev-team.md` | the personas install.sh would have inlined into `agents.md` |
+| `AGENTIC_DEV_TEAM_PIPELINE.md` | `AGENTIC_DEV_TEAM_PIPELINE.md` | copied |
+
+Dropping `tools:` is deliberate rather than lossy — omitting the key gives a
+subagent Antigravity's default toolset, which is the safe default. Dropping
+`model:` costs nothing: Antigravity has no per-subagent model selection, so every
+subagent inherits your globally selected model. Pick the strongest one for a full
+pipeline run.
+
+In every generated body, `${CLAUDE_PLUGIN_ROOT}` is rewritten to the path
+Antigravity stages the plugin to, so the "plugin-only install" fallbacks in the
+commands and agents resolve under `agy`. The persona rules go further and point
+at the staged `agents/` directory outright, since that copy is only ever read
+when the plugin is installed — `install.sh` inlines the canonical `.agents/`
+file instead of that one.
+
+Editing the generated package directly is a mistake the next sync would silently
+revert, so `.github/workflows/plugin-sync.yml` runs
+`scripts/sync-antigravity-plugin.sh --check` on every push and pull request. It
+regenerates into a temp directory and diffs, failing with the diff when the two
+have drifted. After editing anything under `plugins/agentic-dev-team/`, run:
+
+```bash
+./scripts/sync-antigravity-plugin.sh
+```
+
+and commit both directories together.
 
 ### What install.sh creates
 
@@ -633,6 +688,12 @@ there.
 **Removing or renaming files.** Just do it in the repo. The sync logic in
 `install.sh` removes stale symlinks from consuming projects on the next run.
 
+**Every one of the above.** Finish by running
+`./scripts/sync-antigravity-plugin.sh` and committing
+`plugins/agentic-dev-team-antigravity/` alongside your change. The new agent,
+command, or edited rule does not reach Antigravity plugin users until the
+generated package carries it, and CI fails the pull request if you forget.
+
 ### Project context
 
 Every `adt-*` agent reads your project's `AGENTS.md` or `CLAUDE.md`, whichever
@@ -655,7 +716,20 @@ removed upstream. Run `install.sh` and the sync will clear stale symlinks.
 **An agent's persona looks out of date in Antigravity.** Persona stubs are inlined
 into `.agents/agents.md` at install time rather than symlinked, so re-run
 `install.sh` to refresh that block. Agent prompts and the pipeline doc are
-symlinked and never need this.
+symlinked and never need this. If you installed with `agy plugin install`
+instead, nothing is symlinked at all — the staged copy under
+`~/.gemini/antigravity-cli/plugins/` only changes on re-install, so run
+`agy plugin uninstall agentic-dev-team` and install again.
+
+**My change to an agent has not reached Antigravity plugin users.** The
+Antigravity package is generated. Run `./scripts/sync-antigravity-plugin.sh` and
+commit `plugins/agentic-dev-team-antigravity/` — see
+[The Antigravity package](#the-antigravity-package).
+
+**An Antigravity subagent hangs instead of running.** That is the symptom of a
+tool name Antigravity cannot map, which is why the generator drops `tools:`
+entirely. If you hand-edited the generated package to add one back, re-run the
+sync script to discard the edit.
 
 **Both `AGENTS.md` and `CLAUDE.md` exist.** Agents read whichever they find first.
 Pick one as canonical and keep them in sync, or delete one.

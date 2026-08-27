@@ -299,7 +299,7 @@ yours already sits at one of those paths, it refuses and names the path.
 
 ## Installation
 
-There are two paths, and they are not mutually exclusive.
+There are three paths, and they are not mutually exclusive.
 
 ### Install as a Claude Code plugin
 
@@ -313,10 +313,35 @@ The fastest path if you only use Claude Code. From inside the CLI:
 This installs all six agents and all five commands with no per-project setup. It
 does not wire up Antigravity or OpenCode.
 
+### Install as an Antigravity plugin
+
+```bash
+agy plugin install https://github.com/jaxvy/agentic-dev-team
+```
+
+This installs the six agents as registered subagents, the five commands as
+skills (which is what Antigravity surfaces as slash commands), and the team
+personas as always-on rules. No per-project setup.
+
+Antigravity and Claude Code disagree on agent frontmatter — Antigravity resolves
+`tools:` against its own registry, where an unmapped name can hang a subagent —
+so `agy` installs a separate package, `plugins/agentic-dev-team-antigravity/`,
+generated from the canonical one. See
+[HOW_IT_WORKS.md](HOW_IT_WORKS.md#the-antigravity-package) if you are editing it.
+
+If your `agy` build does not resolve a plugin from a subdirectory of the repo,
+install from a local checkout instead:
+
+```bash
+git clone https://github.com/jaxvy/agentic-dev-team.git ~/code/agentic-dev-team
+agy plugin install ~/code/agentic-dev-team/plugins/agentic-dev-team-antigravity
+```
+
 ### Install per project with install.sh
 
-This is the only supported path for Antigravity and OpenCode, since neither has a
-plugin marketplace. It also works alongside the plugin.
+This is the only supported path for OpenCode, which has no plugin marketplace.
+It also works alongside either plugin, and remains the way to run the pipeline
+from a checkout you edit in place.
 
 Clone the repo once, anywhere you like:
 
@@ -347,14 +372,22 @@ immediately because your project links to them. Re-running `install.sh` is what
 picks up newly added files and clears out removed ones. It is a sync rather than
 an append.
 
+Plugin installs link to nothing, so they update by re-installing:
+
+```bash
+agy plugin uninstall agentic-dev-team && agy plugin install https://github.com/jaxvy/agentic-dev-team
+```
+
 ### Uninstalling
 
 ```bash
-~/code/agentic-dev-team/install.sh --uninstall
+~/code/agentic-dev-team/install.sh --uninstall   # per-project install
+agy plugin uninstall agentic-dev-team            # Antigravity plugin
 ```
 
-This removes only what it created: its own symlinks, and its marker-fenced blocks
-in `.gitignore` and `.agents/agents.md`. Your files and the clone are left alone.
+`install.sh --uninstall` removes only what it created: its own symlinks, and its
+marker-fenced blocks in `.gitignore` and `.agents/agents.md`. Your files and the
+clone are left alone.
 
 ## Further reading
 
