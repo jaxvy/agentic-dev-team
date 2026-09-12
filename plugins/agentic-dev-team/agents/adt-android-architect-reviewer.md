@@ -50,7 +50,7 @@ against the actual codebase. Judge it on:
 5. **Parallel-safety call.** Sanity-check the YES/NO decision against the file
    lists: a YES with overlapping files between same-group sections is a defect;
    a NO on an obviously decomposable medium/large feature is worth flagging.
-6. **Testability.** The Manual Testing Plan addresses all six risk categories —
+6. **Testability.** The Device Test Plan addresses all six risk categories —
    happy path, offline, process death, permission denied, config change, error
    state — each as a real case or an explicit `N/A — <reason>`, summarised in the
    Risk Category Coverage table. Judge the substance, not the count:

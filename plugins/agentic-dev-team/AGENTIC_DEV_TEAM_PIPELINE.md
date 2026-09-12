@@ -30,7 +30,8 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
   - `adt-android-pm` writes `pipeline_artifacts/{slug}/feature.md`.
   - `adt-android-architect` writes `pipeline_artifacts/{slug}/implementation-plan.md`. Its `## 0. Verification Commands` block is the run's authority for the named commands below.
   - `adt-android-architect` also writes `pipeline_artifacts/{slug}/design-doc.md` — the human-facing design document — whenever the orchestrator asks for it. See "The Two Architect Artifacts" below.
-  - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`.
+  - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`, plus the run's Maestro report and debug artifacts beside it.
+  - `adt-android-tester` also writes **Maestro flows to `.maestro/{slug}/`** in the consuming project — and that directory is deliberately **not** git-ignored. See "The Tester's Two Tiers" below: the flows are a durable deliverable, the report is scratch.
   - `adt-android-coder` produces no markdown — only uncommitted code changes in the working tree.
   - `pipeline_artifacts/` must be git-ignored in the consuming project. Two mechanisms cover this, and they are deliberately redundant:
     - `install.sh` adds `/pipeline_artifacts/` to the managed `.gitignore` block. This covers the per-project install path only.
@@ -41,7 +42,8 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
 
 - **Read-before-write**: Every agent must read the prior phase artifact in full before starting. A missing required artifact is a STOP condition — report to the user, do not proceed by guessing.
 - **No-commit rule for adt-android-coder**: The Coder must never run `git add`, `git commit`, or any staging command. Changes stay uncommitted for human review.
-- **Manual verification**: `adt-android-tester` must perform manual verification through the `auto-mobile` MCP server when that server is available and the consuming project's `AGENTS.md` / `CLAUDE.md` requires it.
+- **Device verification**: `adt-android-tester` must verify the feature on a real device or emulator. It does that in two tiers — compiled Maestro flows for the plan's cases, the `auto-mobile` MCP server for triage and for what a flow cannot express. See "The Tester's Two Tiers".
+- **No-commit applies to the Tester too**: the flows it writes to `.maestro/` are left uncommitted for human review, exactly like the Coder's code.
 
 ## The Two Architect Artifacts
 
@@ -304,13 +306,77 @@ it, a run can end on `READY TO MERGE` carrying implementation code no reviewer
 ever saw — the tests prove the feature behaves, not that the code that makes it
 behave is sound.
 
+## The Tester's Two Tiers
+
+Device verification is split by cost, and the split is the reason the Tester
+phase is affordable at all.
+
+| | **Tier 1 — Replay** | **Tier 2 — Exploration** |
+|---|---|---|
+| Engine | Maestro flows in `.maestro/{slug}/` | `auto-mobile` MCP, the model in the loop |
+| Cost of a test case | amortised into one `Bash` call for the whole suite | one inference pass **per interaction** |
+| Survives the run | yes — a file in the project | no |
+| Scope | **every case in the plan's Section 4** | triage of a Tier 1 failure; checks no flow can make |
+
+An LLM driving a device one tap at a time pays a full inference pass — prompt,
+transcript, and a view hierarchy or screenshot — for each tap, and produces
+nothing that can be run again. A twenty-step feature costs twenty of those, and
+the Tester fix loop pays it again on every iteration. Compiling the same twenty
+steps into a flow costs one pass, runs in one call, and leaves a file behind.
+
+So the rule is: **the plan's cases are compiled, never driven.** This is what
+Section 4's selector mandate is for — a step that names its element
+(`Tap [testTag=save_item_button]`) is already a flow command, and the UI
+Selectors table is its symbol table.
+
+Tier 2 is capped per run — one `observe` and one screenshot per *failing* flow,
+and at most 5 interactions for exploration. The cap is not a suggestion: a run
+that spends forty interactions re-confirming what a flow already asserted has
+found nothing and cost everything.
+
+### Retention Is the Point
+
+`.maestro/` is in the project, not in `pipeline_artifacts/`, and it is not
+git-ignored. That is deliberate, and it is what the two tiers buy:
+
+- **Re-testing is nearly free.** A `NEEDS FIXES` → fix → re-test iteration
+  re-runs the same flows instead of re-deriving them.
+- **Regression stops being a guess.** Each feature's happy path is tagged
+  `smoke`, so every later run does
+  `maestro test --include-tags smoke --exclude-tags {slug} .maestro/` — a real
+  regression suite that grows by one feature per run, replacing a hand-waved
+  "check one adjacent surface".
+- **The suite outlives the pipeline.** The flows are ordinary Maestro files. A
+  human runs them locally or in CI with no agent involved.
+
+A flow is only worth keeping if it is self-contained (its own `launchApp` and
+its own setup), leaves the device neutral, and asserts something. The Tester's
+prompt carries those rules; a reviewer seeing `.maestro/` files should hold
+them to it.
+
+### Compose testTags Must Reach the Device
+
+`Modifier.testTag(...)` is invisible to device automation unless the app sets
+`testTagsAsResourceId = true` on a node above the whole UI. Without it every
+selector in Section 4 matches nothing and a working feature reports as broken.
+`adt-android-architect` checks for it and introduces it in the plan when the
+project lacks it. XML Views need no equivalent.
+
+### When Maestro Is Not Installed
+
+The Tester falls back to driving the plan's cases interactively, records the
+degraded mode in one line at the top of `test-results.md`, and says so on its
+DONE marker. The run still completes; it just costs what it used to. Installing
+Maestro (`curl -fsSL https://get.maestro.mobile.dev | bash`) is the fix, and the
+Tester names it.
+
 ## Tester Findings: Blocking vs Observation
 
 `adt-android-tester` classifies every finding, and only one class drives code
 changes.
 
 - **Blocking** — the behaviour violates the feature request, the approved plan
-  (including its Manual Testing Plan and any Platform Notes), or the project's
+  (including its Device Test Plan and any Platform Notes), or the project's
   established conventions in `AGENTS.md` / `CLAUDE.md`; or it is a crash, data
   loss, security problem, or a regression in an existing surface. These fail
   their test case and drive the fix loop.
@@ -377,10 +443,10 @@ pass because the unit suite was green.
 
 ## Raw adb Fallbacks
 
-`adb` is not banned. `adt-android-tester` drives the device through auto-mobile
-by default, because those tools know which app is under test and the shell does
-not — but where auto-mobile has no equivalent, or its call fails, the shell is
-a legitimate fallback rather than a dead end.
+`adb` is not banned. `adt-android-tester` drives the device through Maestro and
+auto-mobile, because those tools know which app is under test and the shell does
+not — but where neither has an equivalent, or a call fails, the shell is a
+legitimate fallback rather than a dead end.
 
 What makes it safe is that it is **declared**, not that it is forbidden. A raw
 `adb` command can silently move the ground under the run: `keyevent 26` (POWER)
@@ -438,9 +504,11 @@ Tester hits a keyguard  →  ⛔ TESTER BLOCKED, "I need the device PIN"
   costs one reply rather than a discarded run, whichever command started it.
 - **They are run-scoped and never persisted.** They do not go into
   `pipeline_artifacts/`, into `test-results.md`, into a screenshot, into a
-  recorded auto-mobile plan, into the code, or into the orchestrator's final
-  summary. Artifacts record *that* a sign-in happened; the value stays in the
-  conversation.
+  Maestro flow or a `maestro -e` argument, into the code, or into the
+  orchestrator's final summary. Artifacts record *that* a sign-in happened; the
+  value stays in the conversation. A retained flow is a file in the repository
+  forever, so a credential gate is driven interactively and the flow starts from
+  the signed-in state.
 - **The Tester never sources its own.** A credential it was not handed is one
   it does not have — it does not guess a PIN, read one out of the repository or
   the environment, or reuse another app's stored session. It asks, by name, and
@@ -702,9 +770,13 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Tester Phase**: Invoke `adt-android-tester` with the plan path, plus any
      `TEST CREDENTIALS` the human supplied for this run (Part A, "Test
-     Credentials"). It runs manual verification via `auto-mobile` and writes
-     `test-results.md`. Wait for **either** `✅ TESTER DONE` **or**
-     `⛔ TESTER BLOCKED` — both end its turn.
+     Credentials"). It compiles the plan's cases into Maestro flows under
+     `.maestro/{slug}/`, runs them, explores the residue via `auto-mobile`, and
+     writes `test-results.md` (Part A, "The Tester's Two Tiers"). Wait for
+     **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
+     Report the retained flow path in the run's final summary: those files are
+     part of what the developer is handed, and they are uncommitted like the
+     rest of the diff.
    - **Tester Blocked**: on `⛔ TESTER BLOCKED`, take "The Blocked Path" above
      instead of the fix loop, and do not advance.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
@@ -744,9 +816,10 @@ up by the same install.sh run:
 3. **Models**: opencode runs every subagent on the user's currently selected
    model (the agent files set no per-role `model:`), matching Antigravity's
    behavior. Select the strongest available model for full pipeline runs.
-4. **Tester MCP**: the `auto-mobile` MCP (an HTTP server) is registered in
-   `opencode.json` under the `mcp` key (`type: "remote"`, with auto-mobile's
-   `url`); the Tester reaches it like any other tool.
+4. **Tester tooling**: the Tester's Tier 1 is the `maestro` CLI, reached through
+   Bash — nothing to register. Tier 2 is the `auto-mobile` MCP (an HTTP server),
+   registered in `opencode.json` under the `mcp` key (`type: "remote"`, with
+   auto-mobile's `url`); the Tester reaches it like any other tool.
 5. **Rules**: agents and commands reference `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
    and the project's `AGENTS.md`/`CLAUDE.md` by path (both present in the project
    tree), so opencode reads the same sources of truth as the other tools.

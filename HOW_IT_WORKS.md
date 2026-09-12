@@ -19,7 +19,7 @@ links are present and who approves each one.
 ```
    PM   ->   Architect   ->   Coder   ->   Tester   ->   your diff
 feature.md  impl-plan.md    the code    test-results.md
-            design-doc.md
+            design-doc.md               .maestro/ flows
 ```
 
 | Command | PM | Architect | Plan review | Coder | Code review | Tester | Gates |
@@ -44,7 +44,7 @@ with the slug lowercase and hyphenated (for example `background-link-checks`).
 | `adt-android-pm` | `feature.md` | `✅ PM DONE` |
 | `adt-android-architect` | `implementation-plan.md`, and `design-doc.md` when the command asks for one | `✅ ARCHITECT DONE` |
 | `adt-android-coder` | Nothing. Only uncommitted code | `✅ CODER DONE` |
-| `adt-android-tester` | `test-results.md` | `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` |
+| `adt-android-tester` | `test-results.md`, and Maestro flows in `.maestro/{slug}/` | `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` |
 
 The Tester is the only agent with two terminal markers, because it is the only
 one that depends on hardware. See [When the Tester is
@@ -72,6 +72,7 @@ written.
 | `implementation-plan.md` | Architect | The Coder, both reviewers, and the Tester |
 | `design-doc.md` | Architect | **You.** Whoever maintains this later |
 | `test-results.md` | Tester | The Coder on failures, and you |
+| `.maestro/{slug}/*.yaml` | Tester | Every later run, your CI, and you |
 
 ```mermaid
 flowchart LR
@@ -240,6 +241,62 @@ The build gate runs the project's unit-test task, but that only executes tests
 that exist — it can never fail for one that was never written. That is why the
 requirement lives in the plan and is checked by a reviewer instead.
 
+### The Tester's two tiers
+
+Device verification is split by cost, and the split is why the Tester phase is
+affordable.
+
+| | Tier 1 — Replay | Tier 2 — Exploration |
+|---|---|---|
+| Engine | Maestro flows in `.maestro/{slug}/` | `auto-mobile` MCP, the model in the loop |
+| Cost per test case | amortised into one command for the whole suite | one model round-trip **per interaction** |
+| Survives the run | Yes, as a file in your project | No |
+| What belongs here | Every case in the plan's Section 4 | Triage of a Tier 1 failure, and checks no flow can make |
+
+A model driving a device one tap at a time pays a full round-trip — prompt,
+transcript, and a view hierarchy or screenshot — for every tap, and leaves
+nothing that can be run again. A twenty-step feature costs twenty of those, and
+the fix loop pays it again on each iteration. Compiling the same twenty steps
+into a flow costs one round-trip, runs in one command, and leaves a file behind.
+
+So the rule is: **the plan's cases are compiled, never driven.** This is what
+the plan's selector mandate was always for. A step that names its element,
+`Tap [testTag=save_item_button]`, is already a flow command, and the plan's UI
+Selectors table is its symbol table.
+
+```
+Section 4 case          ->  .maestro/{slug}/tc-01-happy-path.yaml
+Tap [testTag=save_btn]  ->  - tapOn: { id: "save_btn" }
+Assert [testTag=list]   ->  - assertVisible: { id: "list" }
+```
+
+Tier 2 is capped: one `observe` and one screenshot per *failing* flow, and at
+most five interactions for exploration. Rotation, dark mode, backgrounding,
+process death and offline are all Tier 1 — Maestro expresses each of them, so
+none of them is a reason to spend a round-trip.
+
+Two consequences, and they are the point:
+
+* **Re-testing is nearly free.** A `NEEDS FIXES` → fix → re-test iteration
+  re-runs the same flows rather than re-deriving them.
+* **Regression stops being a guess.** Each feature's happy path is tagged
+  `smoke`, so every later run executes every earlier feature's happy path. That
+  replaces a hand-waved "check one adjacent surface" with a suite that grows by
+  one feature per run — and that you can run yourself, in CI, with no agent.
+
+One platform detail makes or breaks all of it: a Compose `Modifier.testTag` is
+invisible to device automation unless the app sets `testTagsAsResourceId = true`
+above the whole UI. Without it every selector matches nothing and a working
+feature reports as broken, so the Architect checks for it and introduces it in
+the plan when your project lacks it. XML Views need no equivalent.
+
+If `maestro` is not on the `PATH`, the Tester drives the cases interactively
+instead, says so at the top of `test-results.md` and on its DONE line, and tells
+you how to install it. The run still completes; it just costs what it used to.
+
+> **Invariant:** a case in the plan is a file in your repository afterwards, or
+> the report says which case could not be one and why.
+
 ### Blocking findings and observations
 
 The Tester classifies everything it finds, and only one class drives code
@@ -308,11 +365,10 @@ run.
 
 ### Raw adb is a fallback, not a ban
 
-`adb` is not forbidden. The Tester drives the device through auto-mobile by
-default, because those tools know which app is under test and the shell does
-not — but where auto-mobile has no equivalent, or its call fails, the shell is
-a legitimate fallback rather than a dead end. Some test cases arguably need it:
-"background the app for 30 seconds, then return" is a real case in the plan.
+`adb` is not forbidden. The Tester drives the device through Maestro and
+auto-mobile, because those tools know which app is under test and the shell does
+not — but where neither has an equivalent, or a call fails, the shell is a
+legitimate fallback rather than a dead end.
 
 What makes it safe is that it is **declared**. A shell command can silently move
 the ground under a run — POWER locks the screen, HOME backgrounds the app, and
@@ -367,9 +423,11 @@ Four rules keep that narrow:
 - It types only what this run gave it. It does not guess a PIN, read one out of
   the repository or the environment, or reuse another app's stored session — a
   credential it was not handed is one it does not have, and that is a `BLOCKED`.
-- No value reaches an artifact: not `test-results.md`, not a screenshot, not a
-  recorded plan, not the final summary. Artifacts record *that* a sign-in
-  happened. The value stays in the conversation.
+- No value reaches an artifact: not `test-results.md`, not a screenshot, not the
+  final summary, and above all not a Maestro flow or a `maestro -e` argument —
+  a retained flow is a file in your repository forever. A credential gate is
+  driven interactively and the flow starts from the signed-in state. Artifacts
+  record *that* a sign-in happened. The value stays in the conversation.
 - Test accounts only. A gate wanting a real person's account or production
   access is a `BLOCKED`, however it was supplied.
 

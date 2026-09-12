@@ -51,6 +51,12 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    goes for a fix that departed from something the plan explicitly specifies and
    that the Coder declared in its DONE marker: judge whether the departure is
    *correct*, not whether it matches the plan.
+
+   **Maestro flows under `.maestro/` are never scope creep.** On a targeted
+   re-review inside the Tester's fix loop, the manifest will carry flow files
+   the Tester wrote (Part A, "The Tester's Two Tiers"). They are a required
+   deliverable, not unrequested work, and they are not the Coder's. Do not flag
+   them, and do not ask the Coder to change them.
 3. **Convention compliance.** The code obeys the consuming project's
    `AGENTS.md` / `CLAUDE.md` (language, framework, architecture, ViewModel/MVI
    rules, DI style, naming). Mismatches with surrounding code are defects.

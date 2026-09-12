@@ -124,7 +124,7 @@ it must not be.
    2, and add it to the project's version catalog if it uses one, so the Coder
    never picks a library for you.
 
-   **Manual test cases.** Section 4's Manual Testing Plan is what the Tester
+   **Manual test cases.** Section 4's Device Test Plan is what the Tester
    drives on device — write each case as a concrete, observable device
    action. Consider every risk category (happy path, offline, process death,
    permission denial, config change, error state) and write a real case for
@@ -192,7 +192,7 @@ must not touch):
   section's **Files** list. Any test dependency the project does not already
   have is named with artifact and version in Section 2 (per Operating
   Principle 6).
-- The Manual Testing Plan addresses all six risk categories: happy path,
+- The Device Test Plan addresses all six risk categories: happy path,
   offline, process death, permission denied, config change, and error state —
   each as a real test case, or as an explicit `N/A — <reason>` where the
   category cannot apply to this feature. Every action step in the plan includes
@@ -449,7 +449,7 @@ Coder can re-invoke the same ones.
    <Links into `implementation-plan.md` by section for anyone who wants the
    file-by-file steps — "Section 1 — Current State of Codebase", "Section 2 —
    Proposed Changes", "Section 3 — Work Breakdown & Execution Strategy",
-   "Section 4 — Manual Testing Plan". Link; do not restate.>
+   "Section 4 — Device Test Plan". Link; do not restate.>
    ````
 
 5. **Write `pipeline_artifacts/{slug}/implementation-plan.md`** with this exact
@@ -602,7 +602,25 @@ Coder can re-invoke the same ones.
    | Item list                | item_list                      |
    | Empty state label        | empty_state_label              |
    ```
-   This table is the Tester's cheat sheet.)
+   This table is the Tester's cheat sheet, and it is the symbol table the
+   Tester compiles the Device Test Plan against — see Section 4.
+
+   **A Compose `testTag` is invisible to the device unless the app opts in.**
+   `Modifier.testTag(...)` lives in the semantics tree; the UI-automation layer
+   the Tester drives sees Android *resource-ids*. The bridge is
+   `testTagsAsResourceId = true`, set once on a node above the whole app:
+   ```kotlin
+   Box(
+       Modifier.semantics { testTagsAsResourceId = true },
+   ) { AppNavHost(...) }
+   ```
+   Check whether the project already sets it — grep for
+   `testTagsAsResourceId`. If it does not, this feature's plan is what
+   introduces it: name the file and the node in Section 2.3, and say in one line
+   why (every selector in Section 4 depends on it). Without it every one of the
+   Tester's selectors matches nothing, and the run reports a working feature as
+   broken. XML Views need no equivalent — `android:id` is already a
+   resource-id.)
 
    ### 2.3 Modifications to Existing Files
    - `app/navigation/NavGraph.kt`: add `<name>` destination between
@@ -713,14 +731,25 @@ Coder can re-invoke the same ones.
          again THEN no second fetch is issued
      ```
 
-   ## 4. Manual Testing Plan (for Tester)
+   ## 4. Device Test Plan (for Tester)
 
-   Concrete steps the Tester will run against the app via auto-mobile MCP.
-   Each action step **must include the element selector** (testTag,
-   contentDescription, or visible text) from the UI Selectors table so the
-   Tester can drive directly without live screen discovery. Use the format:
-   `Tap [testTag=<value>]` or `Tap [text="<label>"]` or
-   `Type "…" into [testTag=<value>]`.
+   **Write this as a script, not as prose.** The Tester compiles each case
+   into a Maestro flow and runs the whole set with one command; a case it can
+   compile costs almost nothing to run and is kept as a regression test, and a
+   case it cannot has to be driven interactively at roughly a hundred times the
+   cost. So every action step **must carry its selector** from the UI Selectors
+   table — `Tap [testTag=<value>]`, `Tap [text="<label>"]`,
+   `Type "…" into [testTag=<value>]`, `Assert [testTag=<value>] is visible` —
+   and every expected result must be a statement about a named element, not an
+   impression of the screen. "The list updates" is not compilable;
+   "[testTag=item_list] shows "Test item"" is.
+
+   All six risk categories below are expressible as flow commands (offline,
+   process death, permission denial, rotation and dark mode included), so none
+   of them is a reason to write a vague case. Reserve prose for what genuinely
+   needs a human eye — a credential gate, a judgement call about animation or
+   contrast — and say so explicitly in the case, so the Tester knows to spend
+   its interactive budget there.
 
    ### Test Case 1: Happy Path
    **Setup**: Fresh install, signed in

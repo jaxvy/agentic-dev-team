@@ -47,7 +47,8 @@ separate mandates, and puts a reviewer between them.
   including fixes made after testing. A defect the reviewer finds gets fixed
   even when the plan never anticipated it, and anywhere a fix had to depart from
   the plan is reported back to you.
-* The Tester drives the real app on a device or emulator, not a mocked harness.
+* The Tester runs the real app on a device or emulator, not a mocked harness —
+  and leaves the tests behind as Maestro flows you keep.
 * Retry loops are bounded. Reviewers get at most two rounds, the fix loop gets at
   most two, and a run that still fails stops and explains why instead of
   reporting success.
@@ -58,11 +59,11 @@ separate mandates, and puts a reviewer between them.
 | Agent | Role | Output |
 |---|---|---|
 | `adt-android-pm` | Principal Product Manager | `feature.md`, an unambiguous spec |
-| `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md`, with exact file changes and a manual test plan, plus `design-doc.md` for human review |
+| `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md`, with exact file changes and a device test plan, plus `design-doc.md` for human review |
 | `adt-android-architect-reviewer` | Plan reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-coder` | Implementer | Uncommitted code in your working tree |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
-| `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
+| `adt-android-tester` | Principal QA engineer | Maestro flows in `.maestro/`, and `test-results.md` with a verdict from a real device |
 
 Each agent reads your project's `AGENTS.md` (or `CLAUDE.md`) for stack,
 architecture, and conventions, so the output matches your codebase rather than a
@@ -202,13 +203,48 @@ Artifacts land in `pipeline_artifacts/<feature-slug>/`, which is git-ignored:
 ```
 pipeline_artifacts/recently-played-carousel/
 ├── feature.md              # the spec (PM phases only)
-├── implementation-plan.md  # the plan, including the manual test plan
+├── implementation-plan.md  # the plan, including the device test plan
 ├── design-doc.md           # the same design, written for you
-└── test-results.md         # per-case results, verdict, observations
+├── test-results.md         # per-case results, verdict, observations
+└── maestro-report.xml      # the raw run, plus debug artifacts for failures
+```
+
+The tests themselves are **not** in there, because they are meant to last. They
+land in your project as ordinary Maestro flows:
+
+```
+.maestro/
+├── config.yaml
+└── recently-played-carousel/
+    ├── tc-01-happy-path.yaml      # tagged `smoke` — every later run re-runs it
+    ├── tc-02-offline.yaml
+    └── tc-05-config-change.yaml
 ```
 
 Alongside that is the actual work: uncommitted changes in your working tree.
-Review them, stage what you want, and commit on your own terms.
+Review them, stage what you want, and commit on your own terms — the flows
+included.
+
+### Why the tests are files and not a transcript
+
+An agent that taps its way through a test case pays a full model round-trip per
+tap, and at the end of it you have a report and nothing else. The next run
+starts from zero. So the Tester does not tap its way through anything it does
+not have to:
+
+1. It **compiles** the plan's test cases into Maestro flows. Every step in the
+   plan already names its element (`Tap [testTag=save_item_button]`), so this is
+   a text transform, not an exploration.
+2. It **runs the whole suite in one command** and reads the JUnit report.
+3. It drives the app interactively only to **triage a failure** or to check
+   something a flow genuinely cannot — animation, contrast, a sign-in gate —
+   and it is capped at five such interactions per run.
+
+Two things follow. Re-testing after a fix is nearly free, which matters because
+the fix loop is the common path. And each feature's happy path is tagged
+`smoke`, so every later run executes every earlier feature's happy path as a
+real regression suite — one that grows by a feature per run and that you can run
+yourself, in CI, with no agent involved.
 
 ## Safeguards
 
@@ -231,12 +267,12 @@ Every flow puts that to you and waits, `resume` picks it back up, and two
 resumes is the limit. A blocked run is never rounded up to `READY TO MERGE`, and it never
 sends a Coder to change working code over a locked screen.
 
-It reaches for the shell the same way. `adb` is not banned — auto-mobile is the
-default because it knows which app is under test, but where it falls short the
-Tester may use the shell, then re-confirm your app is still in front and record
-what it ran. The count appears in the run summary. That way a fallback is a
-visible working step rather than the silent screen-lock that produced the false
-pass above.
+It reaches for the shell the same way. `adb` is not banned — Maestro and
+auto-mobile come first because they know which app is under test, but where both
+fall short the Tester may use the shell, then re-confirm your app is still in
+front and record what it ran. The count appears in the run summary. That way a
+fallback is a visible working step rather than the silent screen-lock that
+produced the false pass above.
 
 Because these are development builds on development devices, you can also just
 tell it the PIN. The blocked run asks for what it needs and your reply carries
@@ -293,9 +329,15 @@ yours already sits at one of those paths, it refuses and names the path.
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)
 * An Android project with an `AGENTS.md` or `CLAUDE.md` describing its stack,
   architecture, conventions, and verification rules
+* [Maestro](https://docs.maestro.dev) on your `PATH`
+  (`curl -fsSL https://get.maestro.mobile.dev | bash`). The Tester compiles the
+  plan's test cases into Maestro flows and runs them in one command. Without it
+  the Tester falls back to driving every step through the model, which still
+  works and costs what it used to — it will tell you it did.
 * The [auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) registered
-  with your tool. The Tester drives the app on a device or emulator through it,
-  and without it the Tester phase cannot finish its device verification.
+  with your tool. The Tester uses it to triage failures and to check what a flow
+  cannot express, and without it the Tester phase cannot finish its device
+  verification.
 
 ## Installation
 

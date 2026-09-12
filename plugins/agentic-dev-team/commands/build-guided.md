@@ -151,6 +151,9 @@ Phase 4 — Tester (after approval):
   If its DONE line reported raw `adb` fallbacks, say so and point at the
   report's Raw adb Fallbacks section — they signal an auto-mobile gap rather
   than a failure, and never change the verdict.
+  Name the retained Maestro flows (`.maestro/{slug}/`, on the Tester's DONE
+  line): they are uncommitted files in the user's tree, part of this run's
+  output, and the regression suite every later run will re-execute.
   Then ask the user: `approve` to finish, `revise: <feedback>` to send the
   failures back to the Coder, or `stop`.
 
@@ -163,8 +166,9 @@ Phase 4 — Tester (after approval):
     doing it on its own is not. Wait for ✅ CODER DONE.
     Re-run `adt-android-tester` with PLAN_PATH, the previous
     `test-results.md`, and the same `TEST CREDENTIALS` block, instructing it to
-    re-run the failed cases and the happy path — other previously-passing cases
-    only if the fix plausibly affects them. Wait for ✅ TESTER DONE, then return
+    re-run the whole retained flow suite — one command covers every compiled
+    case, so there is nothing to save by narrowing it — plus any interactive
+    check the fix plausibly affects. Wait for ✅ TESTER DONE, then return
     to this gate with the fresh results. On ⛔ TESTER BLOCKED, go to Phase 4B.
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.

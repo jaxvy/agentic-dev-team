@@ -129,8 +129,9 @@ Phase 3F — Tester fix loop (max 2 iterations):
     ✅ CODER DONE.
     Re-run `adt-android-tester` with PLAN_PATH, the previous
     `test-results.md`, and any `TEST CREDENTIALS` a resume supplied,
-    instructing it to re-run the failed cases and the happy path — other
-    previously-passing cases only if the fix plausibly affects them. Wait for
+    instructing it to re-run the whole retained flow suite — one command
+    covers every compiled case, so there is nothing to save by narrowing it —
+    plus any interactive check the fix plausibly affects. Wait for
     ✅ TESTER DONE or ⛔ TESTER BLOCKED; on the latter, go to Phase 3B.
     On READY TO MERGE, go to the summary.
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
@@ -152,5 +153,8 @@ fallbacks the Tester declared (the count is on its DONE line — they signal an
 auto-mobile gap, not a failure), and list any
 Observations the Tester recorded — those are unrequested behaviours it noticed
 and deliberately did not fix, for the user to accept or turn into a follow-up.
+Name the retained Maestro flows (`.maestro/{slug}/`, on the Tester's DONE line):
+they are uncommitted files in the user's tree, part of this run's output, and
+the regression suite every later run will re-execute.
 Also report whether parallel execution was used and how many adt-android-coder
 subagents ran, so the user can gauge token cost.
