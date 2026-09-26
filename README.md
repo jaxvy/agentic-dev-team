@@ -63,6 +63,7 @@ separate mandates, and puts a reviewer between them.
 | `adt-android-coder` | Implementer | Uncommitted code in your working tree |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
+| `adt-android-review-judge` | Panel judge, read-only. Only runs when you configure a review panel (see [Configuration](#configuration)) | The verified, merged findings of the panel, and the gate's verdict |
 
 Each agent reads your project's `AGENTS.md` (or `CLAUDE.md`) for stack,
 architecture, and conventions, so the output matches your codebase rather than a
@@ -310,8 +311,10 @@ The fastest path if you only use Claude Code. From inside the CLI:
 /plugin install agentic-dev-team@adt-pipeline
 ```
 
-This installs all six agents and all five commands with no per-project setup. It
-does not wire up Antigravity or OpenCode.
+This installs all the agents and all five commands with no per-project setup. It
+does not wire up Antigravity or OpenCode. The first command you run in a
+project creates the optional config file (see [Configuration](#configuration));
+Claude Code asks your permission for that one command.
 
 ### Install per project with install.sh
 
@@ -331,9 +334,10 @@ cd /path/to/your-android-project
 ~/code/agentic-dev-team/install.sh
 ```
 
-It links the agents and commands into the project's `.claude/`,
-`.agents/workflows/`, and `.opencode/`. Your existing content in those
-directories is never touched, modified, or migrated.
+It links the agents, commands, and scripts into the project's `.claude/`,
+`.agents/workflows/`, and `.opencode/`, and creates the optional config file
+`.agentic-dev-team/config.yaml` (see [Configuration](#configuration)). Your
+existing content in those directories is never touched, modified, or migrated.
 
 ### Updating
 
@@ -355,6 +359,125 @@ an append.
 
 This removes only what it created: its own symlinks, and its marker-fenced blocks
 in `.gitignore` and `.agents/agents.md`. Your files and the clone are left alone.
+It keeps `.agentic-dev-team/`, because that is your configuration; delete it
+yourself if you do not need it. Uninstalling the Claude Code plugin does not
+touch your project, so delete that folder by hand there too.
+
+## Configuration
+
+Every setting is optional. **Until you edit the config file, every command
+works exactly as it does without it.**
+
+### The file
+
+`.agentic-dev-team/config.yaml`, in your project root. It is created for you,
+with every setting commented out, by `install.sh` or by the first command you
+run in a project with the plugin install. It is never overwritten after that.
+Next to it, `.agentic-dev-team/.gitignore` (one line: `*`) keeps the folder
+out of git.
+
+To share the config with your team, delete `.agentic-dev-team/.gitignore` and
+commit `config.yaml`. The installer and the commands never re-create that
+`.gitignore` while `config.yaml` exists. **Warning:** when a teammate pulls
+the committed file, git silently replaces their own local, ignored
+`config.yaml`. Ask the team to copy any local settings first.
+
+The template is `plugins/agentic-dev-team/config.example.yaml`. Every command
+validates the whole file before the first agent runs, and stops with a message
+that names the key if something is wrong.
+
+### `agents:` the model of each agent (all commands)
+
+```yaml
+agents:
+  pm:    { model: opus }
+  coder: { model: opus }
+```
+
+Roles: `pm`, `architect`, `architect_reviewer`, `coder`, `code_reviewer`,
+`tester`, `review_judge`. Without a value, the model in the agent file applies
+(`opus` for the PM, the Architect and both reviewers, `sonnet` for the Coder
+and the Tester, the main model for the judge).
+
+In Claude Code the value is a model alias: `opus`, `sonnet`, `haiku` or
+`fable`. What an alias runs:
+
+| Your main session | Config | The agent runs |
+|---|---|---|
+| Same family (for example Opus, config `opus`) | `opus` | Exactly your main session's model, including a 1M-context variant |
+| Other family (for example Sonnet, config `opus`) | `opus` | The version the alias maps to (Opus 5.5 on the Anthropic API today), or the model in `ANTHROPIC_DEFAULT_OPUS_MODEL` when you set it |
+
+You cannot pin an exact version for an agent that runs inside your tool. To
+pin one, use `runner: claude` with a full model ID in `/build-auto-reviewed`
+(below), set `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` in the `env` of
+`.claude/settings.json` for another family, or select that version as your
+main model. When `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is set, Claude Code ignores
+these settings, and the run summary says so. When `CLAUDE_CODE_SUBAGENT_MODEL`
+is set, model settings need Claude Code v2.1.251 or later.
+
+Antigravity and OpenCode run every subagent on the model you selected in the
+tool, so they ignore `agents:`. The run summary says so.
+
+### `build_auto_reviewed:` other CLIs and review panels (`/build-auto-reviewed` only)
+
+```yaml
+build_auto_reviewed:
+  code_reviewer:
+    reviewers:
+      - { runner: native }
+      - { runner: codex, required: false }
+      - { runner: claude, model: claude-opus-5-5 }
+```
+
+Each role (`architect`, `coder`, `tester`, and each reviewer) can run in a
+different tool, through that tool's CLI and **your own login** (no API key):
+
+| `runner` | Runs |
+|---|---|
+| `native` (default) | Inside the tool you run the command in, as today |
+| `claude` | `claude -p` (Claude Code CLI) |
+| `codex` | `codex exec` (OpenAI Codex CLI) |
+| `agy` | `agy -p` (Antigravity CLI) |
+| `opencode` | `opencode run` (OpenCode CLI) |
+| `command` | Any CLI, from a template such as `gemini -p {instruction} -m {model}`, with `check: gemini` |
+
+Other keys: `model` (passed to the CLI's `--model`), `timeout_minutes`
+(default 30 for a reviewer, 120 for the others), and `required` (reviewers
+only; `false` lets the run continue without that reviewer). Each CLI must be
+installed and logged in; the run checks this before it starts.
+
+**Review panels.** With 2 to 5 reviewers for a gate, the gate becomes a panel.
+The orchestrator runs the build gate once, the reviewers review the same tree
+in parallel and anonymously (as A, B, C, in a new random order each round),
+and the `adt-android-review-judge` agent checks every finding against the code,
+merges duplicates, and gives the verdict. When every reviewer approves, the
+judge does not run. The judge always runs in your current tool, on your main
+model unless `agents.review_judge` sets one. A failed build never passes a
+gate. The run files are in `pipeline_artifacts/.runs/`.
+
+Things to know:
+
+* **Cost.** Each panel round is one agent run per reviewer, plus the judge.
+* **Read-only is enforced by a check, not by every CLI.** `claude` and
+  `codex` reviewers run in a read-only mode; `agy` and `opencode` have none.
+  The orchestrator hashes the working tree before and after each review round,
+  and stops the run if anything changed. It does not revert anything. Keep
+  Gradle's `build/` folders git-ignored, as a normal Android project does.
+* **Codex as Coder or Tester.** Codex's sandbox blocks network access and
+  writes outside the project by default, so Gradle and `adb` can fail. Use
+  another runner for those roles, or allow them in your Codex configuration.
+* **An external Tester** needs the auto-mobile MCP server in that CLI's own
+  config. It never receives a device PIN: after you answer a blocked Tester
+  with anything other than `resume` or `stop`, the Tester runs inside your
+  tool for the rest of the run.
+* **A `command` template is not run by a shell.** Do not use `'`, `\`,
+  backticks, `$`, `|`, `;`, `&`, `<` or `>` in it. Do not pass a placeholder to
+  a program that runs its arguments as code (such as `python3 -c`).
+* **An interrupted run.** External agents run as separate processes. If you
+  stop a run in a way the orchestrator cannot handle (for example Esc), run
+  the `--cancel` command that every run summary prints.
+* **CLI flags change.** All runner flags are in
+  `plugins/agentic-dev-team/scripts/adt-run-agent.sh`.
 
 ## Further reading
 
