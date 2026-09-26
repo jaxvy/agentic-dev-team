@@ -89,6 +89,24 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    In-scope failures are blockers. Use the Skill tool for any area a skill
    covers when judging API usage.
 
+**Blocks from a configured run.** In a configured `/build-auto-reviewed`
+run (Part B, "Configured Runs"), your prompt can contain two extra blocks:
+
+- `BUILD GATE OUTPUT`: the orchestrator already ran the build gate. Use
+  that output for item 6. If it failed, the orchestrator already reports
+  the failure to the Coder as the first item, so do not repeat it; review
+  the code as usual.
+  While this block is present, **do not run Gradle at any point of this
+  review**: not for item 6, not when item 1 says to re-run the build gate
+  because the manifest changed, and not in the Targeted Re-Review ("Re-run
+  the build gate"). Other reviewers may be reading the same tree, and the
+  orchestrator checks that the tree does not change during the review.
+- `EARLIER CONFIRMED FINDINGS`: changes made to fix those findings are
+  review-driven and in scope (Part A, "Review-Driven Fixes Are In Scope"),
+  even when another reviewer raised them. Do not report them as scope creep.
+
+Without these blocks, nothing changes.
+
 ## Targeted Re-Review (after a Tester-driven fix)
 
 The orchestrator may invoke you as a **targeted re-review**: the Tester found a

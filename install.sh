@@ -8,8 +8,8 @@
 #   <repo-clone>/install.sh --uninstall    # uninstall from current working directory
 #
 # What it does:
-#   - For each agent, command, and workflow file in this repo, creates a
-#     per-file symlink at the matching path in the consuming project.
+#   - For each agent, command, script, and workflow file in this repo,
+#     creates a per-file symlink at the matching path in the consuming project.
 #   - Manages a marker-fenced block in the project's .gitignore listing the
 #     installed paths (so per-developer absolute symlink targets aren't
 #     committed).
@@ -17,6 +17,9 @@
 #     containing the inlined persona stubs from this repo's
 #     .agents/AGENTIC_DEV_TEAM.md (Antigravity auto-loads agents.md into
 #     user_rules).
+#   - Creates the optional pipeline config .agentic-dev-team/config.yaml
+#     (every setting commented out, git-ignored by .agentic-dev-team/.gitignore)
+#     when it does not exist yet. See README.md, "Configuration".
 #
 # Safety:
 #   - Never overwrites a developer's own files. Real files at our install
@@ -24,6 +27,8 @@
 #   - Only modifies content inside the marker-fenced blocks in .gitignore
 #     and .agents/agents.md; content outside markers is left alone.
 #   - --uninstall removes only what this script created.
+#   - Never edits or deletes anything in .agentic-dev-team/, also not on
+#     --uninstall: that is your configuration.
 
 set -euo pipefail
 
@@ -64,6 +69,7 @@ build_desired_pairs() {
   shopt -s nullglob
   for f in "$REPO_DIR"/.claude/commands/*.md \
            "$REPO_DIR"/.claude/agents/*.md \
+           "$REPO_DIR"/.claude/scripts/*.sh \
            "$REPO_DIR"/.agents/workflows/*.md \
            "$REPO_DIR"/.opencode/agents/*.md \
            "$REPO_DIR"/.opencode/commands/*.md; do
@@ -357,11 +363,19 @@ do_install() {
     echo "  synced: .agents/agents.md (marker block)"
   fi
 
+  # Create the optional config once. It never overwrites an existing file,
+  # and a failure (exit 1) never stops the install.
+  local init_out
+  init_out="$(bash "$REPO_DIR/plugins/agentic-dev-team/scripts/adt-run-agent.sh" --init-config "$PROJECT_DIR" 2>&1 || true)"
+  if [ -n "$init_out" ]; then
+    printf '%s\n' "$init_out" | sed 's/^/  /'
+  fi
 
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
   echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code, Antigravity, or opencode."
+  echo "Optional config: .agentic-dev-team/config.yaml (see README, \"Configuration\")."
 }
 
 # ---------- uninstall mode ----------
@@ -405,6 +419,10 @@ do_uninstall() {
   # Remove agents.md block.
   rewrite_agents_block ""
   echo "  cleaned: .agents/agents.md marker block"
+
+  if [ -d "$PROJECT_DIR/.agentic-dev-team" ]; then
+    echo "  kept .agentic-dev-team/ (your configuration; delete it yourself if you do not need it)"
+  fi
 
   echo ""
   echo "Uninstalled: $removed symlink(s) removed."

@@ -1,0 +1,83 @@
+# agentic-dev-team configuration
+#
+# This file has no effect until you remove the "#" from a setting.
+# It is git-ignored by .agentic-dev-team/.gitignore. To share it with your
+# team: delete .agentic-dev-team/.gitignore, then commit this file.
+# install.sh never re-creates that .gitignore while this file exists.
+# Warning: when teammates pull the committed file, git silently replaces
+# their own local config.yaml. Tell them to copy their settings first.
+#
+# Full reference: README.md, section "Configuration".
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# agents: the model of each agent, in ALL commands.
+# Applies when the agent runs in the current tool ("native").
+#
+# Claude Code: use a model alias: opus, sonnet, haiku, fable.
+#   If your main session already runs a model of that family, the agent runs
+#   on exactly your main session's model. Otherwise the alias gives the
+#   version Claude Code maps it to (for example "opus" is Opus 5.5 on the
+#   Anthropic API today), or the model in ANTHROPIC_DEFAULT_OPUS_MODEL
+#   (or _SONNET_, _HAIKU_, _FABLE_) when you set it. You cannot pin an exact
+#   version here; see README, "Configuration".
+# Antigravity and opencode: ignored. These tools run every subagent on the
+#   model that you selected in the tool.
+#
+# The values below are the defaults from the agent files, except
+# review_judge, whose default is the main model (no value).
+# ---------------------------------------------------------------------------
+agents:
+  pm:                 { model: opus }
+  architect:          { model: opus }
+  architect_reviewer: { model: opus }
+  coder:              { model: sonnet }
+  code_reviewer:      { model: opus }
+  tester:             { model: sonnet }
+  review_judge:       { model: <alias> } # default: no value = the main model
+
+# ---------------------------------------------------------------------------
+# build_auto_reviewed: only for /build-auto-reviewed.
+#
+# runner: where the agent runs.
+#   native    the current tool (default)
+#   claude    Claude Code CLI      (claude -p)
+#   codex     OpenAI Codex CLI     (codex exec)
+#   agy       Antigravity CLI      (agy -p)
+#   opencode  opencode CLI         (opencode run)
+#   command   any command; see "command" below
+# Each CLI uses your own login. It must be installed and logged in.
+#
+# model:            the model for that runner (a --model value).
+# timeout_minutes:  external runners only. Default 30 for reviewers and
+#                   120 for architect, coder and tester. A timeout stops
+#                   the run.
+# required:         reviewers only. true (default): a failure stops the run.
+#                   false: the run continues without that reviewer. Only
+#                   in a list of 2 or more reviewers.
+# command:          only for runner: command. Placeholders:
+#                   {instruction} {prompt_file} {output_file} {model}
+#                   The command is not run by a shell: do not use
+#                   ' \ ` $ | ; & < > in it. If you use {model}, also
+#                   set model. Example: gemini -p {instruction} -m {model}
+# check:            required for runner: command. The one program that
+#                   must be installed, for example: check: gemini
+#
+# With 2 or more reviewers, a gate becomes a review panel: a judge agent
+# verifies and merges their findings. The judge runs in the current tool,
+# on the main model unless agents.review_judge sets a model.
+# ---------------------------------------------------------------------------
+build_auto_reviewed:
+  architect: { runner: native }
+  coder:     { runner: native }
+  tester:    { runner: native }
+  architect_reviewer:
+    reviewers:
+      - { runner: native }
+  code_reviewer:
+    reviewers:
+      - { runner: native }
+      - { runner: codex, required: false }
+      - { runner: claude, model: claude-opus-5-5 }
+      - { runner: command, check: gemini, command: "gemini -p {instruction} -m {model}", model: <gemini-model> }
