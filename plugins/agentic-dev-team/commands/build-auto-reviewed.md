@@ -53,6 +53,76 @@ Run"):
      offline and permission cases will come back INCONCLUSIVE and the Test
      Writer cannot check its flows.
 
+Agent configuration: set PROJECT_ROOT to the absolute path of the
+directory this command started in (your working directory at the start;
+your tool shows it, no shell command is needed). All paths below are
+relative to PROJECT_ROOT, whatever the shell's current directory is later.
+If PROJECT_ROOT/.claude/adt/scripts/adt-run-agent.sh exists, set ADT_ROOT
+to PROJECT_ROOT/.claude and ADT_RUN to that script path; otherwise, if
+`${CLAUDE_PLUGIN_ROOT}/scripts/adt-run-agent.sh` exists, set ADT_ROOT to
+`${CLAUDE_PLUGIN_ROOT}` and ADT_RUN to that script path; otherwise leave
+both empty. For every "exists" check in this
+paragraph, read that exact path with your file-read tool, only its first
+line (for example a line limit of 1). Never use a file-search tool:
+search tools skip git-ignored files, and both the script link in an
+`install.sh` project and the config file are git-ignored. Never use a
+shell command for these checks.
+Then read PROJECT_ROOT/.agentic-dev-team/config.yaml the same way. There
+are exactly three outcomes:
+(a) The read succeeds (an empty file counts as success): the file exists.
+    Skip the init step.
+(b) The read reports that the file does not exist, in any wording (for
+    example "File does not exist.", "file not found", "no such file"):
+    treat the file as missing. If ADT_ROOT is set, run
+    `bash "ADT_RUN" --init-config "PROJECT_ROOT"`
+    (with the real paths in place of the names, each in double quotes);
+    if ADT_ROOT is empty, skip it. (A broken link is also reported as "not
+    found"; the script then prints `ADT_INIT status=unreadable`, see
+    below.)
+(c) The read fails for a reason other than "the file does not exist"
+    (the path is a directory, or no permission):
+    a config error. Do not run the init step. STOP the command before the
+    first agent and say: "agentic-dev-team:
+    .agentic-dev-team/config.yaml exists but cannot be read; fix or
+    delete it."
+The init step creates the optional, git-ignored config once. After it:
+- `ADT_INIT status=created` or `status=exists`: continue.
+- `ADT_INIT status=unreadable`: a config error; STOP the command before
+  the first agent and show the script's message.
+- The permission was declined, the tool reported an error, or
+  `ADT_INIT status=failed`: print this line once and continue. (When the
+  init step was skipped, print nothing.)
+"The optional config file .agentic-dev-team/config.yaml was not created. To
+stop this question, allow the command, or create two files yourself:
+.agentic-dev-team/.gitignore with the single line *, and
+.agentic-dev-team/config.yaml copied from <TEMPLATE>."
+where <TEMPLATE> is only the one that applies: in a plugin install
+(ADT_ROOT is not PROJECT_ROOT/.claude), the real path of
+ADT_ROOT/config.example.yaml; in an install.sh install (ADT_ROOT is
+PROJECT_ROOT/.claude), the text "plugins/agentic-dev-team/config.example.yaml
+in your agentic-dev-team clone".
+Then follow PIPELINE_DOC Part B, "Agent Configuration": read and validate
+that file, and set MODELS. If PIPELINE_DOC has no "Agent Configuration"
+section (an older install) and ADT_ROOT is set, read that section, and
+"Configured Runs", from ADT_ROOT/AGENTIC_DEV_TEAM_PIPELINE.md instead, so
+the rules and the scripts are the same version. If neither file has the
+section, do not use the config file at all, and, only when the file has
+an active setting, print one line: "agentic-dev-team: the installed
+pipeline doc is older than the config file support, so
+.agentic-dev-team/config.yaml was not used." When the config file has no
+active setting, none of this changes anything. When MODELS is on, follow Part B, "Agent
+Configuration", every time you start an `adt-*` subagent in this command:
+it says which model to pass, and when to pass none (it can turn model
+passing off). When MODELS is off, ignore every rule that names MODELS: the
+run is exactly as it would be without this paragraph.
+
+Configured runs: the same section also sets RUNS from the
+`build_auto_reviewed:` part of the file. When RUNS is on, follow PIPELINE_DOC
+Part B, "Configured Runs (/build-auto-reviewed only)", for every phase
+below: it says where each role runs, and how a gate with 2 or more
+reviewers runs as a review panel with a judge. When RUNS is off, ignore
+every line that names RUNS.
+
 This is the /build-auto-reviewed flow — same shape as /build-auto (no PM phase,
 no human gates), but each producing phase is followed by an automated reviewer
 that can send the work back. It assumes the feature is already understood. If
@@ -93,6 +163,7 @@ Phase 1 — Architect:
   Store the plan path: PLAN_PATH = pipeline_artifacts/{slug}/implementation-plan.md
   Store the design doc path: DOC_PATH = pipeline_artifacts/{slug}/design-doc.md
   (on only)
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Phase 1R — Architect review gate (max 2 re-runs):
   Delegate to the `adt-android-architect-reviewer` subagent. Pass PLAN_PATH and,
@@ -100,12 +171,16 @@ Phase 1R — Architect review gate (max 2 re-runs):
   doc, so a reviewer without it cannot check them.
   - On `✅ PLAN APPROVED`: continue to Phase 2.
   - On `🔧 PLAN CHANGES REQUESTED`: re-run `adt-android-architect` with the
-    reviewer's feedback and the instruction to revise PLAN_PATH in place — and
+    reviewer's feedback (When RUNS is on, Part B, "Configured Runs", says
+    what this feedback is: in a gate with an external reviewer or a panel,
+    the build-gate item first when the build gate failed, then the judge's
+    Confirmed list or the reviewer's list.) and the instruction to revise PLAN_PATH in place — and
     DOC_PATH with it, in the same invocation, so the document a human ends up
     reading is the approved version rather than the first draft. Then review
     again. After the 2nd failed re-run, STOP and report (see protocol).
     Note which bounces changed the approach; that belongs in the design doc's
     Implementation Notes at the end of the run.
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
   Early boot — first, once PLAN_PATH gives the slug S: run
@@ -151,6 +226,7 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP rather than continuing.
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Phase 2R — Code review gate (max 2 re-runs):
   After ALL coding for the feature is complete, delegate to the
@@ -159,7 +235,10 @@ Phase 2R — Code review gate (max 2 re-runs):
   - On `✅ CODE APPROVED`: continue to Phase 3.
   - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder to address the feedback —
     spawn ONE `adt-android-coder` subagent with PLAN_PATH and the reviewer's
-    numbered feedback, instructing it to fix exactly those points (regardless of
+    numbered feedback (When RUNS is on, Part B, "Configured Runs", says
+    what this feedback is: in a gate with an external reviewer or a panel,
+    the build-gate item first when the build gate failed, then the judge's
+    Confirmed list or the reviewer's list.), instructing it to fix exactly those points (regardless of
     the parallel-safety decision; fixes are usually small and cross-cutting).
     State in that prompt that the numbered findings are in scope to fix **even
     where the plan does not specify the fix** — Part A, "Review-Driven Fixes Are
@@ -168,6 +247,7 @@ Phase 2R — Code review gate (max 2 re-runs):
     re-run, STOP and report (see protocol).
     Record the `Plan departures` field from each ✅ CODER DONE marker; it feeds
     the final summary below.
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Phase 3 — Tester:
   Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
@@ -191,6 +271,7 @@ Phase 3 — Tester:
   gate, at Phase 3B below.
   Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on one or
   the other; a blocked run never emits the DONE marker, so do not wait on it.
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   A gate stopped the Tester before it could finish — one it had no credential
@@ -220,6 +301,7 @@ Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   On `stop`, or after the 2nd resume still comes back blocked, **STOP** and
   report per the Blocked Path, saying plainly that the feature is untested.
   Release the device and run "Close the run" below on the way out.
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Phase 3F — Tester fix loop (max 2 iterations):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to "Keep the
@@ -236,7 +318,10 @@ Phase 3F — Tester fix loop (max 2 iterations):
     given.
     - On `✅ CODE APPROVED`: proceed to the re-test below.
     - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
-      feedback, then re-review. Say in that prompt — as in Phase 2R — that the
+      feedback (When RUNS is on, Part B, "Configured Runs", says
+      what this feedback is: in a gate with an external reviewer or a panel,
+      the build-gate item first when the build gate failed, then the judge's
+      Confirmed list or the reviewer's list.), then re-review. Say in that prompt — as in Phase 2R — that the
       findings are in scope to fix even where the plan specifies no fix, since
       a Coder in the fix loop is otherwise under the stricter "stay in the plan"
       rule that governs Tester findings. This targeted loop allows **at most 1
@@ -264,6 +349,7 @@ Phase 3F — Tester fix loop (max 2 iterations):
   code mutation. Its 1-re-run budget is per iteration and separate from Phase
   2R's — a targeted re-review never re-opens Phase 2R's own budget, and never
   re-reviews the whole feature.
+  When RUNS is on, run this phase's roles as Part B, "Configured Runs", says.
 
 Keep the passing flows — only when the final verdict is READY TO MERGE: run
 the promote step of the pipeline doc's Part B, "The Test Phase" (`adt.sh
@@ -318,3 +404,5 @@ what they would otherwise have to rediscover:
     "Nits / optional" sub-heading, which never drove a re-run and are otherwise
     lost when the run ends. They are suggestions for the developer, not
     outstanding work.
+
+When RUNS is on, add the "Configured run" section that Part B, "Configured Runs", defines.
