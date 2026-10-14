@@ -126,11 +126,16 @@ Phase 2R — Code review gate (max 2 re-runs):
 
 Phase 3 — Tester:
   Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
-  defines it: lease this run's device with `adt.sh device-acquire` (DEVICE),
-  install the build on it with `adt.sh install` (BUILD_INSTALLED; release and
-  STOP if it fails), then delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>` and
-  `BUILD_INSTALLED: <timestamp>`
+  defines it:
+    1. lease this run's device with `adt.sh device-acquire` (DEVICE);
+    2. install the build on it with `adt.sh install` (BUILD_INSTALLED;
+       release and STOP if it fails);
+    3. delegate to the `adt-android-test-writer` subagent, which writes one
+       flow per test case, and wait for ✅ TEST WRITER DONE;
+    4. run the flows with `adt.sh run` (RUN_RESULTS);
+    5. delegate to the `adt-android-tester` subagent.
+  Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
+  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`
   Wait for ✅ TESTER DONE.
 
 Phase 3F — Tester fix loop (max 2 iterations):
@@ -153,12 +158,14 @@ Phase 3F — Tester fix loop (max 2 iterations):
       unreviewed code and do not spend the remaining Tester iteration on it.
 
     Re-run the test phase (Part B, "The Test Phase") on the same device —
-    install included, so the re-test sees the fixed build — passing
+    install included, so the re-test sees the fixed build. The Test Writer runs
+    again only if the previous `test-results.md` lists Flow Defects (pass
+    those as CASES), and `adt.sh run` re-runs every flow. Pass
     `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
-    `BUILD_INSTALLED` line and the previous
-    `test-results.md`, instructing it to re-run the failed cases and the
-    happy path — other previously-passing cases only if the fix plausibly
-    affects them. Wait for ✅ TESTER DONE.
+    `BUILD_INSTALLED` and `RUN_RESULTS` lines and the previous
+    `test-results.md`, instructing it to judge every flow result again and to
+    drive by hand only the cases without a flow that failed before or that the
+    fix plausibly affects. Wait for ✅ TESTER DONE.
     On READY TO MERGE, go to the summary.
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
@@ -195,5 +202,6 @@ non-blocking, since those are decisions waiting on the user rather than work the
 pipeline did. Also report, for each review gate, how many re-runs were needed
 (0, 1, or 2) and whether parallel execution was used and how many
 adt-android-coder subagents ran, so the user can gauge token cost, the test
-driver and the device the run tested on, and the Tester phase's duration for each test phase (Part B,
-"The Test Phase").
+driver and the device the run tested on, the flow counts from the last
+`run-results.md`, and for each test phase how long the Test Writer, the flow
+run and the Tester took (Part B, "The Test Phase").

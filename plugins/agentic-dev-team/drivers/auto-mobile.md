@@ -11,7 +11,7 @@ agent's rules.
 - The [auto-mobile](https://github.com/kaeawc/auto-mobile) MCP server,
   registered under the name `auto-mobile` at version `0.0.84`, with
   `AUTOMOBILE_ENABLED_TOOLS` set to
-  `rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink`.
+  `rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan`.
   The README's Requirements give the exact registration command.
 - Its tools appear as `mcp__auto-mobile__<name>`. auto-mobile hides most of its
   tools until they are enabled. If a tool named below is missing from your
@@ -81,3 +81,75 @@ appear, `waitFor: {text: …}` for a text, and `waitFor: {absent: {elementId: �
 for one to go away. `waitFor` matches resource ids, not test tags, so a
 Compose test tag is found by `elementId` only when the app exposes test tags as
 resource ids (`testTagsAsResourceId`).
+
+## 5. Flows
+
+A flow is one test case as an auto-mobile **plan**: a YAML file with a `name`
+and a list of `steps`, each step being a tool name plus that tool's arguments.
+The adt header lines go first, as YAML comments.
+
+```yaml
+# adt:driver: auto-mobile
+# adt:case: 03 — Pay with a saved card
+name: 03-pay-with-saved-card
+steps:
+  # Reset: put back every setting a flow may change.
+  - tool: setDeviceState
+    connectivity:
+      airplaneMode: false
+      wifiEnabled: true
+  - tool: rotate
+    orientation: portrait
+  - tool: displayConfig
+    theme: light
+    fontScale: default
+  # Launch the installed app with clean data.
+  - tool: launchApp
+    appId: com.example.app.debug
+    clearAppData: true
+  # The case's steps.
+  - tool: tapOn
+    selector:
+      testTag: checkout_pay_button
+  # The case's Expected.
+  - tool: observe
+    waitFor:
+      elementId: order_confirmation_title
+      timeout: 10000
+```
+
+**Reset steps.** Every flow starts with the three steps above, exactly: Airplane
+mode off and Wi-Fi on, portrait, light theme at the default font scale. Then
+`launchApp` with the installed app id and `clearAppData: true`.
+
+**Steps.** Use the tools from section 4, with the same arguments a direct call
+would take. `tapOn` and `sendKeys` take `selector: {testTag: …}`.
+
+**Assertions.** Write each Expected clause as an `observe` step with `waitFor`,
+which fails the flow when its `timeout` (milliseconds) passes:
+`waitFor: {elementId: …}` for an element that must appear, `{text: …}` for a
+text, `{absent: {elementId: …}}` for one that must go away. A step's
+`expectations` field is **not evaluated** in auto-mobile 0.0.84, so never use it
+as an assertion. `waitFor` does not match test tags directly: a Compose tag is
+found by `elementId` only when the app sets `testTagsAsResourceId`.
+
+**Checking a flow.** Run it with one `executePlan` call: the file's content as
+`planContent`, and `platform: "android"`. The result's `success` says whether
+it passed; on a failure, `failedStep` gives the step's index, tool and error.
+
+## 6. How the script runs flows
+
+`adt.sh run --driver auto-mobile` runs each flow with one call to auto-mobile's
+command line, on the run's device, with no model involved:
+
+```
+bunx @kaeawc/auto-mobile@0.0.84 --cli executePlan --platform android \
+  --deviceId <DEVICE> --planContent "<the flow file>"
+```
+
+It exits 0 when the flow passed. On a failure it prints the failed step and its
+error, which the script copies into `run-results.md`. The command line reaches
+every auto-mobile tool, including the ones hidden from agents, so flows need no
+extra setup. It talks to the same background service as the MCP server, so that
+service must be on the pinned version (README, "Choosing a test driver").
+`ADT_AUTOMOBILE` overrides the command.

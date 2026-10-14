@@ -298,6 +298,92 @@ expect_eq "and its lease is kept" "a" "$(lease_file "$sa" slug)"
 rm -f "$FAKE_ADT_STATE/stubborn.$sa"
 kill "$pid" 2>/dev/null
 
+# ---------- run ----------
+
+# flow <project> <slug> <file under flows/> <driver> [fake outcome]
+flow() {
+  local f="$1/pipeline_artifacts/$2/flows/$3"
+  mkdir -p "$(dirname "$f")"
+  {
+    echo "# adt:driver: $4"
+    [ -n "${5:-}" ] && echo "# fake: $5"
+    echo "name: $(basename "$3" .yaml)"
+    echo "steps:"
+    echo "  - tool: launchApp"
+  } > "$f"
+}
+row() { grep "^| $3 |" "$1/pipeline_artifacts/$2/run-results.md"; }
+# row_has <description> <project> <slug> <flow id> <text the row must contain>
+row_has() {
+  if row "$2" "$3" "$4" | grep -qF -- "$5"; then ok "$1"; else not_ok "$1" "row: $(row "$2" "$3" "$4")"; fi
+}
+
+echo "run"
+setup
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile" ADT_MAESTRO="$SHIMS/maestro"
+adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_code "run with no leased device: exit 15" 15 $?
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
+adt "$SANDBOX/proj1" run --slug a --driver espresso >/dev/null 2>&1
+expect_code "an unknown driver is a usage error" 2 $?
+ADT_AUTOMOBILE=/nonexistent/auto-mobile adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_code "a driver command that is not installed: exit 14" 14 $?
+
+adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_code "no flows: nothing fails" 0 $?
+expect_true "and the results say so" grep -q "Totals: 0 flow(s)" "$SANDBOX/proj1/pipeline_artifacts/a/run-results.md"
+
+echo "run, auto-mobile"
+flow "$SANDBOX/proj1" a 01-pass.yaml auto-mobile
+flow "$SANDBOX/proj1" a 02-fail.yaml auto-mobile fail
+flow "$SANDBOX/proj1" a 03-flaky.yaml auto-mobile flaky
+flow "$SANDBOX/proj1" a 04-maestro.yaml maestro
+adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_code "a flow that fails twice fails the run" 1 $?
+row_has "a passing flow is PASS" "$SANDBOX/proj1" a 01-pass "| feature | — | PASS |"
+row_has "a failing flow is FAIL, with its step and error" "$SANDBOX/proj1" a 02-fail "| FAIL | step 2 (observe): observe waitFor timed out after 4000ms |"
+row_has "a flow that passes on its retry is FLAKY" "$SANDBOX/proj1" a 03-flaky "| FLAKY |"
+row_has "a flow for the other driver is SKIPPED" "$SANDBOX/proj1" a 04-maestro "| SKIPPED | written for maestro |"
+expect_eq "each flow ran on the leased device, and only failures were retried" \
+  "executePlan device=$serial name=01-pass
+executePlan device=$serial name=02-fail
+executePlan device=$serial name=03-flaky
+executePlan device=$serial name=02-fail
+executePlan device=$serial name=03-flaky" "$(cat "$FAKE_ADT_STATE/automobile.calls")"
+expect_true "every row links its log" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/run-logs/02-fail.attempt1.log" ]
+expect_true "the totals line counts each result" grep -q "Totals: 4 flow(s) — 1 passed, 1 failed, 1 flaky, 1 skipped" "$SANDBOX/proj1/pipeline_artifacts/a/run-results.md"
+
+rm "$SANDBOX/proj1/pipeline_artifacts/a/flows/02-fail.yaml"
+adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_code "with no failing flow, the run passes" 0 $?
+expect_eq "and run-results.md is rewritten, not appended" "0" "$(grep -c '^| 02-fail' "$SANDBOX/proj1/pipeline_artifacts/a/run-results.md")"
+
+flow "$SANDBOX/proj1" a 05-hang.yaml auto-mobile hang
+ADT_FLOW_TIMEOUT_S=2 adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_code "a flow that hangs fails the run" 1 $?
+row_has "with a timeout as its failing step" "$SANDBOX/proj1" a 05-hang "| FAIL | timed out after 2s |"
+
+echo "run, Maestro"
+setup
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile" ADT_MAESTRO="$SHIMS/maestro"
+mkdir -p "$SANDBOX/my project"
+git -C "$SANDBOX/my project" init -q
+serial="$(adt "$SANDBOX/my project" device-acquire --slug m 2>/dev/null | tail -n 1)"
+flow "$SANDBOX/my project" m 01-pass.yaml maestro
+flow "$SANDBOX/my project" m 02-fail.yaml maestro fail
+flow "$SANDBOX/my project" m 03-flaky.yaml maestro flaky
+flow "$SANDBOX/my project" m 04-automobile.yaml auto-mobile
+adt "$SANDBOX/my project" run --slug m --driver maestro >/dev/null 2>&1
+expect_code "a Maestro flow that fails twice fails the run" 1 $?
+expect_eq "one maestro call for all flows, one for the retries, on the leased device" \
+  "test device=$serial flows=3
+test device=$serial flows=2" "$(cat "$FAKE_ADT_STATE/maestro.calls")"
+row_has "PASS, with its time from the report (a path with a space)" "$SANDBOX/my project" m 01-pass "| PASS |  | 2 |"
+row_has "FAIL, with the report's failure message" "$SANDBOX/my project" m 02-fail "| FAIL | Assertion is false: id: order_confirmation_title is visible |"
+row_has "FLAKY when it passes on the retry" "$SANDBOX/my project" m 03-flaky "| FLAKY |"
+row_has "an auto-mobile flow is SKIPPED in a Maestro run" "$SANDBOX/my project" m 04-automobile "| SKIPPED | written for auto-mobile |"
+unset ADT_AUTOMOBILE ADT_MAESTRO
+
 # ---------- summary ----------
 
 teardown

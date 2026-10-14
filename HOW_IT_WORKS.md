@@ -17,12 +17,12 @@ Every run is the same chain of handoffs. The five commands differ only in which
 links are present and who approves each one.
 
 ```
-   PM   ->   Architect   ->   Coder   ->   Tester   ->   your diff
-feature.md  impl-plan.md    the code    test-results.md
+   PM   ->   Architect   ->   Coder   ->   Test Writer   ->   Tester   ->   your diff
+feature.md  impl-plan.md    the code       flows/         test-results.md
             design-doc.md
 ```
 
-| Command | PM | Architect | Plan review | Coder | Code review | Tester | Gates |
+| Command | PM | Architect | Plan review | Coder | Code review | Test Writer + Tester | Gates |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
 | `/build-guided` | yes | yes | | yes | | yes | Human, at every boundary |
 | `/build-auto` | | yes | | yes | | yes | None |
@@ -44,7 +44,11 @@ with the slug lowercase and hyphenated (for example `background-link-checks`).
 | `adt-android-pm` | `feature.md` | `✅ PM DONE` |
 | `adt-android-architect` | `implementation-plan.md`, and `design-doc.md` when the command asks for one | `✅ ARCHITECT DONE` |
 | `adt-android-coder` | Nothing. Only uncommitted code | `✅ CODER DONE` |
+| `adt-android-test-writer` | `flows/`, one flow per test case, and `flows/INDEX.md` | `✅ TEST WRITER DONE` |
 | `adt-android-tester` | `test-results.md` | `✅ TESTER DONE` |
+
+The flow run between those two is not an agent. The orchestrator runs
+`adt.sh run`, which writes `run-results.md` and `run-logs/`.
 
 Reviewers write nothing at all. They are read-only by design, and each ends with
 exactly one verdict marker.
@@ -65,9 +69,11 @@ written.
 | Artifact | Written by | Read by |
 |---|---|---|
 | `feature.md` | PM | The Architect, and you at the spec gate |
-| `implementation-plan.md` | Architect | The Coder, both reviewers, and the Tester |
+| `implementation-plan.md` | Architect | The Coder, both reviewers, the Test Writer, and the Tester |
 | `design-doc.md` | Architect | **You.** Whoever maintains this later |
-| `test-results.md` | Tester | The Coder on failures, and you |
+| `flows/` | Test Writer | The flow run, and the Tester when a flow fails |
+| `run-results.md` | `adt.sh run` | The Tester |
+| `test-results.md` | Tester | The Coder on failures, the Test Writer on flow defects, and you |
 
 ```mermaid
 flowchart LR
@@ -155,8 +161,8 @@ sound.
 ### Required unit tests
 
 Unit tests are specified by the Architect and written by the Coder. No other
-agent authors them — reviewers are read-only, and the Tester drives the running
-app rather than writing Kotlin.
+agent authors them — reviewers are read-only, the Test Writer writes device
+flows rather than Kotlin, and the Tester writes no tests at all.
 
 The requirement travels in the plan. Section 1 records the project's **Test
 Stack**, discovered from its version catalog and an existing test, so the Coder
@@ -205,6 +211,37 @@ the tests actually exist and that each one would fail if the logic were wrong.
 The build gate runs the project's unit-test task, but that only executes tests
 that exist — it can never fail for one that was never written. That is why the
 requirement lives in the plan and is checked by a reviewer instead.
+
+### Device tests: cases, flows and results
+
+Every device test is written once, by one agent, at the moment it can be
+written well.
+
+| Step | Who | When | What |
+|---|---|---|---|
+| The case | Architect | Before the code | Steps with selectors, and an Expected result. The spec the Coder builds to |
+| The flow | Test Writer | After the Coder, on the run's emulator | The same case as a file in the test driver's format, checked with one run |
+| The run | `adt.sh run` | Every test and re-test | Every flow, with no model in the loop. A failure gets one retry; a pass on the retry is `FLAKY` |
+| The verdict | Tester | After the run | Passing flows need nothing. A failing one is driven by hand to decide: the app is wrong, or the flow is |
+
+Three rules keep it honest:
+
+* **A flow's checks come only from its case's Expected.** The Test Writer may
+  add a wait or a scroll the real app needs. It never loosens a check to make it
+  pass; if the app does not show what the case expects, the flow fails, and
+  that is the Tester's call.
+* **The agent that judges never writes the test.** The Tester never creates or
+  edits a flow. A flow that fails while the case passes by hand is listed under
+  "Flow Defects" in `test-results.md`, never sent to the Coder, and rewritten
+  by the Test Writer before the next re-test.
+* **Every flow starts from the same device.** It first turns Airplane mode off,
+  sets portrait and the light theme, then launches the installed app with clean
+  data, so a flow that failed halfway cannot leave the next one offline or
+  sideways.
+
+Cases that need a credential, or whose Expected is a judgment a machine cannot
+check, get no flow. The Tester drives those by hand, and `flows/INDEX.md` says
+why each one has none.
 
 ### Blocking findings and observations
 
@@ -403,7 +440,8 @@ The settings and the one-time AVD setup are in the README, under
 ### Model selection
 
 Each agent file records a recommended model: `opus` for the PM, the Architect,
-and both reviewers, and `sonnet` for the Coder and the Tester.
+and both reviewers, and `sonnet` for the Coder, the Test Writer and the
+Tester.
 
 Claude Code honours those per agent. Antigravity and OpenCode do not support
 per-subagent model selection, so every subagent inherits your globally selected
@@ -423,7 +461,7 @@ Each Android project that wants the pipeline links this repo's files into its ow
    agents alongside ours, and they coexist freely.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` by filename. Our symlinks sit at those canonical paths, so
-   all five commands and all six `@adt-*` agents are available automatically.
+   all five commands and all seven `@adt-*` agents are available automatically.
 3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for slash
    commands and auto-loads `.agents/agents.md` into the system prompt as
    user_rules. `install.sh` inlines the persona stubs from this repo's
@@ -461,6 +499,7 @@ path inside your project.
 | `.claude/agents/adt-android-architect-reviewer.md` | `<clone>/.claude/agents/adt-android-architect-reviewer.md` |
 | `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
 | `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
+| `.claude/agents/adt-android-test-writer.md` | `<clone>/.claude/agents/adt-android-test-writer.md` |
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
 | `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
@@ -481,6 +520,7 @@ path inside your project.
 | `.opencode/agents/adt-android-architect-reviewer.md` | `<clone>/.opencode/agents/adt-android-architect-reviewer.md` |
 | `.opencode/agents/adt-android-coder.md` | `<clone>/.opencode/agents/adt-android-coder.md` |
 | `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
+| `.opencode/agents/adt-android-test-writer.md` | `<clone>/.opencode/agents/adt-android-test-writer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 
 The canonical `AGENTIC_DEV_TEAM_PIPELINE.md`, `scripts/adt.sh` and `drivers/`
@@ -609,6 +649,29 @@ bash .claude/adt/scripts/adt.sh device-release --serial emulator-5556
 
 With the Claude Code plugin and no per-project install, the script is in the
 plugin's directory instead, under `scripts/adt.sh`.
+
+**A flow fails, but the Tester says the case passes by hand.** The flow
+expressed a step or a wait wrongly, not the app. The Tester lists it under
+"Flow Defects", and the Test Writer rewrites it before the next re-test. If no
+re-test happens, the run is still judged by the Tester's hand check, and the
+flow is left as it was.
+
+**The flow run fails with "Timed out waiting for concurrent daemon restart".**
+An older auto-mobile background service is still running, and the pinned
+version cannot take over from it. Restart it on the pinned version:
+
+```bash
+bunx @kaeawc/auto-mobile@0.0.84 --daemon restart
+```
+
+If that refuses with "could not verify the live PID", the old service predates
+the pinned version's restart protocol. Find it and stop it by hand, then start
+a new session:
+
+```bash
+ps aux | grep 'auto-mobile.*--daemon-mode'
+kill <pid>
+```
 
 **A run stopped mid-pipeline.** That is the intended behaviour. Every loop is
 bounded, as described under "Retry budgets", and a stop reports the gate, the

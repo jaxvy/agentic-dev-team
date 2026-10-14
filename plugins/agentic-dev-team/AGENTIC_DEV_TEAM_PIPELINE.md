@@ -30,6 +30,8 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
   - `adt-android-pm` writes `pipeline_artifacts/{slug}/feature.md`.
   - `adt-android-architect` writes `pipeline_artifacts/{slug}/implementation-plan.md`. Its `## 0. Verification Commands` block is the run's authority for the named commands below.
   - `adt-android-architect` also writes `pipeline_artifacts/{slug}/design-doc.md` — the human-facing design document — whenever the orchestrator asks for it. See "The Two Architect Artifacts" below.
+  - `adt-android-test-writer` writes `pipeline_artifacts/{slug}/flows/` — one flow file per test case, plus `flows/INDEX.md` — and nothing else.
+  - `adt.sh run` (run by the orchestrator) writes `pipeline_artifacts/{slug}/run-results.md` and the logs in `run-logs/`.
   - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`.
   - `adt-android-coder` produces no markdown — only uncommitted code changes in the working tree.
   - `pipeline_artifacts/` must be git-ignored in the consuming project. Two mechanisms cover this, and they are deliberately redundant:
@@ -180,6 +182,29 @@ the reason, never a workaround.
 The test plan does not depend on the driver: the Architect writes the same
 selector-annotated cases either way.
 
+## Flows
+
+Every device test is written once, by one agent, at the right time. The
+Architect writes each case **once**, as the spec: steps with selectors and an Expected result, before
+any code exists. After the Coder, `adt-android-test-writer` turns each case into
+a **flow** — the same test as a file in the test driver's own format — reading
+the code that now exists and checking each flow once on the run's device. A
+script then runs every flow with no model in the loop, and `adt-android-tester`
+judges the results.
+
+- **Who writes what.** The Architect writes cases; the Test Writer writes
+  flows; the Tester writes neither. A flow's assertions come only from its
+  case's Expected — the Test Writer may add waits and scrolls the real app
+  needs, never weaken a check to make it pass.
+- **What a flow is not.** It is not a Kotlin test and not part of the build
+  gate. It lives in `pipeline_artifacts/{slug}/flows/`, beside the plan.
+- **A failed flow** is driven by hand by the Tester, who decides whether the app
+  or the flow is wrong. An app defect is a finding like any other. A flow
+  defect is listed under "Flow Defects" in `test-results.md`, never sent to the
+  Coder, and rewritten by the Test Writer before the next re-test.
+- **Cases with no flow** — one that needs a credential, or whose Expected is a
+  judgment a machine cannot check — are driven by hand by the Tester.
+
 ## Devices
 
 Each build command leases **one device for its whole run** through `adt.sh`
@@ -314,6 +339,7 @@ waits on that marker before advancing.
 - `adt-android-pm` → `✅ PM DONE`
 - `adt-android-architect` → `✅ ARCHITECT DONE`
 - `adt-android-coder` → `✅ CODER DONE`
+- `adt-android-test-writer` → `✅ TEST WRITER DONE`
 - `adt-android-tester` → `✅ TESTER DONE`
 
 Each reviewer ends with **exactly one** verdict marker as its final line:
@@ -387,13 +413,14 @@ from `.claude/agents/adt-*.md` and configure tools as follows:
 - `adt-android-pm`: system prompt from `.claude/agents/adt-android-pm.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 - `adt-android-architect`: system prompt from `.claude/agents/adt-android-architect.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 - `adt-android-coder`: system prompt from `.claude/agents/adt-android-coder.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
+- `adt-android-test-writer`: system prompt from `.claude/agents/adt-android-test-writer.md`; `enable_write_tools = true` (for writing flow files — its prompt forbids a shell); `enable_subagent_tools = false`; `enable_mcp_tools = true`.
 - `adt-android-tester`: system prompt from `.claude/agents/adt-android-tester.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = true`.
 - `adt-android-architect-reviewer`: system prompt from `.claude/agents/adt-android-architect-reviewer.md`; `enable_write_tools = true` (for read-only Bash inspection — the reviewer never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 - `adt-android-code-reviewer`: system prompt from `.claude/agents/adt-android-code-reviewer.md`; `enable_write_tools = true` (for `git diff` and the build gate — the reviewer never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
 
 Antigravity does not support per-subagent model selection. The recommended models
 in each agent file (`opus` for adt-android-pm/adt-android-architect and both
-reviewers, `sonnet` for adt-android-coder and adt-android-tester) are documented
+reviewers, `sonnet` for adt-android-coder, adt-android-test-writer and adt-android-tester) are documented
 for reference; in Antigravity, all subagents inherit the user's globally selected
 model — select the strongest available model for full pipeline runs.
 
@@ -517,10 +544,26 @@ Each test:
    It installs on `DEVICE` only, and prints a UTC timestamp on its last line:
    that is `BUILD_INSTALLED`. If it fails, release the device (below), then
    STOP and report the build error. Never test a stale build.
-3. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
-   DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`, and whatever
-   the command adds for a re-test. Note the time just before delegating and when
-   ✅ TESTER DONE arrives.
+3. **Write the flows — the run's first test, and a re-test with flow
+   defects.** Delegate to `adt-android-test-writer` with PLAN_PATH,
+   PIPELINE_DOC, DRIVER_DOC, `DEVICE` and `BUILD_INSTALLED`, and wait for
+   ✅ TEST WRITER DONE. Before a re-test, run it again only if the previous
+   `test-results.md` lists Flow Defects, passing those cases and the Tester's
+   notes as `CASES`; otherwise skip this step — the flows are already written.
+   If it STOPs, release the device, then STOP and report.
+4. **Run the flows.** `bash <adt.sh> run --slug S --driver <the test driver>`.
+   It runs every flow on `DEVICE` with no model in the loop and writes
+   `pipeline_artifacts/S/run-results.md`. Exit 0 means every flow passed and
+   exit 1 that at least one failed — both continue, because judging failures is
+   the Tester's job. Any other exit: release the device, then STOP and report
+   its message. It can take several minutes, since each flow may run for up to
+   `ADT_FLOW_TIMEOUT_S` (300 s by default): give the call a long timeout (in
+   Claude Code, the Bash tool's maximum) or run it in the background and wait
+   for it to finish.
+5. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
+   DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`,
+   `RUN_RESULTS: pipeline_artifacts/S/run-results.md`, and whatever the command
+   adds for a re-test.
 
 The device stays leased between tests — while a Coder fixes, while a reviewer
 re-reviews, and in `/build-guided` while the run waits for the user — so a
@@ -533,39 +576,45 @@ reporting any STOP, and when the user answers `stop`:
 serial it names and carry on. This is deliberately its own step, not part of
 "Close the run", which is skipped whenever a run has no design doc.
 
-The final summary names the test driver and the device, and reports "Tester phase: N seconds" for
-each test, so the user can see where the run's time went.
+Note the time around steps 3, 4 and 5. The final summary names the test
+driver and the device, and reports, for each test, how long the Test Writer,
+the flow run and the Tester took, so the user can see where the run's time
+went.
 
 **Running the Tester outside a build command.** Lease and install with the
 script yourself (`device-acquire`, then `install`), invoke
 `adt-android-tester` with PLAN_PATH, DRIVER_DOC, `DEVICE` and `BUILD_INSTALLED`, and run
 `device-release` when you are done. Without `BUILD_INSTALLED` the Tester stops
-and says the build was not installed.
+and says the build was not installed. Without `RUN_RESULTS` it drives every
+case by hand; to use flows instead, run the Test Writer and `adt.sh run` first.
 
-**Script exit codes.** 0 success, 2 usage, 10 no usable device, 11 the emulator
-did not start or boot, 12 the install command failed, 13 a device could not be
-stopped. Its messages say what to do; report them verbatim.
+**Script exit codes.** 0 success, 1 a flow failed (`run` only), 2 usage, 10 no
+usable device, 11 the emulator did not start or boot, 12 the install command
+failed, 13 a device could not be stopped, 14 the driver's command line is not
+installed, 15 no device is leased for this run. Its messages say what to do;
+report them verbatim.
 
-**The Tester has no shell.** Its tool list is `Read, Write` and the two
-drivers' MCP tools, so it cannot reach for `adb` — every device action goes
-through the tools its adapter names, and a case that needs anything else is
-reported `INCONCLUSIVE`. Claude Code enforces the tool list. In Antigravity the
+**The Tester and the Test Writer have no shell.** Their tool lists hold file
+tools and the two drivers' MCP tools, so they cannot reach for `adb` — every
+device action goes through the tools the adapter names, and a case that needs
+anything else is reported `INCONCLUSIVE`. Claude Code enforces the tool list. In Antigravity the
 one setting that grants a shell, `enable_write_tools`, is also what lets the
-Tester write `test-results.md`, so its mapping keeps it; there, and in
-OpenCode, the no-shell rule is enforced by the Tester's prompt only.
+Tester write `test-results.md` and the Test Writer write flows, so their
+mappings keep it; there, and in OpenCode, the no-shell rule is enforced by
+their prompts only.
 
 ## Orchestration Workflow (Antigravity)
 
 When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
 
-1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`.
+1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above — including `adt-android-test-writer`, which every build command uses. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`.
 2. **Execute Phases**:
    - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
    - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows) and the `DESIGN_DOC` value this command defaults to (see "Design Doc Defaults Per Command"). Wait until it outputs `✅ ARCHITECT DONE`, and parse the artifact paths out of that marker — the plan path always, and the design doc path when one was requested.
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE` and `BUILD_INSTALLED`. It runs manual verification through the project's test driver and writes `test-results.md`.
+   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED` and `RUN_RESULTS`. It judges the flow results, drives what no flow covers, and writes `test-results.md`.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
      iterations) — each re-test is a run of "The Test Phase" on the same

@@ -1,0 +1,38 @@
+#!/bin/bash
+# Fake auto-mobile CLI for tests/adt.test.sh: answers
+#   --cli executePlan --platform android --deviceId <serial> --planContent <yaml>
+# The plan's own comments decide the outcome:
+#   # fake: fail    fails at step 2, every time
+#   # fake: flaky   fails the first time, passes after
+#   # fake: hang    never finishes
+# Every call is recorded in $FAKE_ADT_STATE/automobile.calls.
+state="${FAKE_ADT_STATE:?}"
+device="" plan=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --deviceId) device="$2"; shift 2 ;;
+    --planContent) plan="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+name="$(printf '%s\n' "$plan" | sed -n 's/^name: *//p' | head -n 1)"
+echo "executePlan device=$device name=$name" >> "$state/automobile.calls"
+outcome=pass
+case "$plan" in
+  *"# fake: fail"*) outcome=fail ;;
+  *"# fake: hang"*) outcome=hang ;;
+  *"# fake: flaky"*)
+    if [ ! -f "$state/flaky.$name" ]; then touch "$state/flaky.$name"; outcome=fail; fi ;;
+esac
+case "$outcome" in
+  pass)
+    echo '{"content":[{"type":"text","text":"{\"success\":true,\"executedSteps\":2,\"totalSteps\":2}"}]}'
+    exit 0 ;;
+  fail)
+    echo '{"content":[{"type":"text","text":"{\"success\":false,\"executedSteps\":1,\"totalSteps\":2}"}],"isError":true}'
+    echo "Failed at step 2: observe" >&2
+    echo "Step error: observe waitFor timed out after 4000ms" >&2
+    exit 1 ;;
+  hang)
+    sleep 30 ;;
+esac

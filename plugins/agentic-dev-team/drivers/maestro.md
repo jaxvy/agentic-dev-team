@@ -82,3 +82,59 @@ resource ids only when the app sets `testTagsAsResourceId = true` at its root
 composable; without it, a step that names a test tag cannot find it, and the
 case is `INCONCLUSIVE` with that reason. Apps built with Views already have
 resource ids.
+
+## 5. Flows
+
+A flow is one test case as a Maestro **flow file**: the app id, a `---` line,
+then a list of commands. The adt header lines go first, as YAML comments.
+
+```yaml
+# adt:driver: maestro
+# adt:case: 03 — Pay with a saved card
+appId: com.example.app.debug
+---
+# Reset: put back every setting a flow may change.
+- setAirplaneMode: disabled
+- setOrientation: PORTRAIT
+- setDarkMode: disabled
+# Launch the installed app with clean data.
+- launchApp:
+    clearState: true
+# The case's steps.
+- tapOn:
+    id: checkout_pay_button
+# The case's Expected.
+- extendedWaitUntil:
+    visible:
+      id: order_confirmation_title
+    timeout: 10000
+```
+
+**Reset steps.** Every flow starts with the three commands above, exactly:
+Airplane mode off, portrait, dark mode off. Maestro cannot change the font
+scale, so no Maestro flow changes it either. Then `launchApp` with
+`clearState: true`; the app id in the header is the installed one.
+
+**Steps.** Use the commands from section 4. A Compose test tag is `id:`.
+
+**Assertions.** Write each Expected clause as `assertVisible` or
+`assertNotVisible` (which wait up to 7 seconds), or `extendedWaitUntil` with
+`visible` or `notVisible` and a `timeout` in milliseconds for anything slower.
+All of them fail the flow when the condition does not hold.
+
+**Checking a flow.** Run it with one `run` call: `device_id: DEVICE` and the
+file's path in `files`. The result says whether it passed and, on a failure,
+which command failed.
+
+## 6. How the script runs flows
+
+`adt.sh run --driver maestro` runs every flow in one call to Maestro's command
+line, on the run's device, with no model involved:
+
+```
+maestro --device <DEVICE> test --format junit --output <junit.xml> \
+  --test-output-dir <dir> <flow files…>
+```
+
+It reads each flow's result, time and failure message from the JUnit report.
+`ADT_MAESTRO` overrides the command.

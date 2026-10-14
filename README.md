@@ -1,9 +1,9 @@
 # Agentic Android Dev Team
 
-Six specialist AI agents that work like an Android team. You describe a feature
-in your editor's chat prompt, and they pass it down the line: product spec,
-implementation plan, code, then testing on a real device. What comes back is an
-uncommitted diff and a test report.
+Seven specialist AI agents that work like an Android team. You describe a
+feature in your editor's chat prompt, and they pass it down the line: product
+spec, implementation plan, code, then testing on a real device. What comes back
+is an uncommitted diff and a test report.
 
 Works the same way in [Claude Code](https://claude.com/claude-code),
 [Antigravity](https://antigravity.google), and [OpenCode](https://opencode.ai).
@@ -12,13 +12,14 @@ Works the same way in [Claude Code](https://claude.com/claude-code),
 
 Every run is the same chain of handoffs. Each agent reads the previous agent's
 output in full before it starts, so the spec constrains the plan, the plan
-constrains the code, and the plan's test cases are what the Tester actually runs.
+constrains the code, and the plan's test cases are what actually gets tested.
 
 ```mermaid
 flowchart LR
   PM["pm"] -->|"feature.md"| AR["architect"]
   AR -->|"implementation-plan.md<br/>& design-doc.md"| CO["coder"]
-  CO -->|"uncommitted code"| TE["tester"]
+  CO -->|"uncommitted code"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"test-results.md"| OUT(["diff + report"])
 ```
 
@@ -45,7 +46,11 @@ separate mandates, and puts a reviewer between them.
   the most expensive place to discover it.
 * In the reviewed flow, code review always covers the final state of the tree,
   including fixes made after testing.
-* The Tester drives the real app on a device or emulator, not a mocked harness.
+* Device tests are planned before the code and written after it. The
+  Architect decides what to test; once the feature exists, the Test Writer
+  turns each test case into a file that runs in seconds; the Tester judges the
+  results on a real emulator, not a mocked harness. No agent grades its own
+  work.
 * Retry loops are bounded. Reviewers get at most two rounds, the fix loop gets at
   most two, and a run that still fails stops and explains why instead of
   reporting success.
@@ -59,6 +64,7 @@ separate mandates, and puts a reviewer between them.
 | `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md`, with exact file changes and a manual test plan, plus `design-doc.md` for human review |
 | `adt-android-architect-reviewer` | Plan reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-coder` | Implementer | Uncommitted code in your working tree |
+| `adt-android-test-writer` | Test engineer | One runnable *flow* file per test case, written against the running app |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
 
@@ -97,7 +103,8 @@ flowchart LR
   I(["idea"]) --> PM["pm"]
   PM -->|"spec gate"| AR["architect"]
   AR -->|"plan gate"| CO["coder"]
-  CO -->|"code gate"| TE["tester"]
+  CO -->|"code gate"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"results gate"| E(["done"])
 ```
 
@@ -123,7 +130,8 @@ you want one.
 flowchart LR
   I(["feature"]) --> AR["architect"]
   AR -->|"implementation-plan.md"| CO["coder"]
-  CO -->|"uncommitted code"| TE["tester"]
+  CO -->|"uncommitted code"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"test-results.md"| E(["done"])
 ```
 
@@ -149,7 +157,8 @@ flowchart LR
   AR -->|"plan review<br/>(max 2)"| AR
   AR -->|"implementation-plan.md"| CO["coder"]
   CO -->|"code review<br/>(max 2)"| CO
-  CO -->|"uncommitted diff"| TE["tester"]
+  CO -->|"uncommitted diff"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"test-results.md"| E(["done"])
 ```
 
@@ -196,6 +205,9 @@ pipeline_artifacts/recently-played-carousel/
 ├── feature.md              # the spec (PM phases only)
 ├── implementation-plan.md  # the plan, including the manual test plan
 ├── design-doc.md           # the same design, written for you
+├── flows/                  # one runnable test per test case, and INDEX.md
+├── run-results.md          # each flow's result and time, from the last run
+├── run-logs/               # the driver's output for each flow
 └── test-results.md         # per-case results, verdict, observations
 ```
 
@@ -203,6 +215,32 @@ Alongside that is the actual work: uncommitted changes in your working tree.
 Review them, stage what you want, and commit on your own terms.
 
 ## Testing on a device
+
+### How device tests are written and run
+
+Every test case is written once, by one agent, at the right moment:
+
+1. **The Architect writes the case**, before any code exists: the steps, with
+   the exact element to tap or type into, and the expected result. That is the
+   spec the Coder builds to.
+2. **The Test Writer turns it into a flow**, after the Coder: a small file in
+   your test driver's own format that does the steps and checks the result.
+   Because the app now exists, it reads the real screens' code, runs each flow
+   once on the emulator, and fixes how a step finds its button or how long it
+   waits — never what the test checks.
+3. **A script runs every flow**, with no AI in the loop. A flow that fails is
+   run once more, so a one-off hiccup is reported as *flaky* rather than as a
+   failure.
+4. **The Tester judges the results.** A passing flow needs nothing more. For a
+   failing one, the Tester repeats the case by hand on the emulator and decides
+   whether the app is wrong (a finding the Coder fixes) or the flow is (the
+   Test Writer rewrites it before the next test). It also drives the few cases
+   no flow can cover — ones that need you to be signed in, or whose expected
+   result is a judgment, such as "the layout looks right in dark mode".
+
+This is what makes testing fast. A passing case costs a few seconds of the
+script's time instead of an AI working through it step by step, and a re-test
+after a fix is one script call plus a look at whatever failed.
 
 ### Each run gets its own emulator
 
@@ -253,16 +291,17 @@ switched on. In Claude Code:
 
 ```bash
 claude mcp add auto-mobile \
-  -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink \
+  -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan \
   -- bunx @kaeawc/auto-mobile@0.0.84
 ```
 
 Why both parts matter:
 
 * **The tool list.** auto-mobile hides the tools that rotate the screen,
-  switch dark mode, change permissions and turn on Airplane mode until they
-  are switched on. The Tester has no shell, so without them those test cases
-  come back *inconclusive* instead of being worked around with `adb`.
+  switch dark mode, change permissions, turn on Airplane mode and run a flow
+  until they are switched on. The Tester has no shell, so without them those
+  test cases come back *inconclusive* instead of being worked around with
+  `adb`.
 * **The version.** `@latest` can pull a new release in the middle of a run,
   which restarts auto-mobile's shared background service under any other run
   using it. Re-check a test run after you move the pin, because tool names can
@@ -385,7 +424,7 @@ The fastest path if you only use Claude Code. From inside the CLI:
 /plugin install agentic-dev-team@adt-pipeline
 ```
 
-This installs all six agents and all five commands with no per-project setup. It
+This installs all seven agents and all five commands with no per-project setup. It
 does not wire up Antigravity or OpenCode.
 
 ### Install per project with install.sh
