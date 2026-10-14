@@ -116,8 +116,11 @@ Phase 2R — Code review gate (max 2 re-runs):
     STOP and report (see protocol).
 
 Phase 3 — Tester:
-  Delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH
+  Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
+  defines it: run the install command from PLAN_PATH Section 0 (STOP and report
+  the build error if it fails), then delegate to the `adt-android-tester`
+  subagent.
+  Pass: PLAN_PATH, PIPELINE_DOC, and `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
 
 Phase 3F — Tester fix loop (max 2 iterations):
@@ -139,7 +142,9 @@ Phase 3F — Tester fix loop (max 2 iterations):
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    Re-run the test phase (Part B, "The Test Phase" — install included, so
+    the re-test sees the fixed build), passing `adt-android-tester` PLAN_PATH,
+    PIPELINE_DOC, the new `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
     affects them. Wait for ✅ TESTER DONE.
@@ -173,4 +178,5 @@ reviewed after its last change. Note any Observations the Tester recorded as
 non-blocking, since those are decisions waiting on the user rather than work the
 pipeline did. Also report, for each review gate, how many re-runs were needed
 (0, 1, or 2) and whether parallel execution was used and how many
-adt-android-coder subagents ran, so the user can gauge token cost.
+adt-android-coder subagents ran, so the user can gauge token cost, and the
+Tester phase's duration for each test phase (Part B, "The Test Phase").

@@ -261,6 +261,30 @@ yours already sits at one of those paths, it refuses and names the path.
 * The [auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) registered
   with your tool. The Tester drives the app on a device or emulator through it,
   and without it the Tester phase cannot finish its device verification.
+  Register it at a fixed version, with the device-setting tools switched on.
+  In Claude Code:
+
+  ```bash
+  claude mcp add auto-mobile \
+    -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink \
+    -- bunx @kaeawc/auto-mobile@0.0.84
+  ```
+
+  Why both matter:
+  * **The tool list.** auto-mobile hides the tools that rotate the screen,
+    switch dark mode, change permissions and turn on Airplane mode until they
+    are switched on. The Tester has no shell, so without them those test cases
+    come back *inconclusive* instead of being worked around with `adb`.
+  * **The version.** `@latest` can pull a new release in the middle of a run,
+    which restarts auto-mobile's shared background service under any other run
+    using it. Re-check the Tester after you move the pin, because tool names
+    can change between releases.
+
+  In OpenCode, which connects to auto-mobile over HTTP, set
+  `AUTOMOBILE_ENABLED_TOOLS` in the environment of whatever starts the
+  auto-mobile server. After changing the version or the tool list, restart
+  auto-mobile's background service once, while nothing is being tested:
+  `bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`.
 
 ## Installation
 

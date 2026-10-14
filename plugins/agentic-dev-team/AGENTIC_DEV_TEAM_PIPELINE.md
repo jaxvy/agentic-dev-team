@@ -122,9 +122,13 @@ commands themselves.
   so this check is the only thing standing between a group and the next one —
   a skipped check means that group's work was never verified by anything.
 
-- **The install command** — how `adt-android-tester` puts the build on the
-  device before driving it. A failure here is a STOP, not something to work
-  around.
+- **The install command** — how the build reaches the device before
+  `adt-android-tester` drives it. The orchestrator runs it, not the Tester,
+  which has no shell (Part B, "The Test Phase"). A failure here is a STOP, not
+  something to work around. The Tester refuses to test unless its prompt
+  carries `BUILD_INSTALLED: <timestamp>`, the orchestrator's statement that the
+  install succeeded — so a stale build is never tested by mistake, even when
+  the Tester is invoked outside a build command.
 
 ### Resolving Them
 
@@ -448,6 +452,37 @@ It differs from the full gate in scope and budget, not in authority:
 A run may only reach `READY TO MERGE` with an approval that post-dates the last
 code mutation. If the loop exits any other way, it exits through a STOP.
 
+## The Test Phase
+
+The three build commands test the same way. Each time a command says "run the
+test phase" — the first test and every re-test in its fix loop — do these steps
+in order:
+
+1. **Install.** Run the install command from the plan's Section 0. If it
+   fails, STOP and report the build error. Never test a stale build.
+2. **Stamp it.** Take a UTC timestamp with `date -u +%Y-%m-%dT%H:%M:%SZ`. That
+   is the `BUILD_INSTALLED` value.
+3. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC, the
+   line `BUILD_INSTALLED: <timestamp>`, and whatever the command adds for a
+   re-test. Note the time just before delegating and when ✅ TESTER DONE
+   arrives.
+
+The final summary reports "Tester phase: N seconds" for each test phase, so the
+user can see where the run's time went.
+
+**Running the Tester outside a build command.** Install the build yourself
+first, then invoke `adt-android-tester` with PLAN_PATH and
+`BUILD_INSTALLED: <timestamp>`. Without that line it stops and says the build
+was not installed.
+
+**The Tester has no shell.** Its tool list is `Read, Write` and the
+`auto-mobile` MCP tools, so it cannot reach for `adb` — every device action
+goes through auto-mobile's own tools, and a case that needs anything else is
+reported `INCONCLUSIVE`. Claude Code enforces the tool list. In Antigravity the
+one setting that grants a shell, `enable_write_tools`, is also what lets the
+Tester write `test-results.md`, so its mapping keeps it; there, and in
+OpenCode, the no-shell rule is enforced by the Tester's prompt only.
+
 ## Orchestration Workflow (Antigravity)
 
 When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
@@ -459,10 +494,11 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Tester Phase**: Invoke `adt-android-tester` with the plan path. It runs manual verification via `auto-mobile` and writes `test-results.md`.
+   - **Tester Phase**: Run "The Test Phase" above: install the build, then invoke `adt-android-tester` with the plan path and `BUILD_INSTALLED`. It runs manual verification via `auto-mobile` and writes `test-results.md`.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
-     iterations), then STOP and report if it is still
+     iterations) — each re-test is a full run of "The Test Phase", install
+     included — then STOP and report if it is still
      failing. In `/build-auto-reviewed` the targeted re-review is mandatory —
      see "The Targeted Re-Review" above; the code that ships must have been
      reviewed after its last mutation. A run never ends by declaring a

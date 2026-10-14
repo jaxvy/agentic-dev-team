@@ -119,8 +119,11 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     "Approve the implementation to proceed to Tester, or revise?"
 
 Phase 4 — Tester (after approval):
-  Delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH
+  Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
+  defines it: run the install command from PLAN_PATH Section 0 (STOP and report
+  the build error if it fails), then delegate to the `adt-android-tester`
+  subagent.
+  Pass: PLAN_PATH, PIPELINE_DOC, and `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH. Present blocking findings and
@@ -137,7 +140,9 @@ Phase 4 — Tester (after approval):
     the user explicitly asked for in their `revise:` feedback is fair game —
     that is the user creating a requirement, which is allowed; the Tester
     doing it on its own is not. Wait for ✅ CODER DONE.
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    Re-run the test phase (Part B, "The Test Phase" — install included, so
+    the re-test sees the fixed build), passing `adt-android-tester` PLAN_PATH,
+    PIPELINE_DOC, the new `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
     affects them. Wait for ✅ TESTER DONE, then return to this gate with the
@@ -158,3 +163,6 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
   implemented this document as written." when there is nothing to record.
   Then report DOC_PATH to the user as the document to review this work from,
   alongside the test verdict and the list of changed files.
+
+Whenever the run ends, include the Tester phase's duration for each test phase
+(Part B, "The Test Phase") in what you report.

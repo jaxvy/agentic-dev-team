@@ -275,7 +275,7 @@ Three named commands are the only Gradle the pipeline runs.
 |---|---|---|
 | Build gate | The full end-of-work check | The Coder in a sequential run, before declaring done. Also the code reviewer, as part of every review |
 | Cross-section check | The build gate minus the assemble task | The orchestrator, after every parallel coder group |
-| Install command | Puts the build on the device | The Tester, before driving the app. A failure here is a stop condition |
+| Install command | Puts the build on the device | The orchestrator, right before every test and re-test. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
 
 The cross-section check still catches compile errors, because its unit-test leg
 compiles the main sources.
@@ -517,6 +517,18 @@ Pick one as canonical and keep them in sync, or delete one.
 [auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) is registered with
 your tool and that a device or emulator is attached. In OpenCode it belongs in
 `opencode.json` under the `mcp` key, as `type: "remote"` with auto-mobile's URL.
+
+**Rotation, dark mode, permission or offline cases come back inconclusive.** The
+Tester has no shell, so it only uses auto-mobile's own tools, and the ones that
+change device settings are hidden until they are switched on. Check the
+`AUTOMOBILE_ENABLED_TOOLS` value and the pinned version from the README's
+Requirements, then restart auto-mobile's background service once
+(`bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`) and start a new session.
+
+**The Tester stopped saying the build was not installed.** It only tests a build
+the orchestrator has just installed, which the orchestrator confirms with a
+`BUILD_INSTALLED` line. When you call the Tester yourself, outside a build
+command, install the build first and pass that line with the plan path.
 
 **A run stopped mid-pipeline.** That is the intended behaviour. Every loop is
 bounded, as described under "Retry budgets", and a stop reports the gate, the

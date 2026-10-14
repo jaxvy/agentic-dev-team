@@ -81,8 +81,11 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
   unexpected file conflict), STOP rather than continuing.
 
 Phase 3 — Tester:
-  Delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH
+  Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
+  defines it: run the install command from PLAN_PATH Section 0 (STOP and report
+  the build error if it fails), then delegate to the `adt-android-tester`
+  subagent.
+  Pass: PLAN_PATH, PIPELINE_DOC, and `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
 
 Phase 3F — Tester fix loop (max 2 iterations):
@@ -93,7 +96,9 @@ Phase 3F — Tester fix loop (max 2 iterations):
     only — the Tester's Observations section is for the user and never drives
     a fix), instructing it to fix exactly those failures. Wait for
     ✅ CODER DONE.
-    Re-run `adt-android-tester` with PLAN_PATH and the previous
+    Re-run the test phase (Part B, "The Test Phase" — install included, so
+    the re-test sees the fixed build), passing `adt-android-tester` PLAN_PATH,
+    PIPELINE_DOC, the new `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
     affects them. Wait for ✅ TESTER DONE.
@@ -116,4 +121,5 @@ directory as PLAN_PATH, including how many fix iterations ran, and list any
 Observations the Tester recorded — those are unrequested behaviours it noticed
 and deliberately did not fix, for the user to accept or turn into a follow-up.
 Also report whether parallel execution was used and how many adt-android-coder
-subagents ran, so the user can gauge token cost.
+subagents ran, so the user can gauge token cost, and the Tester phase's
+duration for each test phase (Part B, "The Test Phase").
