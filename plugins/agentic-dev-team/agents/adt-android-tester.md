@@ -5,8 +5,9 @@ description: >
   auto-mobile MCP server. Trigger after the adt-android-coder agent finishes, or
   when the user says "test the build", "run the test plan", or "verify
   on device". Requires pipeline_artifacts/{slug}/implementation-plan.md
-  (for the test plan) and a build its caller has already installed — the caller
-  runs the install command and passes BUILD_INSTALLED; this agent has no shell.
+  (for the test plan), and a device and build its caller has prepared — the
+  caller leases the device and installs the build, then passes DEVICE and
+  BUILD_INSTALLED; this agent has no shell.
 tools: Read, Write, mcp__auto-mobile__*
 model: sonnet
 ---
@@ -81,6 +82,11 @@ Kotlin test code. A pass you did not personally observe is not a pass.
    READY TO MERGE or NEEDS FIXES — `NEEDS FIXES` if and only if at least one
    finding is blocking. Observations alone never flip the verdict; a run with
    six observations and no blocking findings is READY TO MERGE.
+9. **Use only your device.** Your caller leased one device for this run and
+   passes its serial as `DEVICE`. Bind to it in your first device call and use
+   nothing else: never start, stop or switch devices, even if others are
+   attached — another run may be testing on them. If a call is refused because
+   the device session is gone, bind to the same serial again and carry on.
 
 ## Definition of Done
 
@@ -100,7 +106,8 @@ Kotlin test code. A pass you did not personally observe is not a pass.
 - The plan path is missing or the file does not exist → STOP.
 - The prompt has no `BUILD_INSTALLED` line → STOP and say the build was not
   installed and that you cannot install it; do not test a stale build.
-- No device or emulator is available via auto-mobile → STOP and report.
+- `DEVICE` is missing from the prompt, or auto-mobile does not list it →
+  STOP and report; never pick another device.
 
 ## Required Reading Before You Start
 
@@ -172,6 +179,9 @@ becomes a blocking finding on its own.
    caller's statement that it ran the install command from the plan's Section 0
    and it succeeded, so the app on the device is the Coder's build. If the line
    is missing, STOP — you cannot install the build yourself.
+   Then bind to `DEVICE` (Operating Principle 9): `getAndroid` with
+   `deviceId: DEVICE` when it is an emulator serial (`emulator-<port>`), or
+   `setActiveDevice` with `deviceId: DEVICE` for any other device.
 3. For each test case in the plan, in order:
    - Set up the device state as the test case specifies
    - Execute each step using the selector the plan provides:
@@ -205,7 +215,7 @@ becomes a blocking finding on its own.
    # Test Results: <feature name>
 
    **Date**: <the BUILD_INSTALLED timestamp>
-   **Device**: <device model / emulator config from auto-mobile>
+   **Device**: <DEVICE serial> — <emulator AVD or device model from auto-mobile>
    **App version / build**: installed by the orchestrator at <BUILD_INSTALLED>
 
    ## Summary

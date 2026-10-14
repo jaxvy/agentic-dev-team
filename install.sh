@@ -8,8 +8,8 @@
 #   <repo-clone>/install.sh --uninstall    # uninstall from current working directory
 #
 # What it does:
-#   - For each agent, command, and workflow file in this repo, creates a
-#     per-file symlink at the matching path in the consuming project.
+#   - For each agent, command, workflow and pipeline script in this repo,
+#     creates a per-file symlink at the matching path in the consuming project.
 #   - Manages a marker-fenced block in the project's .gitignore listing the
 #     installed paths (so per-developer absolute symlink targets aren't
 #     committed).
@@ -66,7 +66,8 @@ build_desired_pairs() {
            "$REPO_DIR"/.claude/agents/*.md \
            "$REPO_DIR"/.agents/workflows/*.md \
            "$REPO_DIR"/.opencode/agents/*.md \
-           "$REPO_DIR"/.opencode/commands/*.md; do
+           "$REPO_DIR"/.opencode/commands/*.md \
+           "$REPO_DIR"/.claude/adt/scripts/*.sh; do
     rel="${f#$REPO_DIR/}"
     printf '%s|%s\n' "$f" "$rel"
   done

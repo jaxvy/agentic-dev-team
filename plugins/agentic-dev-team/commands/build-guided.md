@@ -120,11 +120,14 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
 
 Phase 4 — Tester (after approval):
   Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
-  defines it: run the install command from PLAN_PATH Section 0 (STOP and report
-  the build error if it fails), then delegate to the `adt-android-tester`
-  subagent.
-  Pass: PLAN_PATH, PIPELINE_DOC, and `BUILD_INSTALLED: <timestamp>`
+  defines it: lease this run's device with `adt.sh device-acquire` (DEVICE),
+  install the build on it with `adt.sh install` (BUILD_INSTALLED; release and
+  STOP if it fails), then delegate to the `adt-android-tester` subagent.
+  Pass: PLAN_PATH, PIPELINE_DOC, `DEVICE: <serial>` and
+  `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
+  The device stays up while you wait at the gate below, so a `revise:`
+  re-tests without a new boot.
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH. Present blocking findings and
   Observations separately: blocking findings are defects against the plan;
@@ -140,15 +143,22 @@ Phase 4 — Tester (after approval):
     the user explicitly asked for in their `revise:` feedback is fair game —
     that is the user creating a requirement, which is allowed; the Tester
     doing it on its own is not. Wait for ✅ CODER DONE.
-    Re-run the test phase (Part B, "The Test Phase" — install included, so
-    the re-test sees the fixed build), passing `adt-android-tester` PLAN_PATH,
-    PIPELINE_DOC, the new `BUILD_INSTALLED` line and the previous
+    Re-run the test phase (Part B, "The Test Phase") on the same device —
+    install included, so the re-test sees the fixed build — passing
+    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, `DEVICE`, the new
+    `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
     affects them. Wait for ✅ TESTER DONE, then return to this gate with the
     fresh results.
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
+
+Release the device — whenever the run ends once Phase 4 has leased one: on
+`approve` at Phase 4, on `stop` at any gate, and on a STOP of your own. Run the
+release step of the pipeline doc's Part B, "The Test Phase", before anything
+else in Phase 5. It is separate from Phase 5, which is skipped when there is no
+design doc.
 
 Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
 `stop`, or on a STOP of your own):
@@ -164,5 +174,6 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
   Then report DOC_PATH to the user as the document to review this work from,
   alongside the test verdict and the list of changed files.
 
-Whenever the run ends, include the Tester phase's duration for each test phase
-(Part B, "The Test Phase") in what you report.
+Whenever the run ends, include the device the run tested on and the Tester
+phase's duration for each test phase (Part B, "The Test Phase") in what you
+report.

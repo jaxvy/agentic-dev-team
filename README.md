@@ -202,6 +202,59 @@ pipeline_artifacts/recently-played-carousel/
 Alongside that is the actual work: uncommitted changes in your working tree.
 Review them, stage what you want, and commit on your own terms.
 
+## Testing on a device
+
+### Each run gets its own emulator
+
+When a run reaches testing, it boots an emulator of its own in the background,
+with no window. It installs the build only on that emulator, keeps it for
+every re-test, and shuts it down when the run ends.
+
+That gives you two things:
+
+* **You can build two features at once.** Give each its own
+  [git worktree](https://git-scm.com/docs/git-worktree) and run a command in
+  each. Their tests run on separate emulators and never see each other.
+* **Your own emulator is left alone.** The run never installs on it, never
+  closes it, and never uses it unless you ask.
+
+The emulator is a *read-only* copy of one of your AVDs (the virtual devices
+you create in Android Studio's Device Manager), so nothing a test does is
+saved. One rule comes from the Android emulator itself: a read-only copy cannot
+start while the same AVD is open normally. So the run picks an AVD you do not
+have open, and tells you which one it used.
+
+### Settings
+
+All optional. Set them in your shell profile, or for Claude Code in
+`.claude/settings.json` under `env`.
+
+| Variable | What it does |
+|---|---|
+| `ADT_AVD` | The AVD to boot. Recommended, so every run uses the one you prepared (below) |
+| `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one |
+| `ADT_HEADLESS=0` | Show the emulator window, to watch a test run |
+| `ADT_BOOT_TIMEOUT_S` | How long to wait for the emulator to start, in seconds (default 240) |
+
+### One-time setup
+
+auto-mobile installs a small helper app on a device the first time it connects
+to it. A read-only copy forgets everything when it shuts down, so without this
+step every run pays for that install again.
+
+1. Pick one AVD for the pipeline and open it normally from Android Studio.
+2. Ask your agent to do anything with auto-mobile on it, such as listing
+   what is on the screen. That installs the helper.
+3. Close the emulator, and set `ADT_AVD` to that AVD's name.
+
+From then on, every run's read-only copy starts with the helper already
+installed.
+
+If a session dies in the middle of a run, its emulator keeps running. Running
+the same command again for the same feature picks it back up. To find and stop
+a leftover one, see "An emulator was left running" in
+[HOW_IT_WORKS.md](HOW_IT_WORKS.md#troubleshooting).
+
 ## Safeguards
 
 ### Testing cannot invent requirements
@@ -258,6 +311,8 @@ yours already sits at one of those paths, it refuses and names the path.
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)
 * An Android project with an `AGENTS.md` or `CLAUDE.md` describing its stack,
   architecture, conventions, and verification rules
+* The Android SDK's emulator and platform tools (both come with Android
+  Studio), and at least one AVD. See [Testing on a device](#testing-on-a-device)
 * The [auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) registered
   with your tool. The Tester drives the app on a device or emulator through it,
   and without it the Tester phase cannot finish its device verification.

@@ -275,7 +275,7 @@ Three named commands are the only Gradle the pipeline runs.
 |---|---|---|
 | Build gate | The full end-of-work check | The Coder in a sequential run, before declaring done. Also the code reviewer, as part of every review |
 | Cross-section check | The build gate minus the assemble task | The orchestrator, after every parallel coder group |
-| Install command | Puts the build on the device | The orchestrator, right before every test and re-test. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
+| Install command | Puts the build on the device | The orchestrator, through `adt.sh install`, right before every test and re-test, on the run's own device only. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
 
 The cross-section check still catches compile errors, because its unit-test leg
 compiles the main sources.
@@ -350,6 +350,37 @@ exists for. The orchestrator resolves it rather than reporting and stopping:
    stop and report it as a plan defect. Do not guess which coder should absorb
    it.
 
+### Devices
+
+Each build command leases one device for its whole run, through a small script,
+`adt.sh`. Normally it boots a headless, read-only copy of one of your AVDs for
+that run alone, so two features in two git worktrees can be tested at the same
+time.
+
+```
+first test:  device-acquire  ->  install  ->  Tester
+re-test:                         install  ->  Tester      (same device)
+run ends:    device-release                               (also on any stop)
+```
+
+* **One device per run.** The first test leases it; every re-test reuses it,
+  so a fix loop never waits for a second boot. It stays up while a Coder fixes
+  something, and in `/build-guided` while the run waits for you.
+* **Installs land only there.** The install command runs with `ANDROID_SERIAL`
+  set to the run's device.
+* **The Tester uses only that device.** It receives the serial as `DEVICE`,
+  binds to it in its first call, and never starts, stops or switches devices.
+* **Leases are per project and feature.** A lease belongs to the project
+  directory and the feature slug together, so two worktrees never share a
+  device. Leases live in `~/.adt/leases/`.
+* **Your emulator is never touched.** An attached device is used only when you
+  set `ADT_DEVICE_MODE=reuse`, or when no AVD can be booted (none exists, or
+  every one is open normally). The script says which device it took and why,
+  and never stops a device it did not start.
+
+The settings and the one-time AVD setup are in the README, under
+[Testing on a device](README.md#testing-on-a-device).
+
 ### Model selection
 
 Each agent file records a recommended model: `opus` for the PM, the Architect,
@@ -413,6 +444,7 @@ path inside your project.
 | `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
+| `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
 | `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
 | `.agents/workflows/build-auto-reviewed.md` | `<clone>/.agents/workflows/build-auto-reviewed.md` |
@@ -430,8 +462,9 @@ path inside your project.
 | `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 
-The canonical `AGENTIC_DEV_TEAM_PIPELINE.md` lives in
-`plugins/agentic-dev-team/` so the Claude Code plugin can package it. The clone's
+The canonical `AGENTIC_DEV_TEAM_PIPELINE.md` and `scripts/adt.sh` live in
+`plugins/agentic-dev-team/` so the Claude Code plugin can package them; the
+clone's `.claude/adt/scripts` is a symlink to that `scripts` directory. The clone's
 `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, which leaves the
 project-side path above unchanged, so installed projects need no re-install.
 
@@ -529,6 +562,23 @@ Requirements, then restart auto-mobile's background service once
 the orchestrator has just installed, which the orchestrator confirms with a
 `BUILD_INSTALLED` line. When you call the Tester yourself, outside a build
 command, install the build first and pass that line with the plan path.
+
+**"No usable AVD", or the run took my attached phone.** Testing needs an AVD
+it can boot read-only, and a read-only copy cannot start while the same AVD is
+open normally. Create a second AVD in Android Studio's Device Manager, or close
+the one you have open, or set `ADT_AVD` to an AVD you do not use day to day.
+
+**An emulator was left running.** A session that dies mid-run leaves its
+emulator up. Running the same command again for the same feature picks it back
+up. To stop it instead, list the leases and release the one you want:
+
+```bash
+bash .claude/adt/scripts/adt.sh device-list
+bash .claude/adt/scripts/adt.sh device-release --serial emulator-5556
+```
+
+With the Claude Code plugin and no per-project install, the script is in the
+plugin's directory instead, under `scripts/adt.sh`.
 
 **A run stopped mid-pipeline.** That is the intended behaviour. Every loop is
 bounded, as described under "Retry budgets", and a stop reports the gate, the

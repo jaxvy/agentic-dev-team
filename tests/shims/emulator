@@ -1,0 +1,41 @@
+#!/bin/bash
+# Fake Android emulator for tests/adt.test.sh. State lives in $FAKE_ADT_STATE:
+#   avds          the AVD names -list-avds prints
+#   mode.<avd>    ok (default) | busy | fail | hang
+#   emulator.calls every invocation, one per line
+state="${FAKE_ADT_STATE:?}"
+mkdir -p "$state/dev"
+echo "emulator $*" >> "$state/emulator.calls"
+if [ "${1:-}" = "-list-avds" ]; then
+  cat "$state/avds" 2>/dev/null
+  echo "INFO    | Android emulator version 0.0.0 (a log line, not an AVD)"
+  exit 0
+fi
+avd="" port=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -avd) avd="$2"; shift 2 ;;
+    -port) port="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+serial="emulator-$port"
+mode="$(cat "$state/mode.$avd" 2>/dev/null || echo ok)"
+case "$mode" in
+  busy)
+    echo "ERROR | Another emulator instance is running. Please close it or run all emulators with -read-only flag."
+    exit 1 ;;
+  fail)
+    echo "ERROR | the fake emulator was told to fail"
+    exit 1 ;;
+esac
+echo "$avd" > "$state/avd.$serial"
+echo offline > "$state/dev/$serial"
+if [ "$mode" = "ok" ]; then
+  sleep 1
+  echo device > "$state/dev/$serial"
+  touch "$state/booted.$serial"
+fi
+while [ -f "$state/dev/$serial" ]; do sleep 0.2; done
+rm -f "$state/booted.$serial"
+exit 0

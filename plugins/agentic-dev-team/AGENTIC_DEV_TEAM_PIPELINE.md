@@ -159,6 +159,24 @@ the project does not define fails the whole invocation, so a resolved command
 that names a non-existent task is a defect — never "the project's build is
 broken".
 
+## Devices
+
+Each build command leases **one device for its whole run** through `adt.sh`
+(Part B, "The Test Phase"). Normally that is a headless, read-only emulator
+the run boots for itself, so two features can be tested at the same time — in
+two git worktrees — without touching each other or the developer's own
+emulator.
+
+- The orchestrator passes the device's serial to `adt-android-tester` as
+  `DEVICE`. The Tester binds to that serial in its first device call and uses
+  nothing else: it never starts, stops or switches devices.
+- The install command runs through the script with `ANDROID_SERIAL` set to
+  that serial, so the build lands on this run's device only.
+- A lease belongs to the project directory and the slug together, so two
+  worktrees, or two apps, that happen to share a slug never share a device.
+- The device is kept for every re-test in the run and released when the
+  command ends.
+
 ## Gradle in a Parallel Run
 
 When the orchestrator spawns several `adt-android-coder` subagents for one
@@ -454,26 +472,58 @@ code mutation. If the loop exits any other way, it exits through a STOP.
 
 ## The Test Phase
 
-The three build commands test the same way. Each time a command says "run the
-test phase" — the first test and every re-test in its fix loop — do these steps
-in order:
+The three build commands test the same way. A run leases one device for its
+whole life (Part A, "Devices"), and each test — the first one and every
+re-test in the fix loop — goes through the same steps.
 
-1. **Install.** Run the install command from the plan's Section 0. If it
-   fails, STOP and report the build error. Never test a stale build.
-2. **Stamp it.** Take a UTC timestamp with `date -u +%Y-%m-%dT%H:%M:%SZ`. That
-   is the `BUILD_INSTALLED` value.
-3. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC, the
-   line `BUILD_INSTALLED: <timestamp>`, and whatever the command adds for a
-   re-test. Note the time just before delegating and when ✅ TESTER DONE
-   arrives.
+**The script.** Devices are handled by `adt.sh`. Resolve its path once per
+run, the same way PIPELINE_DOC was resolved: `.claude/adt/scripts/adt.sh` if
+it exists in the project, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`.
+Always run it as `bash <path> …`, from the project root. Below, `S` is the
+feature's slug, the `{slug}` in PLAN_PATH.
 
-The final summary reports "Tester phase: N seconds" for each test phase, so the
-user can see where the run's time went.
+Each test:
 
-**Running the Tester outside a build command.** Install the build yourself
-first, then invoke `adt-android-tester` with PLAN_PATH and
-`BUILD_INSTALLED: <timestamp>`. Without that line it stops and says the build
-was not installed.
+1. **Lease the device — the run's first test only.**
+   `bash <adt.sh> device-acquire --slug S`. It boots a headless emulator of the
+   run's own (never one the developer has open), waits until it is ready, and
+   prints its serial on the last line: that is `DEVICE`. Running it again for
+   the same slug in the same project returns the same device, so a re-run of a
+   command that died picks its emulator back up. If it fails, STOP and report
+   its message; there is nothing to release.
+2. **Install — every test.**
+   `bash <adt.sh> install --slug S -- <the install command from the plan's Section 0>`.
+   It installs on `DEVICE` only, and prints a UTC timestamp on its last line:
+   that is `BUILD_INSTALLED`. If it fails, release the device (below), then
+   STOP and report the build error. Never test a stale build.
+3. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
+   `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`, and whatever the command
+   adds for a re-test. Note the time just before delegating and when
+   ✅ TESTER DONE arrives.
+
+The device stays leased between tests — while a Coder fixes, while a reviewer
+re-reviews, and in `/build-guided` while the run waits for the user — so a
+re-test needs no new boot.
+
+**Release the device when the run ends.** Once a device is leased, every exit
+from the command releases it first: before the final summary, before
+reporting any STOP, and when the user answers `stop`:
+`bash <adt.sh> device-release --slug S`. If that exits non-zero, report the
+serial it names and carry on. This is deliberately its own step, not part of
+"Close the run", which is skipped whenever a run has no design doc.
+
+The final summary names the device and reports "Tester phase: N seconds" for
+each test, so the user can see where the run's time went.
+
+**Running the Tester outside a build command.** Lease and install with the
+script yourself (`device-acquire`, then `install`), invoke
+`adt-android-tester` with PLAN_PATH, `DEVICE` and `BUILD_INSTALLED`, and run
+`device-release` when you are done. Without `BUILD_INSTALLED` the Tester stops
+and says the build was not installed.
+
+**Script exit codes.** 0 success, 2 usage, 10 no usable device, 11 the emulator
+did not start or boot, 12 the install command failed, 13 a device could not be
+stopped. Its messages say what to do; report them verbatim.
 
 **The Tester has no shell.** Its tool list is `Read, Write` and the
 `auto-mobile` MCP tools, so it cannot reach for `adb` — every device action
@@ -494,17 +544,17 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Tester Phase**: Run "The Test Phase" above: install the build, then invoke `adt-android-tester` with the plan path and `BUILD_INSTALLED`. It runs manual verification via `auto-mobile` and writes `test-results.md`.
+   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, then invoke `adt-android-tester` with the plan path, `DEVICE` and `BUILD_INSTALLED`. It runs manual verification via `auto-mobile` and writes `test-results.md`.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
-     iterations) — each re-test is a full run of "The Test Phase", install
-     included — then STOP and report if it is still
+     iterations) — each re-test is a run of "The Test Phase" on the same
+     device, install included — then STOP and report if it is still
      failing. In `/build-auto-reviewed` the targeted re-review is mandatory —
      see "The Targeted Re-Review" above; the code that ships must have been
      reviewed after its last mutation. A run never ends by declaring a
      `NEEDS FIXES` feature complete.
 3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
-4. **Close the run**: when a design doc was produced, append its Implementation Notes before reporting the final summary (see "Design Doc Defaults Per Command"), and report the design doc path alongside the verdict.
+4. **Close the run**: release the run's device (see "The Test Phase"), on every exit including a STOP. When a design doc was produced, append its Implementation Notes before reporting the final summary (see "Design Doc Defaults Per Command"), and report the design doc path alongside the verdict.
 
 ## Native Workflow Registration
 

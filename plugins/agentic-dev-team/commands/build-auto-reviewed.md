@@ -117,10 +117,11 @@ Phase 2R — Code review gate (max 2 re-runs):
 
 Phase 3 — Tester:
   Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
-  defines it: run the install command from PLAN_PATH Section 0 (STOP and report
-  the build error if it fails), then delegate to the `adt-android-tester`
-  subagent.
-  Pass: PLAN_PATH, PIPELINE_DOC, and `BUILD_INSTALLED: <timestamp>`
+  defines it: lease this run's device with `adt.sh device-acquire` (DEVICE),
+  install the build on it with `adt.sh install` (BUILD_INSTALLED; release and
+  STOP if it fails), then delegate to the `adt-android-tester` subagent.
+  Pass: PLAN_PATH, PIPELINE_DOC, `DEVICE: <serial>` and
+  `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
 
 Phase 3F — Tester fix loop (max 2 iterations):
@@ -142,9 +143,10 @@ Phase 3F — Tester fix loop (max 2 iterations):
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 
-    Re-run the test phase (Part B, "The Test Phase" — install included, so
-    the re-test sees the fixed build), passing `adt-android-tester` PLAN_PATH,
-    PIPELINE_DOC, the new `BUILD_INSTALLED` line and the previous
+    Re-run the test phase (Part B, "The Test Phase") on the same device —
+    install included, so the re-test sees the fixed build — passing
+    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, `DEVICE`, the new
+    `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
     affects them. Wait for ✅ TESTER DONE.
@@ -157,6 +159,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
   code mutation. Its 1-re-run budget is per iteration and separate from Phase
   2R's — a targeted re-review never re-opens Phase 2R's own budget, and never
   re-reviews the whole feature.
+
+Release the device — on every exit once the test phase has leased one: before
+the summary below, and before reporting any STOP. Run the release step of the
+pipeline doc's Part B, "The Test Phase". It is separate from "Close the run",
+which is skipped when there is no design doc.
 
 Close the run — before the summary below, and on any exit path including a STOP:
   Skip this entirely when there is no design doc to close out — DESIGN_DOC is
@@ -178,5 +185,6 @@ reviewed after its last change. Note any Observations the Tester recorded as
 non-blocking, since those are decisions waiting on the user rather than work the
 pipeline did. Also report, for each review gate, how many re-runs were needed
 (0, 1, or 2) and whether parallel execution was used and how many
-adt-android-coder subagents ran, so the user can gauge token cost, and the
-Tester phase's duration for each test phase (Part B, "The Test Phase").
+adt-android-coder subagents ran, so the user can gauge token cost, the device
+the run tested on, and the Tester phase's duration for each test phase (Part B,
+"The Test Phase").
