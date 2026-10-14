@@ -67,6 +67,12 @@ against the actual codebase. Judge it on:
    step must include an element selector (`[testTag=foo]` / `[text="…"]`). A UI
    Selectors table must be present at the end of Section 2 listing every testTag
    introduced.
+
+   A Compose app whose code has no `testTagsAsResourceId`, and whose plan does
+   not add it, is a blocker: the test drivers find elements by resource id, so
+   none of the plan's test tags could be waited for, and under Maestro none
+   could even be tapped. Check with Grep before raising it. Apps built with
+   XML Views need nothing.
 7. **Required unit tests.** Section 1 records a Test Stack discovered from this
    project's build files and an existing test — not a generic list, and not
    silence. Every section in Section 3 has a **Tests required** field filled in

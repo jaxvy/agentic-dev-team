@@ -236,6 +236,59 @@ All optional. Set them in your shell profile, or for Claude Code in
 | `ADT_HEADLESS=0` | Show the emulator window, to watch a test run |
 | `ADT_BOOT_TIMEOUT_S` | How long to wait for the emulator to start, in seconds (default 240) |
 
+### Choosing a test driver
+
+The Tester drives the app through a *test driver*: an MCP server that can tap,
+type, read the screen and change device settings. Two are supported, and they
+can do the same things for the pipeline. Pick one per project.
+
+| | auto-mobile | Maestro |
+|---|---|---|
+| Used when | Your project declares nothing (the default) | Your `AGENTS.md` or `CLAUDE.md` has the line `Test driver: maestro` |
+| Install | Nothing to install; it runs through `bunx` ([Bun](https://bun.sh)) | The [Maestro CLI](https://docs.maestro.dev), 2.11.0 or later, which needs Java 17 |
+| Can't do | — | Change the font scale; those cases come back *inconclusive* |
+
+**auto-mobile.** Register it at a fixed version, with its device-setting tools
+switched on. In Claude Code:
+
+```bash
+claude mcp add auto-mobile \
+  -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink \
+  -- bunx @kaeawc/auto-mobile@0.0.84
+```
+
+Why both parts matter:
+
+* **The tool list.** auto-mobile hides the tools that rotate the screen,
+  switch dark mode, change permissions and turn on Airplane mode until they
+  are switched on. The Tester has no shell, so without them those test cases
+  come back *inconclusive* instead of being worked around with `adb`.
+* **The version.** `@latest` can pull a new release in the middle of a run,
+  which restarts auto-mobile's shared background service under any other run
+  using it. Re-check a test run after you move the pin, because tool names can
+  change between releases.
+
+In OpenCode, which connects to auto-mobile over HTTP, set
+`AUTOMOBILE_ENABLED_TOOLS` in the environment of whatever starts the
+auto-mobile server. After changing the version or the tool list, restart
+auto-mobile's background service once, while nothing is being tested:
+`bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`.
+
+**Maestro.** Install the CLI, add `Test driver: maestro` to your `AGENTS.md`
+or `CLAUDE.md`, and register its MCP server. In Claude Code:
+
+```bash
+claude mcp add maestro -- maestro mcp
+```
+
+In OpenCode, add it to `opencode.json` under `mcp` as
+`{"type": "local", "command": ["maestro", "mcp"]}`.
+
+**Jetpack Compose apps.** Both drivers find elements by resource id, and a
+Compose `testTag` only becomes a resource id when the app's root composable
+sets `testTagsAsResourceId = true`. The Architect checks for it and, if it is
+missing, adds that one line to the plan, so you do not need to do anything.
+
 ### One-time setup
 
 auto-mobile installs a small helper app on a device the first time it connects
@@ -248,7 +301,7 @@ step every run pays for that install again.
 3. Close the emulator, and set `ADT_AVD` to that AVD's name.
 
 From then on, every run's read-only copy starts with the helper already
-installed.
+installed. Maestro needs no setup of this kind.
 
 If a session dies in the middle of a run, its emulator keeps running. Running
 the same command again for the same feature picks it back up. To find and stop
@@ -313,33 +366,11 @@ yours already sits at one of those paths, it refuses and names the path.
   architecture, conventions, and verification rules
 * The Android SDK's emulator and platform tools (both come with Android
   Studio), and at least one AVD. See [Testing on a device](#testing-on-a-device)
-* The [auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) registered
-  with your tool. The Tester drives the app on a device or emulator through it,
-  and without it the Tester phase cannot finish its device verification.
-  Register it at a fixed version, with the device-setting tools switched on.
-  In Claude Code:
-
-  ```bash
-  claude mcp add auto-mobile \
-    -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink \
-    -- bunx @kaeawc/auto-mobile@0.0.84
-  ```
-
-  Why both matter:
-  * **The tool list.** auto-mobile hides the tools that rotate the screen,
-    switch dark mode, change permissions and turn on Airplane mode until they
-    are switched on. The Tester has no shell, so without them those test cases
-    come back *inconclusive* instead of being worked around with `adb`.
-  * **The version.** `@latest` can pull a new release in the middle of a run,
-    which restarts auto-mobile's shared background service under any other run
-    using it. Re-check the Tester after you move the pin, because tool names
-    can change between releases.
-
-  In OpenCode, which connects to auto-mobile over HTTP, set
-  `AUTOMOBILE_ENABLED_TOOLS` in the environment of whatever starts the
-  auto-mobile server. After changing the version or the tool list, restart
-  auto-mobile's background service once, while nothing is being tested:
-  `bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`.
+* A **test driver** registered with your tool: the
+  [auto-mobile](https://github.com/kaeawc/auto-mobile) MCP server (the default)
+  or [Maestro](https://maestro.dev). The Tester drives the app on a device
+  through it, and without it the test phase cannot run. See
+  [Choosing a test driver](#choosing-a-test-driver) for the exact setup.
 
 ## Installation
 

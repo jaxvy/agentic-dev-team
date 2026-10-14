@@ -18,6 +18,15 @@ If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
 instead. Store the path that worked as PIPELINE_DOC and pass it to every
 subagent you spawn, alongside the artifact paths you already pass.
 
+Resolve the test driver now, before any agent runs. Read the `Test driver:`
+line in the project's `AGENTS.md` (or `CLAUDE.md`): `auto-mobile` or
+`maestro`, and `auto-mobile` when there is no such line. Any other value is a
+STOP — report it and name the two valid values. Then find the driver's adapter
+the way PIPELINE_DOC was found — `.claude/adt/drivers/<driver>.md` if it exists,
+otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md` — and store that path as
+DRIVER_DOC. The test phase passes it on (pipeline doc Part A, "The Test
+Driver").
+
 This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
 - `approve` — proceed to next phase
@@ -123,7 +132,7 @@ Phase 4 — Tester (after approval):
   defines it: lease this run's device with `adt.sh device-acquire` (DEVICE),
   install the build on it with `adt.sh install` (BUILD_INSTALLED; release and
   STOP if it fails), then delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH, PIPELINE_DOC, `DEVICE: <serial>` and
+  Pass: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>` and
   `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
   The device stays up while you wait at the gate below, so a `revise:`
@@ -145,7 +154,7 @@ Phase 4 — Tester (after approval):
     doing it on its own is not. Wait for ✅ CODER DONE.
     Re-run the test phase (Part B, "The Test Phase") on the same device —
     install included, so the re-test sees the fixed build — passing
-    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, `DEVICE`, the new
+    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
     `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
@@ -174,6 +183,7 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
   Then report DOC_PATH to the user as the document to review this work from,
   alongside the test verdict and the list of changed files.
 
-Whenever the run ends, include the device the run tested on and the Tester
+Whenever the run ends, include the test driver, the device the run tested on,
+and the Tester
 phase's duration for each test phase (Part B, "The Test Phase") in what you
 report.

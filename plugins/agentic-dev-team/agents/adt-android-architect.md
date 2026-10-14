@@ -146,6 +146,15 @@ it must not be.
    these in the code samples so the Coder ships them in the implementation — the
    Tester depends on them to drive the app without live selector discovery.
 
+   **Compose apps: expose test tags as resource ids.** The test drivers find
+   elements by resource id when they wait for one (and Maestro when it taps
+   one), and a Compose `testTag` is a resource id only when the app's root
+   composable sets `Modifier.semantics { testTagsAsResourceId = true }`. Grep
+   the app module for `testTagsAsResourceId`. If it is absent, add that
+   one-line change to Section 2.3 at the root composable — usually inside the
+   Activity's `setContent` — with its imports and any opt-in annotation the
+   project's Compose version requires. Apps built with XML Views need nothing.
+
 ## Definition of Done
 
 When `DESIGN_DOC` is `on` or `only` (see "Your Two Artifacts"):
@@ -199,7 +208,8 @@ must not touch):
   the element's selector (testTag / contentDescription / text) so the Tester can
   drive without live discovery.
 - Every interactive UI element in code samples has a stable `testTag` or
-  `contentDescription` annotation (per Operating Principle 8).
+  `contentDescription` annotation (per Operating Principle 8), and a Compose app
+  either already sets `testTagsAsResourceId` or Section 2.3 adds it.
 - You end with the `✅ ARCHITECT DONE` marker (see final step).
 
 ## Stop Conditions (report, do not guess)

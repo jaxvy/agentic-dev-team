@@ -17,6 +17,15 @@ If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
 instead. Store the path that worked as PIPELINE_DOC and pass it to every
 subagent you spawn, alongside the artifact paths you already pass.
 
+Resolve the test driver now, before any agent runs. Read the `Test driver:`
+line in the project's `AGENTS.md` (or `CLAUDE.md`): `auto-mobile` or
+`maestro`, and `auto-mobile` when there is no such line. Any other value is a
+STOP — report it and name the two valid values. Then find the driver's adapter
+the way PIPELINE_DOC was found — `.claude/adt/drivers/<driver>.md` if it exists,
+otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md` — and store that path as
+DRIVER_DOC. The test phase passes it on (pipeline doc Part A, "The Test
+Driver").
+
 This is the /build-auto-reviewed flow — same shape as /build-auto (no PM phase,
 no human gates), but each producing phase is followed by an automated reviewer
 that can send the work back. It assumes the feature is already understood. If
@@ -120,7 +129,7 @@ Phase 3 — Tester:
   defines it: lease this run's device with `adt.sh device-acquire` (DEVICE),
   install the build on it with `adt.sh install` (BUILD_INSTALLED; release and
   STOP if it fails), then delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH, PIPELINE_DOC, `DEVICE: <serial>` and
+  Pass: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>` and
   `BUILD_INSTALLED: <timestamp>`
   Wait for ✅ TESTER DONE.
 
@@ -145,7 +154,7 @@ Phase 3F — Tester fix loop (max 2 iterations):
 
     Re-run the test phase (Part B, "The Test Phase") on the same device —
     install included, so the re-test sees the fixed build — passing
-    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, `DEVICE`, the new
+    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
     `BUILD_INSTALLED` line and the previous
     `test-results.md`, instructing it to re-run the failed cases and the
     happy path — other previously-passing cases only if the fix plausibly
@@ -185,6 +194,6 @@ reviewed after its last change. Note any Observations the Tester recorded as
 non-blocking, since those are decisions waiting on the user rather than work the
 pipeline did. Also report, for each review gate, how many re-runs were needed
 (0, 1, or 2) and whether parallel execution was used and how many
-adt-android-coder subagents ran, so the user can gauge token cost, the device
-the run tested on, and the Tester phase's duration for each test phase (Part B,
+adt-android-coder subagents ran, so the user can gauge token cost, the test
+driver and the device the run tested on, and the Tester phase's duration for each test phase (Part B,
 "The Test Phase").

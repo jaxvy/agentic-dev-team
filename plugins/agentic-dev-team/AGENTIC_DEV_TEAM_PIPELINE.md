@@ -41,7 +41,7 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
 
 - **Read-before-write**: Every agent must read the prior phase artifact in full before starting. A missing required artifact is a STOP condition — report to the user, do not proceed by guessing.
 - **No-commit rule for adt-android-coder**: The Coder must never run `git add`, `git commit`, or any staging command. Changes stay uncommitted for human review.
-- **Manual verification**: `adt-android-tester` must perform manual verification through the `auto-mobile` MCP server when that server is available and the consuming project's `AGENTS.md` / `CLAUDE.md` requires it.
+- **Manual verification**: `adt-android-tester` must perform manual verification through the project's test driver (see "The Test Driver" below) when its MCP server is available and the consuming project's `AGENTS.md` / `CLAUDE.md` requires it.
 
 ## The Two Architect Artifacts
 
@@ -158,6 +158,27 @@ module-qualified tasks (`:app:assembleDebug`, `:app:lintDebug`). Running a task
 the project does not define fails the whole invocation, so a resolved command
 that names a non-existent task is a defect — never "the project's build is
 broken".
+
+## The Test Driver
+
+A project tests through one of two drivers, each an MCP server that controls
+the device:
+
+- **auto-mobile** — the default, used when the project declares nothing.
+- **Maestro** — declared with a `Test driver: maestro` line in the project's
+  `AGENTS.md` or `CLAUDE.md`.
+
+The orchestrator reads that line once, at the start of a build command, and
+passes the matching **adapter** to every agent that drives the device as
+`DRIVER_DOC`: `drivers/auto-mobile.md` or `drivers/maestro.md`, beside this
+file in the plugin (`.claude/adt/drivers/` in a per-project install). An
+adapter is the only place that names a driver's tools. Agent prompts say how to
+test; the adapter says which tool does it. A capability one driver lacks — Maestro
+cannot change font scale — makes the cases that need it `INCONCLUSIVE`, with
+the reason, never a workaround.
+
+The test plan does not depend on the driver: the Architect writes the same
+selector-annotated cases either way.
 
 ## Devices
 
@@ -497,8 +518,8 @@ Each test:
    that is `BUILD_INSTALLED`. If it fails, release the device (below), then
    STOP and report the build error. Never test a stale build.
 3. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
-   `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`, and whatever the command
-   adds for a re-test. Note the time just before delegating and when
+   DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`, and whatever
+   the command adds for a re-test. Note the time just before delegating and when
    ✅ TESTER DONE arrives.
 
 The device stays leased between tests — while a Coder fixes, while a reviewer
@@ -512,12 +533,12 @@ reporting any STOP, and when the user answers `stop`:
 serial it names and carry on. This is deliberately its own step, not part of
 "Close the run", which is skipped whenever a run has no design doc.
 
-The final summary names the device and reports "Tester phase: N seconds" for
+The final summary names the test driver and the device, and reports "Tester phase: N seconds" for
 each test, so the user can see where the run's time went.
 
 **Running the Tester outside a build command.** Lease and install with the
 script yourself (`device-acquire`, then `install`), invoke
-`adt-android-tester` with PLAN_PATH, `DEVICE` and `BUILD_INSTALLED`, and run
+`adt-android-tester` with PLAN_PATH, DRIVER_DOC, `DEVICE` and `BUILD_INSTALLED`, and run
 `device-release` when you are done. Without `BUILD_INSTALLED` the Tester stops
 and says the build was not installed.
 
@@ -525,9 +546,9 @@ and says the build was not installed.
 did not start or boot, 12 the install command failed, 13 a device could not be
 stopped. Its messages say what to do; report them verbatim.
 
-**The Tester has no shell.** Its tool list is `Read, Write` and the
-`auto-mobile` MCP tools, so it cannot reach for `adb` — every device action
-goes through auto-mobile's own tools, and a case that needs anything else is
+**The Tester has no shell.** Its tool list is `Read, Write` and the two
+drivers' MCP tools, so it cannot reach for `adb` — every device action goes
+through the tools its adapter names, and a case that needs anything else is
 reported `INCONCLUSIVE`. Claude Code enforces the tool list. In Antigravity the
 one setting that grants a shell, `enable_write_tools`, is also what lets the
 Tester write `test-results.md`, so its mapping keeps it; there, and in
@@ -544,7 +565,7 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, then invoke `adt-android-tester` with the plan path, `DEVICE` and `BUILD_INSTALLED`. It runs manual verification via `auto-mobile` and writes `test-results.md`.
+   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE` and `BUILD_INSTALLED`. It runs manual verification through the project's test driver and writes `test-results.md`.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
      iterations) — each re-test is a run of "The Test Phase" on the same
@@ -583,9 +604,11 @@ up by the same install.sh run:
 3. **Models**: opencode runs every subagent on the user's currently selected
    model (the agent files set no per-role `model:`), matching Antigravity's
    behavior. Select the strongest available model for full pipeline runs.
-4. **Tester MCP**: the `auto-mobile` MCP (an HTTP server) is registered in
-   `opencode.json` under the `mcp` key (`type: "remote"`, with auto-mobile's
-   `url`); the Tester reaches it like any other tool.
+4. **Tester MCP**: the test driver's MCP server is registered in
+   `opencode.json` under the `mcp` key — auto-mobile as an HTTP server
+   (`type: "remote"`, with auto-mobile's `url`), Maestro as a local one
+   (`type: "local"`, `command: ["maestro", "mcp"]`); the Tester reaches it like
+   any other tool.
 5. **Rules**: agents and commands reference `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
    and the project's `AGENTS.md`/`CLAUDE.md` by path (both present in the project
    tree), so opencode reads the same sources of truth as the other tools.

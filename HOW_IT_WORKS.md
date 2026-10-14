@@ -350,6 +350,25 @@ exists for. The orchestrator resolves it rather than reporting and stopping:
    stop and report it as a plan defect. Do not guess which coder should absorb
    it.
 
+### Test drivers
+
+The Tester never talks to a device directly. It goes through a *test driver*,
+an MCP server: auto-mobile by default, or Maestro when the project's
+`AGENTS.md` or `CLAUDE.md` says `Test driver: maestro`. The orchestrator reads
+that line once, at the start of a build command, and stops if it names anything
+else.
+
+Everything driver-specific lives in one **adapter** file per driver,
+`drivers/auto-mobile.md` and `drivers/maestro.md`. The orchestrator passes the
+right one to the Tester as `DRIVER_DOC`. The Tester's own prompt says how to
+test; the adapter says which tool does it — how to bind to the run's device,
+change device settings, tap, type and read the screen. Adding a third driver
+means writing a third adapter, not editing the agents.
+
+The Architect's test plan is the same for both: steps with test-tag selectors.
+For a Compose app the Architect also makes sure the root composable sets
+`testTagsAsResourceId`, because both drivers find elements by resource id.
+
 ### Devices
 
 Each build command leases one device for its whole run, through a small script,
@@ -445,6 +464,8 @@ path inside your project.
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
 | `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
+| `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
+| `.claude/adt/drivers/maestro.md` | `<clone>/.claude/adt/drivers/maestro.md` |
 | `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
 | `.agents/workflows/build-auto-reviewed.md` | `<clone>/.agents/workflows/build-auto-reviewed.md` |
@@ -462,9 +483,10 @@ path inside your project.
 | `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 
-The canonical `AGENTIC_DEV_TEAM_PIPELINE.md` and `scripts/adt.sh` live in
-`plugins/agentic-dev-team/` so the Claude Code plugin can package them; the
-clone's `.claude/adt/scripts` is a symlink to that `scripts` directory. The clone's
+The canonical `AGENTIC_DEV_TEAM_PIPELINE.md`, `scripts/adt.sh` and `drivers/`
+live in `plugins/agentic-dev-team/` so the Claude Code plugin can package them;
+the clone's `.claude/adt/scripts` and `.claude/adt/drivers` are symlinks to
+those directories. The clone's
 `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, which leaves the
 project-side path above unchanged, so installed projects need no re-install.
 
@@ -546,17 +568,25 @@ symlinked and never need this.
 **Both `AGENTS.md` and `CLAUDE.md` exist.** Agents read whichever they find first.
 Pick one as canonical and keep them in sync, or delete one.
 
-**The Tester cannot verify on device.** Check that the
-[auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) is registered with
-your tool and that a device or emulator is attached. In OpenCode it belongs in
-`opencode.json` under the `mcp` key, as `type: "remote"` with auto-mobile's URL.
+**The Tester stops saying its driver's tools are missing.** The test driver's
+MCP server is not registered with your tool, or not under the expected name.
+auto-mobile must be registered as `auto-mobile` and Maestro as `maestro`; the
+README's [Choosing a test driver](README.md#choosing-a-test-driver) has the
+commands. In OpenCode both belong in `opencode.json` under the `mcp` key.
+
+**The run stopped at the start, naming the test driver.** Your `AGENTS.md` or
+`CLAUDE.md` has a `Test driver:` line with a value other than `auto-mobile` or
+`maestro`. Fix the line, or delete it to use auto-mobile.
 
 **Rotation, dark mode, permission or offline cases come back inconclusive.** The
-Tester has no shell, so it only uses auto-mobile's own tools, and the ones that
-change device settings are hidden until they are switched on. Check the
-`AUTOMOBILE_ENABLED_TOOLS` value and the pinned version from the README's
-Requirements, then restart auto-mobile's background service once
+Tester has no shell, so it only uses the test driver's own tools. Under
+auto-mobile, the ones that change device settings are hidden until they are
+switched on: check the `AUTOMOBILE_ENABLED_TOOLS` value and the pinned version
+from the README's [Choosing a test driver](README.md#choosing-a-test-driver),
+then restart auto-mobile's background service once
 (`bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`) and start a new session.
+Under Maestro, font-scale cases are always inconclusive, because Maestro cannot
+change the font scale.
 
 **The Tester stopped saying the build was not installed.** It only tests a build
 the orchestrator has just installed, which the orchestrator confirms with a
