@@ -6,15 +6,25 @@
 #   adt.sh device-acquire --slug <slug>
 #   adt.sh install        --slug <slug> -- <install command...>   (prints BUILD_INSTALLED)
 #   adt.sh run            --slug <slug> --driver auto-mobile|maestro
+#                         [--area <area>:<tiers>]... [--exclude <id>]...
+#   adt.sh select         --driver auto-mobile|maestro
+#                         [--area <area>:<tiers>]... [--exclude <id>]...
+#   adt.sh promote        --slug <slug> [--remove <id>]...
 #   adt.sh device-release --slug <slug> | --serial <serial>
 #   adt.sh device-list
 #
 # Every build command leases one device for its whole run: device-acquire boots
 # a headless, read-only emulator (or reuses this run's existing lease) and
 # prints its serial on the last line; install runs the project's install
-# command on that device only; run executes the run's flow files on it with no
-# model in the loop and writes run-results.md; device-release stops the device
-# when the run ends.
+# command on that device only; run executes the run's flow files, plus the
+# regression suite flows it selects, with no model in the loop and writes
+# run-results.md; promote keeps this run's passing flows in e2e/flows/;
+# device-release stops the device when the run ends.
+#
+# The regression suite is e2e/flows/<area>/<name>.yaml in the project. A run
+# replays every P0 flow, plus the tiers each --area names (for example
+# --area checkout:p1,p2), minus any --exclude, minus suite flows this run
+# re-specifies (same id as one of its own flows).
 #
 # A lease belongs to a project directory (the git top level) and a slug
 # together, so two worktrees or two apps never share a device.
@@ -27,6 +37,7 @@
 #   ADT_HOME             where leases live (default ~/.adt)
 #   ADT_PORT_FIRST/LAST  console port range (default 5554-5584; for tests)
 #   ADT_FLOW_TIMEOUT_S   longest one flow may run before it fails (default 300)
+#   ADT_P0_BUDGET_S      warn when the P0 flows take longer than this (default 180)
 #   ADT_AUTOMOBILE       auto-mobile command (default: bunx @kaeawc/auto-mobile@0.0.84)
 #   ADT_MAESTRO          Maestro command (default: maestro)
 #
@@ -499,6 +510,53 @@ run_maestro_flows() {
     }'
 }
 
+# ---------- the regression suite ----------
+
+tier_rank() {
+  case "$1" in p0) echo 0 ;; p1) echo 1 ;; p2) echo 2 ;; *) echo 9 ;; esac
+}
+
+# select_suite <project> <driver> <areas> <excludes> <feature ids>
+# The last three are newline-separated lists; areas are "<area>:<tiers>".
+# Prints "<tier> TAB <id> TAB <path>" per selected flow, P0 first; reports
+# flows written for the other driver on stderr.
+select_suite() {
+  local project="$1" driver="$2" areas="$3" excludes="$4" feature_ids="$5"
+  local suite="$project/e2e/flows" flow rel id area tier header spec tiers
+  [ -d "$suite" ] || return 0
+  find "$suite" -type f -name '*.yaml' | LC_ALL=C sort | while IFS= read -r flow; do
+    rel="${flow#$suite/}"
+    id="${rel%.yaml}"
+    case "$id" in */*) area="${id%%/*}" ;; *) area="" ;; esac
+    tier="$(flow_header "$flow" priority | tr 'A-Z' 'a-z')"
+    printf '%s\n' "$excludes" | grep -Fxq "$id" && continue
+    printf '%s\n' "$feature_ids" | grep -Fxq "$id" && continue
+    header="$(flow_header "$flow" driver)"
+    if [ -n "$header" ] && [ "$header" != "$driver" ]; then
+      say "adt: skipped suite flow $id: written for $header"
+      continue
+    fi
+    if [ "$tier" != p0 ]; then
+      [ -n "$area" ] || continue
+      tiers=""
+      for spec in $areas; do
+        [ "${spec%%:*}" = "$area" ] && tiers="$tiers,${spec#*:}"
+      done
+      case ",$tiers," in *",$tier,"*) ;; *) continue ;; esac
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$(tier_rank "$tier")" "$tier" "$id" "$flow"
+  done | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k3,3 | cut -f2-
+}
+
+feature_ids() {
+  local dir="$1" flow
+  [ -d "$dir" ] || return 0
+  find "$dir" -type f -name '*.yaml' | LC_ALL=C sort | while IFS= read -r flow; do
+    flow="${flow#$dir/}"
+    printf '%s\n' "${flow%.yaml}"
+  done
+}
+
 # ---------- subcommands ----------
 
 cmd_device_acquire() {
@@ -592,11 +650,15 @@ cmd_install() {
 
 cmd_run() {
   local slug="" driver="" project serial flows_dir results logs flow id rel
-  local rows="" total=0 passed=0 failed=0 flaky=0 skipped=0 seconds=0 first_fail=""
+  local total=0 passed=0 failed=0 flaky=0 skipped=0 seconds=0 areas="" excludes=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --slug) slug="${2:-}"; shift 2 ;;
       --driver) driver="${2:-}"; shift 2 ;;
+      --area) areas="$areas
+${2:-}"; shift 2 ;;
+      --exclude) excludes="$excludes
+${2:-}"; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -621,14 +683,19 @@ cmd_run() {
   rm -rf "$logs"
   mkdir -p "$logs"
 
-  # The flows to run: every *.yaml under this run's flows directory.
-  local list="$logs/.flows"
+  # The flows to run: every *.yaml under this run's flows directory, then the
+  # regression suite flows this run selects.
+  local list="$logs/.flows" suite_tier suite_id
   : > "$list"
   if [ -d "$flows_dir" ]; then
     find "$flows_dir" -type f -name '*.yaml' | LC_ALL=C sort | while IFS= read -r flow; do
       printf 'feature\t%s\t%s\n' "$flows_dir" "$flow"
     done >> "$list"
   fi
+  select_suite "$project" "$driver" "$areas" "$excludes" "$(feature_ids "$flows_dir")" | \
+    while IFS="$(printf '\t')" read -r suite_tier suite_id flow; do
+      printf 'regression\t%s\t%s\n' "$project/e2e/flows" "$flow"
+    done >> "$list"
 
   # Driver mismatch: a flow written for the other driver is skipped, not run.
   local runnable="$logs/.runnable"
@@ -664,7 +731,7 @@ cmd_run() {
 
     if [ "$driver" = auto-mobile ]; then
       while IFS="$(printf '\t')" read -r kind id flow; do
-        log="$logs/$(printf '%s' "$id" | tr '/' '_').attempt$attempt.log"
+        log="$logs/$kind-$(printf '%s' "$id" | tr '/' '_').attempt$attempt.log"
         run_automobile_flow "$flow" "$log" "$serial" < /dev/null
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$kind" "$flow" "$FLOW_RESULT" "${FLOW_STEP:--}" "$FLOW_SECONDS" \
           "${log#$project/pipeline_artifacts/$slug/}" >> "$logs/.attempt$attempt"
@@ -698,11 +765,11 @@ cmd_run() {
   local retry_result r_step r_secs r_log
   while IFS="$(printf '\t')" read -r id kind flow result step secs log; do
     if [ "$result" = FAIL ] && [ -f "$logs/.attempt2" ]; then
-      retry_result="$(awk -F'\t' -v i="$id" '$1 == i { print $4; exit }' "$logs/.attempt2")"
+      retry_result="$(awk -F'\t' -v i="$id" -v k="$kind" '$1 == i && $2 == k { print $4; exit }' "$logs/.attempt2")"
       if [ "$retry_result" = PASS ]; then
         result=FLAKY
       fi
-      r_secs="$(awk -F'\t' -v i="$id" '$1 == i { print $6; exit }' "$logs/.attempt2")"
+      r_secs="$(awk -F'\t' -v i="$id" -v k="$kind" '$1 == i && $2 == k { print $6; exit }' "$logs/.attempt2")"
       secs=$(( secs + ${r_secs:-0} ))
     fi
     tier="$(flow_header "$flow" priority)"
@@ -736,10 +803,109 @@ cmd_run() {
   fi
   printf '\nTotals: %s flow(s) — %s passed, %s failed, %s flaky, %s skipped — %s seconds.\n' \
     "$total" "$passed" "$failed" "$flaky" "$skipped" "$seconds" >> "$results"
+  local p0_count=0 p0_seconds=0
+  if [ -f "$logs/.rows" ]; then
+    p0_count="$(awk -F'\t' '$3 == "p0"' "$logs/.rows" | wc -l | tr -d ' ')"
+    p0_seconds="$(awk -F'\t' '$3 == "p0" { s += $6 } END { print s + 0 }' "$logs/.rows")"
+  fi
+  if [ "$p0_count" -gt 0 ]; then
+    printf 'P0 flows: %s seconds.\n' "$p0_seconds" >> "$results"
+    if [ "$p0_seconds" -gt "${ADT_P0_BUDGET_S:-180}" ]; then
+      printf 'Warning: the P0 flows took more than %s seconds. Every run replays all of them, so consider moving some to P1.\n' \
+        "${ADT_P0_BUDGET_S:-180}" >> "$results"
+    fi
+  fi
   rm -f "$logs"/.flows "$logs"/.runnable "$logs"/.todo "$logs"/.attempt1 "$logs"/.attempt2 "$logs"/.rows
 
   say "adt: $total flow(s): $passed passed, $failed failed, $flaky flaky, $skipped skipped. Results: $results"
   [ "$failed" -eq 0 ]
+}
+
+cmd_select() {
+  local driver="" areas="" excludes="" project
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --driver) driver="${2:-}"; shift 2 ;;
+      --area) areas="$areas
+${2:-}"; shift 2 ;;
+      --exclude) excludes="$excludes
+${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  project="$(project_dir)"
+  select_suite "$project" "$driver" "$areas" "$excludes" "" | cut -f3
+}
+
+# Keeps this run's passing flows in the suite. A flow is kept when its last
+# result was PASS (not FLAKY) and its tier is p0, p1 or p2. A suite flow with
+# the same id as one of this run's flows is replaced by it if it is kept, and
+# removed otherwise; each --remove id is removed unless it was just replaced.
+cmd_promote() {
+  local slug="" removes="" project results flows_dir suite id kind tier result
+  local src dest added=0 replaced=0 removed=0 kept=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slug) slug="${2:-}"; shift 2 ;;
+      --remove) removes="$removes
+${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] || usage
+  project="$(project_dir)"
+  results="$project/pipeline_artifacts/$slug/run-results.md"
+  flows_dir="$project/pipeline_artifacts/$slug/flows"
+  suite="$project/e2e/flows"
+  [ -f "$results" ] || die 2 "no $results: run the flows before promoting them."
+
+  while IFS="$(printf '\t')" read -r id kind tier result; do
+    [ "$kind" = feature ] || continue
+    src="$flows_dir/$id.yaml"
+    dest="$suite/$id.yaml"
+    [ -f "$src" ] || continue
+    case "$tier" in p0|p1|p2) ;; *) tier="" ;; esac
+    if [ "$result" = PASS ] && [ -n "$tier" ]; then
+      mkdir -p "$(dirname "$dest")"
+      if [ -f "$dest" ]; then
+        replaced=$((replaced + 1)); printf 'replaced: %s\n' "$id"
+      else
+        added=$((added + 1)); printf 'added: %s\n' "$id"
+      fi
+      cp "$src" "$dest"
+      kept="$kept
+$id"
+    elif [ -f "$dest" ]; then
+      removes="$removes
+$id"
+    fi
+  done <<EOF
+$(awk -F'|' 'NR > 2 && /^\| / {
+    for (i = 2; i <= 5; i++) { gsub(/^ +| +$/, "", $i) }
+    print $2 "\t" $3 "\t" $4 "\t" $5
+  }' "$results")
+EOF
+
+  for id in $(printf '%s\n' "$removes" | awk 'NF' | LC_ALL=C sort -u); do
+    printf '%s\n' "$kept" | grep -Fxq "$id" && continue
+    dest="$suite/$id.yaml"
+    if [ -f "$dest" ]; then
+      rm -f "$dest"
+      prune_empty_dirs_under "$(dirname "$dest")" "$suite"
+      removed=$((removed + 1)); printf 'removed: %s\n' "$id"
+    fi
+  done
+  say "adt: suite: $added added, $replaced replaced, $removed removed"
+}
+
+# Removes now-empty directories from <dir> up to, but not including, <stop>.
+prune_empty_dirs_under() {
+  local d="$1" stop="$2"
+  while [ "$d" != "$stop" ] && [ "$d" != "/" ]; do
+    rmdir "$d" 2>/dev/null || break
+    d="$(dirname "$d")"
+  done
 }
 
 cmd_device_release() {
@@ -794,6 +960,8 @@ case "$command" in
   device-acquire) cmd_device_acquire "$@" ;;
   install)        cmd_install "$@" ;;
   run)            cmd_run "$@" ;;
+  select)         cmd_select "$@" ;;
+  promote)        cmd_promote "$@" ;;
   device-release) cmd_device_release "$@" ;;
   device-list)    cmd_device_list ;;
   -h|--help|help) usage ;;

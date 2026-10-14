@@ -132,15 +132,17 @@ Phase 3 — Tester:
        release and STOP if it fails);
     3. delegate to the `adt-android-test-writer` subagent, which writes one
        flow per test case, and wait for ✅ TEST WRITER DONE;
-    4. run the flows with `adt.sh run` (RUN_RESULTS);
+    4. run the flows with `adt.sh run` (RUN_RESULTS) — this run's own flows
+       plus the regression suite: one `--area` per row of PLAN_PATH's
+       Regression Scope, one `--exclude` per row of its Flows Retired;
     5. delegate to the `adt-android-tester` subagent.
   Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
   `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`
   Wait for ✅ TESTER DONE.
 
 Phase 3F — Tester fix loop (max 2 iterations):
-  Read the verdict from `test-results.md`. On READY TO MERGE, go to the
-  summary. On NEEDS FIXES, iterate (N = 1, then 2):
+  Read the verdict from `test-results.md`. On READY TO MERGE, go to "Keep the
+  passing flows" below. On NEEDS FIXES, iterate (N = 1, then 2):
     Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
     report's "Recommendations for Coder" section verbatim (blocking findings
     only — the Tester's Observations section never drives a fix), instructing
@@ -166,7 +168,7 @@ Phase 3F — Tester fix loop (max 2 iterations):
     `test-results.md`, instructing it to judge every flow result again and to
     drive by hand only the cases without a flow that failed before or that the
     fix plausibly affects. Wait for ✅ TESTER DONE.
-    On READY TO MERGE, go to the summary.
+    On READY TO MERGE, go to "Keep the passing flows" below.
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
 
@@ -175,6 +177,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
   code mutation. Its 1-re-run budget is per iteration and separate from Phase
   2R's — a targeted re-review never re-opens Phase 2R's own budget, and never
   re-reviews the whole feature.
+
+Keep the passing flows — only when the final verdict is READY TO MERGE: run
+the promote step of the pipeline doc's Part B, "The Test Phase" (`adt.sh
+promote`, with one `--remove` per Flows Retired row and per "Suite Flows to
+Remove" entry in the last test-results.md). Never after NEEDS FIXES or a STOP.
 
 Release the device — on every exit once the test phase has leased one: before
 the summary below, and before reporting any STOP. Run the release step of the
@@ -203,5 +210,7 @@ pipeline did. Also report, for each review gate, how many re-runs were needed
 (0, 1, or 2) and whether parallel execution was used and how many
 adt-android-coder subagents ran, so the user can gauge token cost, the test
 driver and the device the run tested on, the flow counts from the last
-`run-results.md`, and for each test phase how long the Test Writer, the flow
-run and the Tester took (Part B, "The Test Phase").
+`run-results.md` (including the regression suite's, and any P0 warning), the
+suite flows promote added, replaced and removed — with a reminder to commit
+`e2e/flows/` alongside the feature — and for each test phase how long the Test
+Writer, the flow run and the Tester took (Part B, "The Test Phase").

@@ -133,6 +133,36 @@ it must not be.
    test: a feature that makes no network calls has no offline behaviour, and a
    fabricated offline case would hand the Coder a requirement nobody asked for.
    Address all six either way — silence is indistinguishable from an oversight.
+
+   You write each case **once**, as the spec. After the Coder, the Test Writer
+   turns it into a runnable flow, and the flows that pass join the project's
+   **regression suite** in `e2e/flows/`, which every later feature replays. So
+   each case also carries:
+
+   - **An id**, `<area>/<name>`: the feature area it belongs to and a few
+     lowercase hyphenated words (`checkout/pay-with-saved-card`). The flow is
+     named after it, and a later plan that reuses the id replaces the flow.
+   - **A priority**, with a one-clause reason:
+     - `p0` — the app is unusable if this fails: launch, sign-in, the core
+       loop. **Every** later run replays every P0 flow, so keep this tier small.
+     - `p1` — the main path of one feature area.
+     - `p2` — edge cases: offline, process death, configuration change,
+       error states.
+     - `none` — worth testing in this run, not worth keeping.
+
+   Then decide what this feature replays from the suite. Search `e2e/flows/`
+   (Glob and Grep; it is fine if it does not exist yet) for the areas, screens
+   and test tags this plan touches, and write two tables at the end of
+   Section 4:
+
+   - **Regression Scope** — each area this plan modifies or puts at risk, and
+     which of P1 and P2 to replay there. P0 is always replayed and needs no
+     row. One feature might replay only P0, another P0 and P1 for checkout,
+     another P0 and P2 for offline handling.
+   - **Flows Retired** — existing suite flows whose behaviour this plan
+     removes, with the reason. An existing flow whose behaviour this plan
+     *changes* is not retired: write its revised case with the **same id**,
+     and its new flow replaces the old one.
 7. **Resolve the project's real verification commands.** Section 0 is a
    discovery deliverable, not boilerplate. The pipeline runs whatever you record
    there, and a task the project doesn't define fails the entire invocation —
@@ -206,7 +236,9 @@ must not touch):
   each as a real test case, or as an explicit `N/A — <reason>` where the
   category cannot apply to this feature. Every action step in the plan includes
   the element's selector (testTag / contentDescription / text) so the Tester can
-  drive without live discovery.
+  drive without live discovery. Every real case has an **Id** (`<area>/<name>`)
+  and a **Priority** with a reason, and Section 4 ends with the Regression Scope
+  and Flows Retired tables, written after searching `e2e/flows/`.
 - Every interactive UI element in code samples has a stable `testTag` or
   `contentDescription` annotation (per Operating Principle 8), and a Compose app
   either already sets `testTagsAsResourceId` or Section 2.3 adds it.
@@ -725,14 +757,17 @@ Coder can re-invoke the same ones.
 
    ## 4. Manual Testing Plan (for Tester)
 
-   Concrete steps the Tester will run against the app via auto-mobile MCP.
-   Each action step **must include the element selector** (testTag,
-   contentDescription, or visible text) from the UI Selectors table so the
-   Tester can drive directly without live screen discovery. Use the format:
-   `Tap [testTag=<value>]` or `Tap [text="<label>"]` or
-   `Type "…" into [testTag=<value>]`.
+   Concrete steps, written once: after the Coder, the Test Writer turns each
+   case into a runnable flow for the project's test driver, and the Tester
+   judges the results on the device. Each action step **must include the
+   element selector** (testTag, contentDescription, or visible text) from the
+   UI Selectors table so both can drive the app without live screen
+   discovery. Use the format: `Tap [testTag=<value>]` or
+   `Tap [text="<label>"]` or `Type "…" into [testTag=<value>]`.
 
    ### Test Case 1: Happy Path
+   **Id**: items/add-item
+   **Priority**: p1 — the main path of the items screen
    **Setup**: Fresh install, signed in
    **Steps**:
    1. Launch app (`package: com.example.app`)
@@ -745,6 +780,8 @@ Coder can re-invoke the same ones.
    backgrounding app and returning.
 
    ### Test Case 2: Offline behaviour
+   **Id**: items/offline-banner
+   **Priority**: p2 — an offline edge case
    **Setup**: Airplane mode enabled
    **Steps**: ...
    **Expected**: ...
@@ -778,7 +815,27 @@ Coder can re-invoke the same ones.
    the Reviewer cannot tell an omission from a deliberate N/A. Add further cases
    beyond the six based on feature specifics. Every action step must reference a
    selector from the UI Selectors table — do not write steps like "tap the Save
-   button" without a testTag.)
+   button" without a testTag. Every real case has an **Id** and a **Priority**,
+   per Operating Principle 6.)
+
+   ### Regression Scope
+   | Area     | Replay | Why                                     |
+   |----------|--------|-----------------------------------------|
+   | items    | p1 p2  | this feature changes the items screen   |
+   | settings | p1     | shares ItemRepository with the settings |
+
+   (P0 flows are always replayed and need no row. Write `None — only P0` when
+   the feature puts no area beyond its own new cases at risk. Areas are the
+   first part of the suite's flow ids — the folders under `e2e/flows/`.)
+
+   ### Flows Retired
+   | Flow                 | Why                                         |
+   |----------------------|---------------------------------------------|
+   | items/legacy-sort    | the sort menu is removed by this feature    |
+
+   (`None` is a valid answer, and the only one until a suite exists. A flow
+   whose behaviour this plan changes is not retired: re-specify it as a case
+   with the same Id.)
    ````
 
 6. **Self-check before you report.** Run the mechanical Definition of Done

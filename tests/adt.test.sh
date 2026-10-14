@@ -350,7 +350,8 @@ executePlan device=$serial name=02-fail
 executePlan device=$serial name=03-flaky
 executePlan device=$serial name=02-fail
 executePlan device=$serial name=03-flaky" "$(cat "$FAKE_ADT_STATE/automobile.calls")"
-expect_true "every row links its log" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/run-logs/02-fail.attempt1.log" ]
+expect_true "every row links its log" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/run-logs/feature-02-fail.attempt1.log" ]
+row_has "  (named in the row)" "$SANDBOX/proj1" a 02-fail "| run-logs/feature-02-fail.attempt1.log |"
 expect_true "the totals line counts each result" grep -q "Totals: 4 flow(s) — 1 passed, 1 failed, 1 flaky, 1 skipped" "$SANDBOX/proj1/pipeline_artifacts/a/run-results.md"
 
 rm "$SANDBOX/proj1/pipeline_artifacts/a/flows/02-fail.yaml"
@@ -383,6 +384,93 @@ row_has "FAIL, with the report's failure message" "$SANDBOX/my project" m 02-fai
 row_has "FLAKY when it passes on the retry" "$SANDBOX/my project" m 03-flaky "| FLAKY |"
 row_has "an auto-mobile flow is SKIPPED in a Maestro run" "$SANDBOX/my project" m 04-automobile "| SKIPPED | written for auto-mobile |"
 unset ADT_AUTOMOBILE ADT_MAESTRO
+
+# ---------- the regression suite ----------
+
+# suite <project> <id> <driver> <tier> [fake outcome] — a flow in e2e/flows/
+suite() {
+  local f="$1/e2e/flows/$2.yaml"
+  mkdir -p "$(dirname "$f")"
+  {
+    echo "# adt:driver: $3"
+    echo "# adt:priority: $4"
+    [ -n "${5:-}" ] && echo "# fake: $5"
+    echo "name: $(basename "$2")"
+    echo "steps:"
+    echo "  - tool: launchApp"
+  } > "$f"
+}
+# tiered <project> <slug> <id> <driver> <tier> [fake outcome] — a flow of this run
+tiered() {
+  flow "$1" "$2" "$3.yaml" "$4" "${6:-}"
+  local f="$1/pipeline_artifacts/$2/flows/$3.yaml"
+  { echo "# adt:priority: $5"; cat "$f"; } > "$f.tmp" && mv "$f.tmp" "$f"
+}
+selected() { (cd "$1" && shift && /bin/bash "$SCRIPT" select "$@" 2>/dev/null) | sed "s#^$SANDBOX/proj1/e2e/flows/##"; }
+
+echo "select"
+setup
+expect_eq "with no suite, nothing is selected" "" "$(selected "$SANDBOX/proj1" --driver auto-mobile)"
+suite "$SANDBOX/proj1" app/launch auto-mobile p0
+suite "$SANDBOX/proj1" cart/add-item auto-mobile p1
+suite "$SANDBOX/proj1" cart/empty-cart auto-mobile p2
+suite "$SANDBOX/proj1" checkout/pay auto-mobile p1
+suite "$SANDBOX/proj1" checkout/offline auto-mobile p2
+suite "$SANDBOX/proj1" checkout/maestro-only maestro p0
+expect_eq "P0 only by default" "app/launch.yaml" "$(selected "$SANDBOX/proj1" --driver auto-mobile)"
+expect_eq "an area adds the tiers it names, P0 first" "app/launch.yaml
+checkout/pay.yaml" "$(selected "$SANDBOX/proj1" --driver auto-mobile --area checkout:p1)"
+expect_eq "several areas and tiers" "app/launch.yaml
+cart/add-item.yaml
+checkout/pay.yaml
+checkout/offline.yaml" "$(selected "$SANDBOX/proj1" --driver auto-mobile --area checkout:p1,p2 --area cart:p1)"
+expect_eq "--exclude drops a flow, even a P0" "checkout/pay.yaml" "$(selected "$SANDBOX/proj1" --driver auto-mobile --area checkout:p1 --exclude app/launch)"
+expect_eq "a flow for the other driver is never selected" "checkout/maestro-only.yaml" "$(selected "$SANDBOX/proj1" --driver maestro)"
+
+echo "run with the suite"
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile"
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug f 2>/dev/null | tail -n 1)"
+suite "$SANDBOX/proj1" cart/broken auto-mobile p1 fail
+tiered "$SANDBOX/proj1" f checkout/pay auto-mobile p1
+tiered "$SANDBOX/proj1" f checkout/receipt auto-mobile p2
+adt "$SANDBOX/proj1" run --slug f --driver auto-mobile --area checkout:p1,p2 --area cart:p1 >/dev/null 2>&1
+expect_code "a failing suite flow fails the run" 1 $?
+row_has "the feature's own flows run, with their tier" "$SANDBOX/proj1" f checkout/receipt "| feature | p2 | PASS |"
+row_has "a P0 suite flow is replayed" "$SANDBOX/proj1" f app/launch "| regression | p0 | PASS |"
+row_has "a selected P1 suite flow is replayed" "$SANDBOX/proj1" f cart/add-item "| regression | p1 | PASS |"
+row_has "a broken suite flow is FAIL" "$SANDBOX/proj1" f cart/broken "| regression | p1 | FAIL |"
+expect_eq "a suite flow this run re-specifies is not replayed; its new version runs instead" "1" \
+  "$(grep -c '^| checkout/pay |' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md")"
+row_has "  (the row is the feature's)" "$SANDBOX/proj1" f checkout/pay "| feature | p1 | PASS |"
+expect_eq "unselected tiers are not replayed" "0" "$(grep -c '^| cart/empty-cart |' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md")"
+expect_true "the P0 time is reported" grep -q '^P0 flows: [0-9]* seconds.$' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
+ADT_P0_BUDGET_S=-1 adt "$SANDBOX/proj1" run --slug f --driver auto-mobile >/dev/null 2>&1
+expect_true "with a warning once it passes the budget" grep -q '^Warning: the P0 flows took more than -1 seconds' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
+
+echo "promote"
+tiered "$SANDBOX/proj1" f checkout/no-tier auto-mobile none
+tiered "$SANDBOX/proj1" f checkout/flaky auto-mobile p1 flaky
+tiered "$SANDBOX/proj1" f cart/add-item auto-mobile p1 fail
+rm -f "$SANDBOX/proj1/e2e/flows/cart/broken.yaml"
+adt "$SANDBOX/proj1" run --slug f --driver auto-mobile --area checkout:p1,p2 --area cart:p1 >/dev/null 2>&1
+out="$(adt "$SANDBOX/proj1" promote --slug f --remove checkout/offline --remove cart/empty-cart 2>/dev/null)"
+expect_code "promote succeeds" 0 $?
+expect_true "a new passing flow with a tier is added" [ -f "$SANDBOX/proj1/e2e/flows/checkout/receipt.yaml" ]
+expect_true "a passing re-specified flow replaces the old one" grep -q '^replaced: checkout/pay$' <<EOF
+$out
+EOF
+expect_true "  (and the file is the new version)" cmp -s "$SANDBOX/proj1/pipeline_artifacts/f/flows/checkout/pay.yaml" "$SANDBOX/proj1/e2e/flows/checkout/pay.yaml"
+expect_true "a flow with tier none is not kept" [ ! -f "$SANDBOX/proj1/e2e/flows/checkout/no-tier.yaml" ]
+expect_true "a FLAKY flow is not kept" [ ! -f "$SANDBOX/proj1/e2e/flows/checkout/flaky.yaml" ]
+expect_true "a re-specified flow that failed removes the old one" [ ! -f "$SANDBOX/proj1/e2e/flows/cart/add-item.yaml" ]
+expect_true "--remove deletes a retired flow" [ ! -f "$SANDBOX/proj1/e2e/flows/checkout/offline.yaml" ]
+expect_true "and a now-empty area directory goes with its last flow" [ ! -d "$SANDBOX/proj1/e2e/flows/cart" ]
+expect_true "untouched suite flows stay" [ -f "$SANDBOX/proj1/e2e/flows/app/launch.yaml" ]
+out2="$(adt "$SANDBOX/proj1" promote --slug f --remove checkout/pay 2>/dev/null)"
+expect_true "--remove never deletes a flow this run just replaced" [ -f "$SANDBOX/proj1/e2e/flows/checkout/pay.yaml" ]
+adt "$SANDBOX/proj2" promote --slug nothing >/dev/null 2>&1
+expect_code "promote with no run results is refused" 2 $?
+unset ADT_AUTOMOBILE
 
 # ---------- summary ----------
 

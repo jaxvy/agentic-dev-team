@@ -135,7 +135,9 @@ Phase 4 — Tester (after approval):
        release and STOP if it fails);
     3. delegate to the `adt-android-test-writer` subagent, which writes one
        flow per test case, and wait for ✅ TEST WRITER DONE;
-    4. run the flows with `adt.sh run` (RUN_RESULTS);
+    4. run the flows with `adt.sh run` (RUN_RESULTS) — this run's own flows
+       plus the regression suite: one `--area` per row of PLAN_PATH's
+       Regression Scope, one `--exclude` per row of its Flows Retired;
     5. delegate to the `adt-android-tester` subagent.
   Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
   `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`
@@ -171,6 +173,12 @@ Phase 4 — Tester (after approval):
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
 
+Keep the passing flows — when the user answers `approve` at Phase 4 and the
+last verdict was READY TO MERGE: run the promote step of the pipeline doc's
+Part B, "The Test Phase" (`adt.sh promote`, with one `--remove` per Flows
+Retired row and per "Suite Flows to Remove" entry in the last test-results.md),
+before releasing the device. Never on `stop`, after NEEDS FIXES, or on a STOP.
+
 Release the device — whenever the run ends once Phase 4 has leased one: on
 `approve` at Phase 4, on `stop` at any gate, and on a STOP of your own. Run the
 release step of the pipeline doc's Part B, "The Test Phase", before anything
@@ -193,4 +201,6 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
 
 Whenever the run ends, include the test driver, the device the run tested on,
 and for each test phase how long the Test Writer, the flow run and the Tester
-took (Part B, "The Test Phase") in what you report.
+took (Part B, "The Test Phase") in what you report — plus the regression
+counts, any P0 warning, and the suite flows promote added, replaced and
+removed, with a reminder to commit `e2e/flows/` alongside the feature.

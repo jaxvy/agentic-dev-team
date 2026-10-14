@@ -68,6 +68,16 @@ against the actual codebase. Judge it on:
    Selectors table must be present at the end of Section 2 listing every testTag
    introduced.
 
+   Every real case needs an **Id** (`<area>/<name>`) and a **Priority** with a
+   reason; either missing is a blocker, because the case's flow cannot be named
+   or kept. A `p0` must be on the app's critical path — launch, sign-in, the
+   core loop — since every later run replays every P0 flow; a convenience
+   feature marked `p0` is a blocker. Check the Regression Scope against the
+   plan's file lists: an area the plan modifies with no row is a blocker. Grep
+   `e2e/flows/` for the test tags the plan removes or renames: a flow that uses
+   one and is neither re-specified (a case with its Id) nor listed under Flows
+   Retired is a blocker, because it would fail in every later run.
+
    A Compose app whose code has no `testTagsAsResourceId`, and whose plan does
    not add it, is a blocker: the test drivers find elements by resource id, so
    none of the plan's test tags could be waited for, and under Maestro none

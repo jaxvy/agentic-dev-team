@@ -48,7 +48,9 @@ with the slug lowercase and hyphenated (for example `background-link-checks`).
 | `adt-android-tester` | `test-results.md` | `✅ TESTER DONE` |
 
 The flow run between those two is not an agent. The orchestrator runs
-`adt.sh run`, which writes `run-results.md` and `run-logs/`.
+`adt.sh run`, which writes `run-results.md` and `run-logs/`. After a final
+`READY TO MERGE`, it also runs `adt.sh promote`, which copies the passing flows
+into your project's `e2e/flows/` — the one output meant to be committed.
 
 Reviewers write nothing at all. They are read-only by design, and each ends with
 exactly one verdict marker.
@@ -77,7 +79,7 @@ written.
 
 ```mermaid
 flowchart LR
-  A["architect"] --> P["implementation-plan.md"] --> C["coder"] --> T["tester"]
+  A["architect"] --> P["implementation-plan.md"] --> C["coder"] --> W["test writer"] --> T["tester"]
   A --> D["design-doc.md"] --> H["human review"]
   D -. "links into" .-> P
 ```
@@ -153,6 +155,10 @@ Unreviewed code is never re-tested.
 
 > **Invariant:** the tree handed back to you passed code review after its last
 > change.
+
+Regression-suite flows in `e2e/` are the one exemption. They are test assets
+rather than code, added after the final verdict, so the code reviewer leaves
+them out and promoting them does not re-open a review.
 
 Without that rule a run can reach `READY TO MERGE` carrying code no reviewer ever
 read. Tests prove the feature behaves, not that the code making it behave is
@@ -243,6 +249,81 @@ Cases that need a credential, or whose Expected is a judgment a machine cannot
 check, get no flow. The Tester drives those by hand, and `flows/INDEX.md` says
 why each one has none.
 
+### The regression suite
+
+A run that ends in `READY TO MERGE` keeps its passing flows in the project, at
+`e2e/flows/<area>/<name>.yaml`, and every later run replays part of that suite
+in the same script call as its own flows.
+
+| Rule | How it works |
+|---|---|
+| **What is replayed** | Every P0 flow, always, plus the tiers the plan's **Regression Scope** names per area (`--area checkout:p1,p2`) |
+| **What is kept** | A flow of this run whose last result was `PASS` and whose priority is P0, P1 or P2. Not a `FLAKY` one, a failed one, or a `none` |
+| **Changed behaviour** | A case whose id matches a suite flow re-specifies it: the old flow is not replayed, and the new one replaces it if kept, or the old one is removed if not |
+| **Removed behaviour** | A flow listed under the plan's **Flows Retired** is not replayed, and is deleted |
+| **Stale flows** | A suite flow that fails because the plan changed that behaviour on purpose (outdated), or because the flow itself is wrong, is removed instead of failing every later run |
+| **Real regressions** | A suite flow that fails and whose behaviour really broke is a blocking finding. A Coder whose change cannot have caused it stops and reports it |
+| **When the suite changes** | Only through `adt.sh promote`, only after a final `READY TO MERGE` |
+
+The priorities come from the Architect, one per test case, with a reason: P0
+for what makes the app unusable (keep it small, since every run replays it),
+P1 for the main path of an area, P2 for edge cases. The plan reviewer checks
+that a P0 is really critical and that every area the plan touches has a
+Regression Scope row.
+
+Suite flows are test assets, not code: the code reviewer leaves `e2e/` out of
+its review, and promoting them does not re-open a review.
+
+### Test drivers
+
+The Tester never talks to a device directly. It goes through a *test driver*,
+an MCP server: auto-mobile by default, or Maestro when the project's
+`AGENTS.md` or `CLAUDE.md` says `Test driver: maestro`. The orchestrator reads
+that line once, at the start of a build command, and stops if it names anything
+else.
+
+Everything driver-specific lives in one **adapter** file per driver,
+`drivers/auto-mobile.md` and `drivers/maestro.md`. The orchestrator passes the
+right one to the Tester as `DRIVER_DOC`. The Tester's own prompt says how to
+test; the adapter says which tool does it — how to bind to the run's device,
+change device settings, tap, type and read the screen. Adding a third driver
+means writing a third adapter, not editing the agents.
+
+The Architect's test plan is the same for both: steps with test-tag selectors.
+For a Compose app the Architect also makes sure the root composable sets
+`testTagsAsResourceId`, because both drivers find elements by resource id.
+
+### Devices
+
+Each build command leases one device for its whole run, through a small script,
+`adt.sh`. Normally it boots a headless, read-only copy of one of your AVDs for
+that run alone, so two features in two git worktrees can be tested at the same
+time.
+
+```
+first test:  device-acquire  ->  install  ->  Tester
+re-test:                         install  ->  Tester      (same device)
+run ends:    device-release                               (also on any stop)
+```
+
+* **One device per run.** The first test leases it; every re-test reuses it,
+  so a fix loop never waits for a second boot. It stays up while a Coder fixes
+  something, and in `/build-guided` while the run waits for you.
+* **Installs land only there.** The install command runs with `ANDROID_SERIAL`
+  set to the run's device.
+* **The Tester uses only that device.** It receives the serial as `DEVICE`,
+  binds to it in its first call, and never starts, stops or switches devices.
+* **Leases are per project and feature.** A lease belongs to the project
+  directory and the feature slug together, so two worktrees never share a
+  device. Leases live in `~/.adt/leases/`.
+* **Your emulator is never touched.** An attached device is used only when you
+  set `ADT_DEVICE_MODE=reuse`, or when no AVD can be booted (none exists, or
+  every one is open normally). The script says which device it took and why,
+  and never stops a device it did not start.
+
+The settings and the one-time AVD setup are in the README, under
+[Testing on a device](README.md#testing-on-a-device).
+
 ### Blocking findings and observations
 
 The Tester classifies everything it finds, and only one class drives code
@@ -276,6 +357,8 @@ pipeline with a report rather than advancing.
 | Targeted re-review | 1 re-run, per fix iteration | Stops. Does not re-test, and does not spend the remaining Tester iteration |
 | Tester fix loop | 2 iterations | Stops. Never declares a `NEEDS FIXES` feature complete |
 | Cross-section check | 2 rounds | Stops, reporting the failing output and the sections involved |
+| Test Writer, per flow | 3 runs while writing it | Records the flow as not checked; the Tester drives that case if its flow fails |
+| Flow run, per flow | 1 retry | Reports it `FAIL`; a pass on the retry is reported `FLAKY`, not a failure |
 
 On a gate's second re-run, the producing agent receives all prior feedback from
 both rounds, with previously accepted items marked resolved.
@@ -386,56 +469,6 @@ exists for. The orchestrator resolves it rather than reporting and stopping:
    integration defect or two sections' public interfaces contradict each other,
    stop and report it as a plan defect. Do not guess which coder should absorb
    it.
-
-### Test drivers
-
-The Tester never talks to a device directly. It goes through a *test driver*,
-an MCP server: auto-mobile by default, or Maestro when the project's
-`AGENTS.md` or `CLAUDE.md` says `Test driver: maestro`. The orchestrator reads
-that line once, at the start of a build command, and stops if it names anything
-else.
-
-Everything driver-specific lives in one **adapter** file per driver,
-`drivers/auto-mobile.md` and `drivers/maestro.md`. The orchestrator passes the
-right one to the Tester as `DRIVER_DOC`. The Tester's own prompt says how to
-test; the adapter says which tool does it — how to bind to the run's device,
-change device settings, tap, type and read the screen. Adding a third driver
-means writing a third adapter, not editing the agents.
-
-The Architect's test plan is the same for both: steps with test-tag selectors.
-For a Compose app the Architect also makes sure the root composable sets
-`testTagsAsResourceId`, because both drivers find elements by resource id.
-
-### Devices
-
-Each build command leases one device for its whole run, through a small script,
-`adt.sh`. Normally it boots a headless, read-only copy of one of your AVDs for
-that run alone, so two features in two git worktrees can be tested at the same
-time.
-
-```
-first test:  device-acquire  ->  install  ->  Tester
-re-test:                         install  ->  Tester      (same device)
-run ends:    device-release                               (also on any stop)
-```
-
-* **One device per run.** The first test leases it; every re-test reuses it,
-  so a fix loop never waits for a second boot. It stays up while a Coder fixes
-  something, and in `/build-guided` while the run waits for you.
-* **Installs land only there.** The install command runs with `ANDROID_SERIAL`
-  set to the run's device.
-* **The Tester uses only that device.** It receives the serial as `DEVICE`,
-  binds to it in its first call, and never starts, stops or switches devices.
-* **Leases are per project and feature.** A lease belongs to the project
-  directory and the feature slug together, so two worktrees never share a
-  device. Leases live in `~/.adt/leases/`.
-* **Your emulator is never touched.** An attached device is used only when you
-  set `ADT_DEVICE_MODE=reuse`, or when no AVD can be booted (none exists, or
-  every one is open normally). The script says which device it took and why,
-  and never stops a device it did not start.
-
-The settings and the one-time AVD setup are in the README, under
-[Testing on a device](README.md#testing-on-a-device).
 
 ### Model selection
 
@@ -655,6 +688,11 @@ expressed a step or a wait wrongly, not the app. The Tester lists it under
 "Flow Defects", and the Test Writer rewrites it before the next re-test. If no
 re-test happens, the run is still judged by the Tester's hand check, and the
 flow is left as it was.
+
+**The same suite flow fails on every run.** It is broken independently of the
+features being built — the Coder stops rather than "fixing" unrelated code.
+Fix the flow by hand, or delete it from `e2e/flows/`; a later feature that
+covers the same area can write it again.
 
 **The flow run fails with "Timed out waiting for concurrent daemon restart".**
 An older auto-mobile background service is still running, and the pinned

@@ -166,6 +166,26 @@ with its result, failing step, duration and log.
   got wrong. The case counts as passed. Do not edit the flow — the Test Writer
   rewrites it before the next re-test.
 
+**Regression rows.** `RUN_RESULTS` also holds the regression suite: flows
+earlier features kept in `e2e/flows/`, marked `regression` in the Kind column.
+They protect behaviour this feature should not have changed. A `PASS` needs
+nothing. For each `FAIL`, drive that flow's steps by hand (read the flow file
+named in the row) and decide:
+
+- **A regression** — the old behaviour really is broken, and the plan does not
+  change it. A blocking finding, like any regression in an existing surface,
+  with the flow's id in its repro.
+- **Outdated** — the behaviour changed because this plan changed it on
+  purpose. Cite the plan's line. Not blocking.
+- **A broken flow** — driven by hand, the behaviour is fine; the flow itself is
+  wrong. Not blocking.
+
+List every outdated or broken suite flow under "Suite Flows to Remove", with
+its reason: the orchestrator deletes them from the suite at the end, so they
+cannot fail every later run. Never under "Flow Defects", which is only for this
+feature's own flows. When there are regression rows, they replace your light
+regression sanity check of an adjacent screen; skip it and say so.
+
 A case `flows/INDEX.md` lists as `none` has no flow: drive it by hand, as
 below. If your prompt has no `RUN_RESULTS` at all — you were invoked outside a
 build command — drive every case by hand.
@@ -282,6 +302,16 @@ device or emulator.
 
    ...
 
+   ## Regression Suite
+   - Replayed: R flows — P passed, F failed, K flaky
+   - checkout/pay-with-saved-card — FAIL (BLOCKING): the Pay button no longer
+     opens the confirmation; repro from the flow's step 5
+   - (or) No regression rows — no suite yet
+
+   ## Suite Flows to Remove (not sent to the Coder — the orchestrator removes these)
+   - items/legacy-sort — outdated: plan Section 2.3 removes the sort menu
+   - (or) None
+
    ## Flow Defects (not sent to the Coder — the Test Writer rewrites these)
    - TC5 — flow 05-rotate-keeps-input: step 6 waits 2 s for the list, which
      takes about 4 s on this device; the case passes by hand.
@@ -296,6 +326,7 @@ device or emulator.
    ## Regression Sanity Check (one adjacent surface; skipped for small features)
    - <adjacent feature name> — PASS/FAIL — <one-line observation>
    - (or) Skipped — single-screen feature, no adjacent surface at risk
+   - (or) Skipped — the regression suite was replayed
 
    ## Verdict
    <READY TO MERGE | NEEDS FIXES>

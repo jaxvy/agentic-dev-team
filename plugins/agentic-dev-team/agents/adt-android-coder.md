@@ -50,7 +50,10 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
    adjacent, no opportunistic cleanup. Your fix will be code-reviewed before it
    is re-tested (Part A, "Review Currency"), and unrequested changes fail that
    review. If a finding contradicts the plan, STOP and report instead of
-   quietly implementing behaviour the plan never specified.
+   quietly implementing behaviour the plan never specified. A finding from the
+   regression suite names a flow from an earlier feature: if nothing your
+   change touched could have caused it, STOP and report it as broken
+   independently of this feature rather than editing unrelated code.
 
 ## Definition of Done
 

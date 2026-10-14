@@ -32,6 +32,7 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
   - `adt-android-architect` also writes `pipeline_artifacts/{slug}/design-doc.md` — the human-facing design document — whenever the orchestrator asks for it. See "The Two Architect Artifacts" below.
   - `adt-android-test-writer` writes `pipeline_artifacts/{slug}/flows/` — one flow file per test case, plus `flows/INDEX.md` — and nothing else.
   - `adt.sh run` (run by the orchestrator) writes `pipeline_artifacts/{slug}/run-results.md` and the logs in `run-logs/`.
+  - `adt.sh promote` (run by the orchestrator after a final `READY TO MERGE`) copies this run's passing flows into the project's regression suite, `e2e/flows/` — the one pipeline output that lives outside `pipeline_artifacts/` and is meant to be committed.
   - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`.
   - `adt-android-coder` produces no markdown — only uncommitted code changes in the working tree.
   - `pipeline_artifacts/` must be git-ignored in the consuming project. Two mechanisms cover this, and they are deliberately redundant:
@@ -205,6 +206,39 @@ judges the results.
 - **Cases with no flow** — one that needs a credential, or whose Expected is a
   judgment a machine cannot check — are driven by hand by the Tester.
 
+## The Regression Suite
+
+The flows one feature writes protect the next. After a run ends in
+`READY TO MERGE`, its flows that passed are kept in the project at
+`e2e/flows/<area>/<name>.yaml`, as new uncommitted files the developer commits
+with the feature. Every later run replays part of that suite in the same script
+call as its own flows, on the same device.
+
+- **Tiers.** Each test case carries a priority the Architect chose: `p0` (the
+  app is unusable if this fails), `p1` (the main path of one area), `p2` (edge
+  cases), or `none` (not kept). The flow's header records it.
+- **What a run replays.** Every P0 flow, always, plus the tiers the plan's
+  Regression Scope names per area. So one feature replays only P0, another P0
+  and P1 for checkout, another P0 and P2 for offline handling.
+- **What is kept.** A flow of this run whose last result was `PASS` and whose
+  tier is `p0`, `p1` or `p2`. A `FLAKY` flow, a failed one, and a `none` are
+  not.
+- **Changing behaviour.** A case whose Id matches a suite flow re-specifies
+  it: the old flow is not replayed, and the new one replaces it if kept — or the
+  old one is removed if not. A flow listed under Flows Retired is not replayed
+  and is removed. A suite flow the Tester marks outdated or broken is removed.
+  So a flow that pins old behaviour never outlives the change that removed it.
+- **A failing suite flow** is driven by hand by the Tester. A real regression
+  is a blocking finding like any other, and a Coder who finds nothing in its
+  change could have caused it STOPs and reports it instead of editing unrelated
+  code.
+- **Speed.** Replaying is a script call with no model, P0 is kept small, and
+  `run-results.md` warns once the P0 flows take more than three minutes.
+
+`e2e/flows/` is changed only by `adt.sh promote`, and only after a final
+`READY TO MERGE`. Its files are test assets, not code: they are outside code
+review (see "Review Currency").
+
 ## Devices
 
 Each build command leases **one device for its whole run** through `adt.sh`
@@ -363,6 +397,11 @@ budget is not restarted.
 
 **Invariant**: the tree handed back to the developer has passed code review
 after its last mutation.
+
+One exemption: files under `e2e/` are regression-suite flows, not code. The
+orchestrator adds them after the final verdict ("The Regression Suite"), and
+`adt-android-code-reviewer` leaves them out of its manifest, so neither their
+promotion nor flows left uncommitted from an earlier run re-opens a review.
 
 This is why the Tester's fix loop re-enters the code reviewer (Part B). Without
 it, a run can end on `READY TO MERGE` carrying implementation code no reviewer
@@ -551,8 +590,13 @@ Each test:
    `test-results.md` lists Flow Defects, passing those cases and the Tester's
    notes as `CASES`; otherwise skip this step — the flows are already written.
    If it STOPs, release the device, then STOP and report.
-4. **Run the flows.** `bash <adt.sh> run --slug S --driver <the test driver>`.
-   It runs every flow on `DEVICE` with no model in the loop and writes
+4. **Run the flows.**
+   `bash <adt.sh> run --slug S --driver <the test driver> --area <area>:<tiers> … --exclude <id> …`,
+   with one `--area` per row of the plan's Regression Scope (its tiers joined
+   by commas, `--area checkout:p1,p2`) and one `--exclude` per row of Flows
+   Retired. It runs this run's own flows plus the regression suite flows it
+   selects — every P0, the named tiers per area, never a flow this run
+   re-specifies — on `DEVICE` with no model in the loop, and writes
    `pipeline_artifacts/S/run-results.md`. Exit 0 means every flow passed and
    exit 1 that at least one failed — both continue, because judging failures is
    the Tester's job. Any other exit: release the device, then STOP and report
@@ -576,15 +620,27 @@ reporting any STOP, and when the user answers `stop`:
 serial it names and carry on. This is deliberately its own step, not part of
 "Close the run", which is skipped whenever a run has no design doc.
 
+**Keep the passing flows — once, at the end.** After the run's final verdict
+is `READY TO MERGE` (in `/build-guided`, when the user answers `approve` and the
+last verdict was `READY TO MERGE`), run
+`bash <adt.sh> promote --slug S --remove <id> …`, with one `--remove` per row of
+Flows Retired and per entry in the last `test-results.md`'s "Suite Flows to
+Remove". It copies the flows to keep into `e2e/flows/` and prints what it
+added, replaced and removed. Never promote after `NEEDS FIXES` or a STOP. If it
+fails, report it; the verdict stands.
+
 Note the time around steps 3, 4 and 5. The final summary names the test
 driver and the device, and reports, for each test, how long the Test Writer,
 the flow run and the Tester took, so the user can see where the run's time
-went.
+went. It also gives the last run's regression counts (replayed, failed, flaky),
+any P0 warning from `run-results.md`, and the suite flows promote added,
+replaced and removed — reminding the user to commit `e2e/flows/` with the
+feature.
 
 **Running the Tester outside a build command.** Lease and install with the
 script yourself (`device-acquire`, then `install`), invoke
-`adt-android-tester` with PLAN_PATH, DRIVER_DOC, `DEVICE` and `BUILD_INSTALLED`, and run
-`device-release` when you are done. Without `BUILD_INSTALLED` the Tester stops
+`adt-android-tester` with PLAN_PATH, DRIVER_DOC, `DEVICE` and
+`BUILD_INSTALLED`, and run `device-release` when you are done. Without `BUILD_INSTALLED` the Tester stops
 and says the build was not installed. Without `RUN_RESULTS` it drives every
 case by hand; to use flows instead, run the Test Writer and `adt.sh run` first.
 
@@ -597,11 +653,11 @@ report them verbatim.
 **The Tester and the Test Writer have no shell.** Their tool lists hold file
 tools and the two drivers' MCP tools, so they cannot reach for `adb` — every
 device action goes through the tools the adapter names, and a case that needs
-anything else is reported `INCONCLUSIVE`. Claude Code enforces the tool list. In Antigravity the
-one setting that grants a shell, `enable_write_tools`, is also what lets the
-Tester write `test-results.md` and the Test Writer write flows, so their
-mappings keep it; there, and in OpenCode, the no-shell rule is enforced by
-their prompts only.
+anything else is reported `INCONCLUSIVE`. Claude Code enforces the tool list.
+In Antigravity the one setting that grants a shell, `enable_write_tools`, is
+also what lets the Tester write `test-results.md` and the Test Writer write
+flows, so their mappings keep it; there, and in OpenCode, the no-shell rule is
+enforced by their prompts only.
 
 ## Orchestration Workflow (Antigravity)
 

@@ -1,6 +1,11 @@
 # Tester v2: one emulator per feature, a Test Writer after the Coder, two drivers, and a regression suite
 
-**Status**: proposal, nothing implemented · **Date**: 2026-10-13 · **Owner**: jaxvy
+**Status**: implemented on branch `claude/tester-v2`, one commit per PR below · **Date**: 2026-10-13, updated 2026-10-14 · **Owner**: jaxvy
+
+> **As implemented.** The five PRs below landed as five commits in one pull
+> request. Where the code differs from this proposal, the code and the
+> "As implemented" section at the end of Part 2 are right; the rest of this
+> document is the reasoning, kept as written.
 
 ## What this gives you
 
@@ -372,7 +377,7 @@ appId: com.example.app.debug
 ---
 - setAirplaneMode: disabled
 - setOrientation: PORTRAIT
-- setDarkMode: false
+- setDarkMode: disabled
 - launchApp:
     clearState: true
 - tapOn:
@@ -1109,6 +1114,57 @@ Replaying:
 
 **To undo:** revert the PR. Flows already in `e2e/` are plain files; keep or
 delete them.
+
+## 16a. As implemented
+
+What changed between this proposal and the code, and why.
+
+| Proposal | As built | Why |
+|---|---|---|
+| Each command spells out the test phase | The steps live once, in the pipeline doc's Part B, "The Test Phase"; the commands list them briefly and point there | Three copies of a ten-step procedure drift apart |
+| `adt.sh select` output fed to `adt.sh run --list` | `run` takes `--area` and `--exclude` and selects the suite itself; `select` prints the same selection for humans | One command per test for the orchestrator, and no list file to pass around |
+| The orchestrator passes `--exclude`/`--affected` for re-specified flows | `run` skips any suite flow whose id matches one of the run's own flows, and `promote` replaces it, or removes it when the new one was not kept | The script already knows both sets of ids |
+| Case id in the heading (`### Case checkout/pay …`) | An `**Id**:` line under the existing `### Test Case N: …` heading, next to `**Priority**:` | Keeps the Tester's `TC1` numbering and the existing template |
+| `run-results.md` columns per PR | One table from the start: Flow, Kind (feature/regression), Tier, Result, Failing step, Seconds, Log, plus totals and a P0 time line | The same file serves PR 4 and PR 5 |
+| — | `install` prints the `BUILD_INSTALLED` timestamp on stdout; the install command's own output goes to stderr | The orchestrator gets the stamp from the same call |
+| — | Exit codes 14 (driver command missing) and 15 (no lease for this run); `ADT_FLOW_TIMEOUT_S` (300) bounds each flow; `ADT_P0_BUDGET_S` (180) sets the warning; `ADT_AUTOMOBILE`, `ADT_MAESTRO`, `ADT_HOME` and `ADT_PORT_FIRST/LAST` override commands and paths | Found while testing |
+| `executePlan` needed in `AUTOMOBILE_ENABLED_TOOLS` for replays | Only the agents need it (the Test Writer checks a flow through MCP). The command line reaches hidden tools without it | Verified: a flow using `rotate`, `displayConfig` and `setDeviceState` ran with no enabled-tools list |
+| The Tester's list of broken flows | Two lists in `test-results.md`: "Flow Defects" (this feature's flows, for the Test Writer) and "Suite Flows to Remove" (outdated or broken suite flows, for `promote --remove`) | They go to different consumers |
+
+**Verified on this machine while implementing** (macOS, emulator 37.2.12,
+auto-mobile 0.0.84, bash 3.2.57):
+
+- `adt.sh device-acquire` booted two read-only emulators at once in 23 seconds,
+  skipping the AVD open in normal mode, and left that emulator untouched;
+  acquiring again returned the same serial; `install` reached only its own
+  device (plain `adb` refused, "more than one device"); `device-release`
+  stopped both. The emulator's real refusal text, "Another emulator instance is
+  running", is what the script matches.
+- auto-mobile's command line ran a flow on a given serial with no model:
+  `--cli executePlan --platform android --deviceId <serial> --planContent …`
+  exits 0 on success and 1 on failure, printing "Failed at step N: <tool>" and
+  "Step error: …" on stderr. The reset steps ran inside a flow;
+  `setDeviceState` turned Airplane mode on (confirmed by `getDeviceState`, by
+  `adb`, and by the network being unreachable) and off again.
+- `adt.sh run` on a real emulator reported a passing flow, a failing one with
+  its step, and a flow for the other driver as skipped; a flow that taps
+  through Settings and checks that an element went away passed in 8 seconds.
+- `tests/adt.test.sh`: 113 checks under `/bin/bash` 3.2, against fake `adb`,
+  `emulator`, auto-mobile and Maestro commands.
+
+**Found while testing:** this machine's shared auto-mobile service had been
+running for 30 days on an older version. The pinned 0.0.84 command line timed
+out trying to replace it, and `--daemon restart` refused to stop it ("could not
+verify the live PID"); `--no-daemon` is ignored in command-line mode. The
+tests therefore ran against an isolated 0.0.84 service (its own socket, PID,
+lock, database and home directory). HOW_IT_WORKS's troubleshooting now says
+how to stop an old service by hand.
+
+**Still not run:** Maestro (not installed here; its paths are covered by the
+fake command and by its source and docs), the agents themselves in a full
+`/build-*` run (the new Test Writer agent cannot be loaded into the session
+that wrote it), Compose test tags through `testTagsAsResourceId`, and
+Antigravity and OpenCode.
 
 ## 17. Deferred
 

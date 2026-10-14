@@ -97,14 +97,20 @@ judge the app yourself, and you never bend a check to make it pass.
    no case):
    1. Decide: flow, or `none` (it needs a credential, or its Expected cannot be
       asserted by the driver).
-   2. Write the flow to `pipeline_artifacts/{slug}/flows/<NN>-<short-name>.yaml`,
-      where `NN` is the case's number in the plan with two digits and the short
-      name is a few lowercase hyphenated words from its title — for example
-      `03-offline-banner.yaml`. Its first lines are the header:
+   2. Write the flow to `pipeline_artifacts/{slug}/flows/<Id>.yaml`, named
+      after the case's **Id** — `checkout/pay-with-saved-card` becomes
+      `flows/checkout/pay-with-saved-card.yaml`. (A plan written before cases
+      had ids: use `<NN>-<short-name>.yaml`, the case's two-digit number and a
+      few lowercase hyphenated words from its title.) Its first lines are the
+      header:
       ```
       # adt:driver: <the driver's name>
+      # adt:priority: <the case's Priority: p0, p1, p2 or none>
       # adt:case: <NN> — <the case's title>
       ```
+      The priority line decides whether the flow joins the project's regression
+      suite once it passes, so copy it exactly; leave it out only when the case
+      has no Priority.
       Then, in the adapter's format: the reset steps, the launch with clean
       data, the case's steps, and its assertions.
    3. **Run it once** on `DEVICE`, the way the adapter's "Checking a flow"
@@ -133,8 +139,8 @@ judge the app yourself, and you never bend a check to make it pass.
 
    | Case | Flow | Check |
    |---|---|---|
-   | 1 — Happy path | 01-happy-path.yaml | passes |
-   | 2 — Offline banner | 02-offline-banner.yaml | fails at Expected: the list showed cached items with no banner |
+   | 1 — Happy path | items/add-item.yaml | passes |
+   | 2 — Offline banner | items/offline-banner.yaml | fails at Expected: the list showed cached items with no banner |
    | 3 — Signed-in sync | none — needs a signed-in account | — |
    ```
 5. End with:

@@ -64,8 +64,8 @@ separate mandates, and puts a reviewer between them.
 | `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md`, with exact file changes and a manual test plan, plus `design-doc.md` for human review |
 | `adt-android-architect-reviewer` | Plan reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-coder` | Implementer | Uncommitted code in your working tree |
-| `adt-android-test-writer` | Test engineer | One runnable *flow* file per test case, written against the running app |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
+| `adt-android-test-writer` | Test engineer | One runnable *flow* file per test case, written against the running app |
 | `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
 
 Each agent reads your project's `AGENTS.md` (or `CLAUDE.md`) for stack,
@@ -78,9 +78,9 @@ Five slash commands. Three run the full pipeline, two stop after a single phase.
 
 | Command | Phases | Who approves | Use it for |
 |---|---|---|---|
-| `/build-guided` | PM, Architect, Coder, Tester | You, at every phase boundary | A rough idea you want shaped before code exists |
-| `/build-auto` | Architect, Coder, Tester | Nobody, it runs start to finish | A feature you have already specified precisely |
-| `/build-auto-reviewed` | Architect, Coder, Tester, plus a reviewer after the first two | Reviewer agents, with no human pause | An unattended run you want to trust. Costs more tokens |
+| `/build-guided` | PM, Architect, Coder, Test Writer, Tester | You, at every phase boundary | A rough idea you want shaped before code exists |
+| `/build-auto` | Architect, Coder, Test Writer, Tester | Nobody, it runs start to finish | A feature you have already specified precisely |
+| `/build-auto-reviewed` | Architect, Coder, Test Writer, Tester, plus a reviewer after the Architect and the Coder | Reviewer agents, with no human pause | An unattended run you want to trust. Costs more tokens |
 | `/plan-research` | PM only | n/a | Turning a vague idea into a spec and nothing more |
 | `/plan-design` | Architect only | n/a | Auto-detects input: produces whichever of the plan and design doc is missing |
 
@@ -206,13 +206,16 @@ pipeline_artifacts/recently-played-carousel/
 ├── implementation-plan.md  # the plan, including the manual test plan
 ├── design-doc.md           # the same design, written for you
 ├── flows/                  # one runnable test per test case, and INDEX.md
-├── run-results.md          # each flow's result and time, from the last run
+├── run-results.md          # each flow's result and time, from the last run,
+│                           #   including the regression suite's
 ├── run-logs/               # the driver's output for each flow
 └── test-results.md         # per-case results, verdict, observations
 ```
 
 Alongside that is the actual work: uncommitted changes in your working tree.
-Review them, stage what you want, and commit on your own terms.
+Review them, stage what you want, and commit on your own terms. When the run
+ended in `READY TO MERGE`, that includes new or updated test flows in
+`e2e/flows/` — your regression suite. Commit them with the feature.
 
 ## Testing on a device
 
@@ -241,6 +244,114 @@ Every test case is written once, by one agent, at the right moment:
 This is what makes testing fast. A passing case costs a few seconds of the
 script's time instead of an AI working through it step by step, and a re-test
 after a fix is one script call plus a look at whatever failed.
+
+### The regression suite
+
+The flows one feature writes protect every feature after it. When a run ends
+in `READY TO MERGE`, its flows that passed are copied into your project at
+`e2e/flows/<area>/<name>.yaml`. Later runs replay some of them in the same
+script call as their own flows, so you find out at once if a new feature broke
+an old one.
+
+Each test case gets a priority from the Architect, and the priority decides
+when its flow is replayed:
+
+| Priority | Meant for | Replayed |
+|---|---|---|
+| **P0** | Things that make the app unusable if they break: launch, sign-in, the core loop | By every run. Keep this tier small |
+| **P1** | The main path of one area of the app | When a feature's plan names that area for P1 |
+| **P2** | Edge cases: offline, process death, rotation, error states | When a feature's plan names that area for P2 |
+| none | Worth testing once, not worth keeping | Never; it is not kept |
+
+Every plan says which areas the feature puts at risk, and at which tiers. A
+small change to the settings screen might replay only P0; a checkout rewrite
+might replay P0 plus checkout's P1 and P2. There is no separate command:
+replaying happens inside `/build-guided`, `/build-auto` and
+`/build-auto-reviewed`.
+
+The suite looks after itself:
+
+* **Only clean passes are kept.** A flow that failed, or only passed on its
+  retry, is not added.
+* **Changing behaviour replaces the test.** When a feature changes what an old
+  flow checks, the Architect writes the new case with the same id, and the new
+  flow replaces the old one. A feature that removes behaviour retires its
+  flows.
+* **Stale flows are removed.** If an old flow fails because the feature
+  changed that behaviour on purpose, or the flow itself is wrong, the Tester
+  says so and it is removed instead of failing every later run.
+* **It stays fast.** Replaying needs no AI, and the run warns you once the P0
+  flows alone take more than three minutes, so you can move some to P1.
+
+To replay the suite by hand, on an emulator of its own:
+
+```bash
+bash .claude/adt/scripts/adt.sh device-acquire --slug manual
+bash .claude/adt/scripts/adt.sh install --slug manual -- ./gradlew installDebug
+bash .claude/adt/scripts/adt.sh run --slug manual --driver auto-mobile --area checkout:p1,p2
+bash .claude/adt/scripts/adt.sh device-release --slug manual
+```
+
+The results are in `pipeline_artifacts/manual/run-results.md`. Use
+`--driver maestro` in a Maestro project. With the Claude Code plugin and no
+per-project install, the script is in the plugin's directory, under
+`scripts/adt.sh`.
+
+### Choosing a test driver
+
+The Tester drives the app through a *test driver*: an MCP server that can tap,
+type, read the screen and change device settings. Two are supported, and they
+can do the same things for the pipeline. Pick one per project.
+
+| | auto-mobile | Maestro |
+|---|---|---|
+| Used when | Your project declares nothing (the default) | Your `AGENTS.md` or `CLAUDE.md` has the line `Test driver: maestro` |
+| Install | [Bun](https://bun.sh); auto-mobile itself runs through `bunx` | The [Maestro CLI](https://docs.maestro.dev), 2.11.0 or later, which needs Java 17 |
+| Can't do | — | Change the font scale; those cases come back *inconclusive* |
+
+**auto-mobile.** Register it at a fixed version, with its device-setting tools
+switched on. In Claude Code:
+
+```bash
+claude mcp add auto-mobile \
+  -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan \
+  -- bunx @kaeawc/auto-mobile@0.0.84
+```
+
+Why both parts matter:
+
+* **The tool list.** auto-mobile hides the tools that rotate the screen,
+  switch dark mode, change permissions, turn on Airplane mode and run a flow
+  until they are switched on. The Tester has no shell, so without them those
+  test cases come back *inconclusive* instead of being worked around with
+  `adb`.
+* **The version.** `@latest` can pull a new release in the middle of a run,
+  which restarts auto-mobile's shared background service under any other run
+  using it. Re-check a test run after you move the pin, because tool names can
+  change between releases.
+
+In OpenCode, which connects to auto-mobile over HTTP, set
+`AUTOMOBILE_ENABLED_TOOLS` in the environment of whatever starts the
+auto-mobile server. After changing the version or the tool list, restart
+auto-mobile's background service once, while nothing is being tested:
+`bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`. If it refuses to stop an
+older service, see "The flow run fails with 'Timed out waiting for concurrent
+daemon restart'" in [HOW_IT_WORKS.md](HOW_IT_WORKS.md#troubleshooting).
+
+**Maestro.** Install the CLI, add `Test driver: maestro` to your `AGENTS.md`
+or `CLAUDE.md`, and register its MCP server. In Claude Code:
+
+```bash
+claude mcp add maestro -- maestro mcp
+```
+
+In OpenCode, add it to `opencode.json` under `mcp` as
+`{"type": "local", "command": ["maestro", "mcp"]}`.
+
+**Jetpack Compose apps.** Both drivers find elements by resource id, and a
+Compose `testTag` only becomes a resource id when the app's root composable
+sets `testTagsAsResourceId = true`. The Architect checks for it and, if it is
+missing, adds that one line to the plan, so you do not need to do anything.
 
 ### Each run gets its own emulator
 
@@ -273,60 +384,8 @@ All optional. Set them in your shell profile, or for Claude Code in
 | `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one |
 | `ADT_HEADLESS=0` | Show the emulator window, to watch a test run |
 | `ADT_BOOT_TIMEOUT_S` | How long to wait for the emulator to start, in seconds (default 240) |
-
-### Choosing a test driver
-
-The Tester drives the app through a *test driver*: an MCP server that can tap,
-type, read the screen and change device settings. Two are supported, and they
-can do the same things for the pipeline. Pick one per project.
-
-| | auto-mobile | Maestro |
-|---|---|---|
-| Used when | Your project declares nothing (the default) | Your `AGENTS.md` or `CLAUDE.md` has the line `Test driver: maestro` |
-| Install | Nothing to install; it runs through `bunx` ([Bun](https://bun.sh)) | The [Maestro CLI](https://docs.maestro.dev), 2.11.0 or later, which needs Java 17 |
-| Can't do | — | Change the font scale; those cases come back *inconclusive* |
-
-**auto-mobile.** Register it at a fixed version, with its device-setting tools
-switched on. In Claude Code:
-
-```bash
-claude mcp add auto-mobile \
-  -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan \
-  -- bunx @kaeawc/auto-mobile@0.0.84
-```
-
-Why both parts matter:
-
-* **The tool list.** auto-mobile hides the tools that rotate the screen,
-  switch dark mode, change permissions, turn on Airplane mode and run a flow
-  until they are switched on. The Tester has no shell, so without them those
-  test cases come back *inconclusive* instead of being worked around with
-  `adb`.
-* **The version.** `@latest` can pull a new release in the middle of a run,
-  which restarts auto-mobile's shared background service under any other run
-  using it. Re-check a test run after you move the pin, because tool names can
-  change between releases.
-
-In OpenCode, which connects to auto-mobile over HTTP, set
-`AUTOMOBILE_ENABLED_TOOLS` in the environment of whatever starts the
-auto-mobile server. After changing the version or the tool list, restart
-auto-mobile's background service once, while nothing is being tested:
-`bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`.
-
-**Maestro.** Install the CLI, add `Test driver: maestro` to your `AGENTS.md`
-or `CLAUDE.md`, and register its MCP server. In Claude Code:
-
-```bash
-claude mcp add maestro -- maestro mcp
-```
-
-In OpenCode, add it to `opencode.json` under `mcp` as
-`{"type": "local", "command": ["maestro", "mcp"]}`.
-
-**Jetpack Compose apps.** Both drivers find elements by resource id, and a
-Compose `testTag` only becomes a resource id when the app's root composable
-sets `testTagsAsResourceId = true`. The Architect checks for it and, if it is
-missing, adds that one line to the plan, so you do not need to do anything.
+| `ADT_FLOW_TIMEOUT_S` | How long one flow may run before it counts as failed, in seconds (default 300) |
+| `ADT_P0_BUDGET_S` | When to warn that the P0 flows are getting slow, in seconds (default 180) |
 
 ### One-time setup
 
