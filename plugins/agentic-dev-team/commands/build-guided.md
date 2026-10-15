@@ -60,11 +60,23 @@ After each phase, pause and ask the user to type one of:
 - `revise: <feedback>` — re-run the current phase with the feedback
 - `stop` — halt the pipeline
 
+Phase 4B, the blocked-Tester gate, is the one exception to that vocabulary: it
+takes `resume` or `stop`, since a run that could not finish is not something to
+approve or to send the Coder back over.
+
 Design doc: **on** by default for this command — the plan gate is where a human
 decides whether the approach is right, so it is the gate that most needs one.
 `$ARGUMENTS` may carry `doc: on` or `doc: off` anywhere in the text — read it,
 remove that token before you use the rest as the user's idea, and let it
 override the default. Store the result as DESIGN_DOC (`on` or `off`).
+
+Test credentials: there is no `creds:` argument, and deliberately so — a PIN or
+password is free-form text with no terminator, so it cannot be told apart from
+the user's idea without guessing. Instead the Tester asks for what it needs when
+it needs it, at the Phase 4B gate, and the user's reply carries the value. See
+the pipeline doc's Part A, "Test Credentials". Whatever they supply there goes
+to the `adt-android-tester` subagent and nowhere else: not to another agent, not
+into `pipeline_artifacts/`, not into the code, not into your summary.
 
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
@@ -173,10 +185,20 @@ Phase 4 — Tester (after approval):
        Regression Scope, one `--exclude` per row of its Flows Retired;
     5. delegate to the `adt-android-tester` subagent.
   Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
-  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`
-  Wait for ✅ TESTER DONE.
-  The device stays up while you wait at the gate below, so a `revise:`
-  re-tests without a new boot.
+  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`. On a first run you
+  have no credentials to pass — the Tester asks for one only if it hits a
+  gate, at Phase 4B below.
+  Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on exactly
+  one of them, never both.
+  The device stays up while you wait at the gates below, so a `revise:` or a
+  `resume` re-tests without a new boot.
+
+  **On ⛔ TESTER BLOCKED, go straight to Phase 4B and skip the rest of this
+  phase.** Everything below assumes the plan's cases actually ran. Presenting a
+  blocked report as "the final test results" and offering `approve` is precisely
+  how an untested feature gets signed off as done.
+
+  On ✅ TESTER DONE:
   Summarise the final test results for the user from the test-results.md
   in the same directory as PLAN_PATH: first its "Verified V of N plan cases;
   U not verified" line (count it from its Coverage section if the line is
@@ -200,13 +222,40 @@ Phase 4 — Tester (after approval):
     again only if the previous `test-results.md` lists Flow Defects (pass
     those as CASES), and `adt.sh run` re-runs every flow. Pass
     `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
-    `BUILD_INSTALLED` and `RUN_RESULTS` lines and the previous
-    `test-results.md`, instructing it to judge every flow result again and to
-    drive by hand only the cases without a flow that failed before or that the
-    fix plausibly affects. Wait for ✅ TESTER DONE, then return to this gate with the
-    fresh results.
+    `BUILD_INSTALLED` and `RUN_RESULTS` lines, the previous `test-results.md`
+    and the same `TEST CREDENTIALS` block if a resume supplied one,
+    instructing it to judge every flow result again and to drive by hand only
+    the cases without a flow that failed before or that the fix plausibly
+    affects. Wait for ✅ TESTER DONE, then return to this gate with the fresh
+    results. On ⛔ TESTER BLOCKED, go to Phase 4B.
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
+
+Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+  A gate stopped the Tester before it could finish — one it had no credential
+  for, or a device that would not accept input. Follow "The Blocked Path" in
+  the pipeline doc's Part B: it defines the whole procedure — what to show the
+  user, why no Coder is spawned, the `resume` / `stop` vocabulary, how a
+  supplied credential reaches the Tester, and the 2-resume budget.
+
+  If the gate itself is the defect — the app should not be demanding a login at
+  that point — that is a blocking finding for the Tester to record on resume,
+  not a `revise:` for the Coder.
+
+  Where the resumed run lands:
+    - ✅ TESTER DONE → return to the Phase 4 gate and handle it like any other
+      run: summarise the results and ask for `approve`, `revise:` or `stop`. A
+      `revise:` enters Phase 4's fix loop with its 2 iterations untouched — a
+      block consumed a resume, not a fix iteration.
+    - ⛔ TESTER BLOCKED → back to the top of this phase.
+
+  A resume re-invokes only the Tester, on the same device, with the same
+  DEVICE, BUILD_INSTALLED and RUN_RESULTS: the build did not change, so the
+  flows do not run again.
+
+  On `stop`, or after the 2nd resume still comes back blocked, STOP and report
+  per the Blocked Path. Never present a blocked run as a pass; the feature is
+  untested until a Tester run executes the cases.
 
 Keep the passing flows — when the user answers `approve` at Phase 4 and the
 last verdict was READY TO MERGE: run the promote step of the pipeline doc's
@@ -222,7 +271,7 @@ else in Phase 5. It is separate from Phase 5, which is skipped when there is no
 design doc.
 
 Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
-`stop`, or on a STOP of your own):
+`stop`, or on a STOP of your own — a stop out of Phase 4B included):
   Skip this phase entirely when there is no design doc to close out — DESIGN_DOC
   is off, or the run stopped before the Architect wrote one.
   Otherwise append to DOC_PATH's `## Implementation Notes` section

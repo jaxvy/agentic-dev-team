@@ -64,6 +64,13 @@ so no design doc is generated unless explicitly requested. `$ARGUMENTS` may carr
 you use the rest as the feature request, and let it override the default. Store the
 result as DESIGN_DOC (`on` or `off`).
 
+Test credentials: there is no `creds:` argument, and deliberately so — a PIN or
+password is free-form text with no terminator, so it cannot be told apart from
+the feature request without guessing. Instead the Tester asks for what it needs
+when it needs it, at the Phase 3B gate, and the user's reply carries the value.
+See the pipeline doc's Part A, "Test Credentials". Whatever they supply there
+goes to the `adt-android-tester` subagent and nowhere else.
+
 **Reviewer-loop protocol (applies to every gate below):**
 - After the producing agent finishes, delegate to its reviewer.
 - If the reviewer ends with `✅ ... APPROVED`, proceed to the next phase.
@@ -154,8 +161,13 @@ Phase 2R — Code review gate (max 2 re-runs):
     spawn ONE `adt-android-coder` subagent with PLAN_PATH and the reviewer's
     numbered feedback, instructing it to fix exactly those points (regardless of
     the parallel-safety decision; fixes are usually small and cross-cutting).
-    Wait for ✅ CODER DONE, then review again. After the 2nd failed re-run,
-    STOP and report (see protocol).
+    State in that prompt that the numbered findings are in scope to fix **even
+    where the plan does not specify the fix** — Part A, "Review-Driven Fixes Are
+    In Scope" — so the Coder does not STOP on a defect the plan never
+    anticipated. Wait for ✅ CODER DONE, then review again. After the 2nd failed
+    re-run, STOP and report (see protocol).
+    Record the `Plan departures` field from each ✅ CODER DONE marker; it feeds
+    the final summary below.
 
 Phase 3 — Tester:
   Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
@@ -170,8 +182,40 @@ Phase 3 — Tester:
        Regression Scope, one `--exclude` per row of its Flows Retired;
     5. delegate to the `adt-android-tester` subagent.
   Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
-  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`
-  Wait for ✅ TESTER DONE.
+  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`. On a first run you
+  have no credentials to pass — the Tester asks for one only if it hits a
+  gate, at Phase 3B below.
+  Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on one or
+  the other; a blocked run never emits the DONE marker, so do not wait on it.
+
+Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+  A gate stopped the Tester before it could finish — one it had no credential
+  for, or a device that would not accept input. Follow "The Blocked Path" in
+  the pipeline doc's Part B: it defines the whole procedure — what to show the
+  user, why no Coder is spawned, the `resume` / `stop` vocabulary, how a
+  supplied credential reaches the Tester, and the 2-resume budget.
+
+  **This flow is unattended, and the blocked gate is its one exception.** It
+  approves nothing: nobody signs off on the plan, the code, or the results
+  here. The run has hit a wall it cannot pass, and the only choice is between
+  waiting for one short answer and throwing the run away. Stopping costs
+  strictly more — it discards a finished Architect phase and a finished Coder
+  phase that a re-run pays for again. If nobody is watching, the run waits,
+  and nothing is lost that stopping would have saved.
+
+  Where the resumed run lands:
+    - ✅ TESTER DONE → Phase 3F, handled on its verdict like any other run.
+      NEEDS FIXES enters the fix loop with its 2 iterations untouched — a block
+      consumed a resume, not a fix iteration.
+    - ⛔ TESTER BLOCKED → back to the top of this phase.
+
+  A resume re-invokes only the Tester, on the same device, with the same
+  DEVICE, BUILD_INSTALLED and RUN_RESULTS: the build did not change, so the
+  flows do not run again.
+
+  On `stop`, or after the 2nd resume still comes back blocked, **STOP** and
+  report per the Blocked Path, saying plainly that the feature is untested.
+  Release the device and run "Close the run" below on the way out.
 
 Phase 3F — Tester fix loop (max 2 iterations):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to "Keep the
@@ -188,7 +232,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
     given.
     - On `✅ CODE APPROVED`: proceed to the re-test below.
     - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
-      feedback, then re-review. This targeted loop allows **at most 1 re-run**.
+      feedback, then re-review. Say in that prompt — as in Phase 2R — that the
+      findings are in scope to fix even where the plan specifies no fix, since
+      a Coder in the fix loop is otherwise under the stricter "stay in the plan"
+      rule that governs Tester findings. This targeted loop allows **at most 1
+      re-run**.
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 
@@ -197,10 +245,11 @@ Phase 3F — Tester fix loop (max 2 iterations):
     again only if the previous `test-results.md` lists Flow Defects (pass
     those as CASES), and `adt.sh run` re-runs every flow. Pass
     `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
-    `BUILD_INSTALLED` and `RUN_RESULTS` lines and the previous
-    `test-results.md`, instructing it to judge every flow result again and to
-    drive by hand only the cases without a flow that failed before or that the
-    fix plausibly affects. Wait for ✅ TESTER DONE.
+    `BUILD_INSTALLED` and `RUN_RESULTS` lines, the previous `test-results.md`
+    and any `TEST CREDENTIALS` a resume supplied, instructing it to judge every
+    flow result again and to drive by hand only the cases without a flow that
+    failed before or that the fix plausibly affects. Wait for ✅ TESTER DONE
+    or ⛔ TESTER BLOCKED; on the latter, go to Phase 3B.
     On READY TO MERGE, go to "Keep the passing flows" below.
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
@@ -251,3 +300,16 @@ driver and the device the run tested on, the flow counts from the last
 suite flows promote added, replaced and removed — with a reminder to commit
 `e2e/flows/` alongside the feature — and for each test phase how long the Test
 Writer, the flow run and the Tester took (Part B, "The Test Phase").
+
+Two things from the code review gate go in the summary as well, because the
+developer — not this pipeline — does the real review of the diff, and these are
+what they would otherwise have to rediscover:
+  - **Plan departures**: every `Plan departures` line the Coders reported across
+    the whole run, Phase 3F included. These are places a reviewer-directed fix
+    contradicted something PLAN_PATH explicitly specifies, so the plan and the
+    tree now disagree there — say what the plan said and what was built instead.
+    Write `none` when there were none.
+  - **Nits the reviewer declined to block on**: the items under the reviewer's
+    "Nits / optional" sub-heading, which never drove a re-run and are otherwise
+    lost when the run ends. They are suggestions for the developer, not
+    outstanding work.

@@ -395,7 +395,11 @@ waits on that marker before advancing.
 - `adt-android-architect` → `✅ ARCHITECT DONE`
 - `adt-android-coder` → `✅ CODER DONE`
 - `adt-android-test-writer` → `✅ TEST WRITER DONE`
-- `adt-android-tester` → `✅ TESTER DONE`
+- `adt-android-tester` → `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` when the
+  device stopped it from executing the plan's cases (see "When the Tester Is
+  Blocked" below). These are alternatives, not a sequence: a blocked run emits
+  the blocked marker and nothing else, and an orchestrator waiting only on
+  `✅ TESTER DONE` will wait forever.
 
 Each reviewer ends with **exactly one** verdict marker as its final line:
 
@@ -453,6 +457,171 @@ When a behaviour genuinely should be required and no artifact requires it, that
 is an observation for the human to promote into a future feature request — not
 something to fix mid-run.
 
+## When the Tester Is Blocked
+
+A run can end without the Tester ever getting to the plan's cases: the emulator
+stops accepting input, a gate needs a credential the run does not have, a
+biometric prompt appears that nothing can satisfy. That outcome has its own
+verdict and its own marker, because it is neither of the other two.
+
+| Verdict | Marker | What it means | What the orchestrator does |
+|---|---|---|---|
+| `READY TO MERGE` | `✅ TESTER DONE` | Cases ran; no blocking findings | Close the run |
+| `NEEDS FIXES` | `✅ TESTER DONE` | Cases ran; at least one blocking finding | Tester fix loop |
+| `BLOCKED` | `⛔ TESTER BLOCKED` | The run could not be finished | The Blocked Path (Part B) |
+
+`BLOCKED` is never `READY TO MERGE` — a case that did not run is not a case
+that passed — and it does not enter the Tester fix loop, because a fix cannot
+be re-tested on a device that will not take input. **A blocked run is a request
+for a human, not a defect report.**
+
+### When Both Rules Fire
+
+A run can find a blocking defect and *then* be stopped: TC2 fails, and at TC5
+the emulator quits responding. The `NEEDS FIXES` iff-rule and the blocked rule
+both apply, so one has to win.
+
+**BLOCKED outranks NEEDS FIXES.** The fact the orchestrator must act on is that
+the run cannot continue — routing to the fix loop would send a Coder at code
+whose fix nothing can then verify.
+
+**The finding is not dropped.** It stays in `test-results.md` classified as it
+was, the `⛔ TESTER BLOCKED` line says how many blocking findings are waiting,
+and the orchestrator names them when it escalates. Once the human clears the
+gate, a resumed run carries them forward (Part B, "The Blocked Path") and they
+drive the verdict as usual.
+
+This is also why BLOCKED reads "the run could not be finished" rather than "no
+case ever ran": the report template counts `Not executed (device blocked)` and
+asks *where* the block happened, which only a partial block can answer.
+
+The blocked report carries a **Human Assistance Needed** section — what stopped
+it, where, what it already tried, and the one concrete thing it needs — and the
+`⛔ TESTER BLOCKED` line repeats that need in one line, so the orchestrator can
+relay it without opening the file.
+
+**Invariant**: a `BLOCKED` verdict reaches the human. It is never absorbed by
+the orchestrator, retried silently until the budget runs out, or rounded to a
+pass because the unit suite was green.
+
+## No Raw adb
+
+`adt-android-tester` and `adt-android-test-writer` have no shell, so neither
+can reach for `adb`. That is deliberate. A raw `adb` command operates on the
+*device*, not the app under test: `keyevent 26` (POWER) locks the screen and
+`keyevent 3` (HOME) backgrounds the app, after which every tap lands on the
+launcher and reads exactly like a feature that does not respond. That is how a
+real run once reported a pass on a feature it never saw.
+
+Nothing the plan asks for needs the shell any more:
+
+- **Device state** — rotation, dark mode, permissions, offline, backgrounding,
+  process death, force-stop — has a driver tool for each, named in the
+  driver's adapter ("The Test Driver").
+- **Installing the build, and reading Android's crash log** are done by
+  `adt.sh`, which the orchestrator runs (Part B, "The Test Phase").
+- **What the driver cannot do** makes the case `INCONCLUSIVE`, with the reason.
+  **A gate a human can open** — a PIN, a sign-in, a device that stopped
+  responding — makes the run `BLOCKED` ("When the Tester Is Blocked").
+
+Neither is ever worked around. And whatever tool sent it, an interaction that
+seemed to do nothing is first checked against the obvious explanation: is the
+app still in the foreground?
+
+**Invariant**: no agent that judges or tests the app runs a shell command
+against the device.
+
+## Test Credentials
+
+The pipeline drives development builds on development devices, so the gates
+guarding them — a keyguard PIN or pattern, a device passcode, a test-account
+email and password, a 2FA code — are gates the Tester is allowed to pass. It
+just has to be given the values.
+
+**The Tester asks; it is never pre-armed.** There is no command-line syntax for
+a credential and deliberately so. A credential is free-form text with no
+natural terminator, so a token carrying one through `$ARGUMENTS` cannot be
+parsed apart from the feature request without guessing — and guessing wrong is
+how a PIN ends up in the Architect's prompt and from there in
+`implementation-plan.md` on disk. The blocked path already provides a channel
+with none of that ambiguity: the Tester names what it needs, the human answers
+that question, and the whole reply is the answer.
+
+The flow is exactly the blocked path (Part B), with the human's reply carrying
+a value:
+
+```
+Tester hits a keyguard  →  ⛔ TESTER BLOCKED, "I need the device PIN"
+                        →  orchestrator relays the ask
+                        →  human replies `resume: the PIN is 1234`
+                        →  orchestrator re-invokes the Tester with it
+```
+
+- **Only the Tester receives them**, and only in a `TEST CREDENTIALS` block in
+  the spawn prompt of a resumed run. No other agent has a use for one, and no
+  agent upstream of the Tester ever sees one, because none of them runs after
+  the human answers.
+- **Every build command can answer.** The blocked gate is the one point where
+  the unattended commands pause for a human too (Part B, "The Blocked Path"),
+  so a locked device costs one reply rather than a discarded run, whichever
+  command started it.
+- **They are run-scoped and never persisted.** They do not go into
+  `pipeline_artifacts/`, into `test-results.md`, into a screenshot, into a
+  flow file, into the code, or into the orchestrator's final
+  summary. Artifacts record *that* a sign-in happened; the value stays in the
+  conversation.
+- **The Tester never sources its own.** A credential it was not handed is one
+  it does not have — it does not guess a PIN, read one out of the repository or
+  the environment, or reuse another app's stored session. It asks, by name, and
+  stops.
+- **Test accounts only.** A gate demanding what is plainly a real person's
+  account or production access is a `BLOCKED`, not a sign-in, however the
+  credential was supplied.
+
+**Invariant**: every credential the Tester types was handed to it by a human
+for this run, and none of them survives the run in a file.
+
+## Review-Driven Fixes Are In Scope
+
+A code-review finding usually has no fix in the plan. The plan is written before
+the code exists, so it cannot anticipate the missing null check, the lifecycle
+correction, or the unhandled error branch a reviewer catches by reading the
+actual implementation. Under a strict reading of "build exactly what the plan
+specifies", the Coder would have to STOP on every such finding and the gate
+could never clear: the reviewer blocks on a real defect, the Coder is forbidden
+to fix it, and the run dies after three attempts having changed nothing.
+
+So: **a change made to satisfy a numbered item in a `🔧 CODE CHANGES REQUESTED`
+list is in scope by definition, whether or not the plan specifies it.** It is
+not scope creep, and `adt-android-code-reviewer` must not flag it as plan
+infidelity on a later pass — its own review asked for it.
+
+Four bounds keep this from becoming "the Coder does as it likes":
+
+1. **Only what the finding names.** The minimal fix for that item — no adjacent
+   cleanup, no opportunistic refactor of code the finding merely sits near.
+2. **Only from a reviewer.** The carve-out covers numbered items a reviewer
+   handed the Coder. It never licenses the Coder's own initiative during a first
+   implementation pass, where "stay in the plan" applies in full.
+3. **No new dependencies.** Section 2 of the plan owns the dependency set. A fix
+   needing a library the plan never named is an architectural decision, not a
+   fix — STOP and report it.
+4. **Correctness wins over the plan, and the departure is stated.** Where the
+   fix contradicts something the plan explicitly specifies — a named API that
+   does not exist, two sections whose public interfaces do not meet — the Coder
+   writes the correct code and says so plainly in its `✅ CODER DONE` marker.
+   The plan itself is not edited mid-run: it is the Tester's contract too, and
+   rewriting it under a run in progress leaves other agents reading a document
+   that changed beneath them.
+
+**Invariant**: a genuine defect the reviewer found is fixed in the tree the
+developer is handed, and anywhere the fix departed from the plan is named in the
+run's final summary rather than left for the developer to discover.
+
+This section applies only where a code reviewer exists, which is
+`/build-auto-reviewed`. It changes nothing in `/build-auto` or `/build-guided`,
+whose Coders never receive a code-review finding.
+
 ## Producing-Agent Obligations During a Reviewer Loop
 
 - Reviewers are read-only — they never edit the plan or the code. The producing
@@ -488,6 +657,9 @@ model — select the strongest available model for full pipeline runs.
 
 For `/build-guided`, pause for explicit user approval between PM, Architect,
 Coder, and Tester phases. Accept `approve`, `revise: <feedback>`, or `stop`.
+The blocked gate is the one exception to that vocabulary: a `⛔ TESTER BLOCKED`
+run is not something to approve or revise, so it accepts `resume` (optionally
+carrying a credential) or `stop` instead — see "The Blocked Path" below.
 At the Architect gate the artifact presented is `design-doc.md` — the plan is a
 link for anyone who wants the file-by-file detail. A `revise:` there re-runs the
 Architect under Part A's "Feedback Lands in the Documents" rule.
@@ -499,6 +671,10 @@ instead.
 For `/build-auto-reviewed`, skip the PM phase and run no human gates — but
 insert an automated reviewer after each producing phase, per the Reviewer-Loop
 Protocol below.
+
+**Both auto flows have exactly one human pause: the blocked Tester gate.** It
+is not an approval gate — it approves nothing and can only answer a question
+the run cannot proceed without. See "The Blocked Path".
 
 ## Design Doc Defaults Per Command
 
@@ -670,7 +846,9 @@ Each test:
 5. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
    DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`,
    `RUN_RESULTS: pipeline_artifacts/S/run-results.md`, and whatever the command
-   adds for a re-test.
+   adds for a re-test. Wait for **either** `✅ TESTER DONE` **or**
+   `⛔ TESTER BLOCKED` — both end its turn. On `⛔ TESTER BLOCKED`, take "The
+   Blocked Path" below instead of the fix loop.
 
 The device stays leased between tests — while a Coder fixes, while a reviewer
 re-reviews, and in `/build-guided` while the run waits for the user — so a
@@ -689,8 +867,8 @@ last verdict was `READY TO MERGE`), run
 `bash <adt.sh> promote --slug S --remove <id> …`, with one `--remove` per row of
 Flows Retired and per entry in the last `test-results.md`'s "Suite Flows to
 Remove". It copies the flows to keep into `e2e/flows/` and prints what it
-added, replaced and removed. Never promote after `NEEDS FIXES` or a STOP. If it
-fails, report it; the verdict stands.
+added, replaced and removed. Never promote after `NEEDS FIXES`, `BLOCKED` or a
+STOP. If it fails, report it; the verdict stands.
 
 Note the time around steps 3, 4 and 5. The final summary names the test
 driver and the device, and reports, for each test, how long the Test Writer,
@@ -725,6 +903,74 @@ also what lets the Tester write `test-results.md` and the Test Writer write
 flows, so their mappings keep it; there, and in OpenCode, the no-shell rule is
 enforced by their prompts only.
 
+## The Blocked Path
+
+When the Tester ends on `⛔ TESTER BLOCKED` (Part A, "When the Tester Is
+Blocked"), the orchestrator takes this path instead of the fix loop:
+
+1. **Do not spawn a Coder over a device gate.** A keyguard disproves nothing
+   about the code, and the fix could not be re-tested anyway. The exception is
+   a block whose cause *is* the code — a failing install command is a build
+   break, not a device problem — which the human routes like any other build
+   failure.
+2. **Do not re-invoke the Tester on the same conditions.** The device that
+   ignored it will ignore it again; a second attempt only spends tokens. The
+   one thing that changes the outcome is the human.
+3. **Relay the ask verbatim** — the line on the `⛔ TESTER BLOCKED` marker, and
+   the report's **Human Assistance Needed** section. State the artifact path so
+   they can read the rest.
+4. **Report the true state of the tree, which depends on how you got here.**
+   A block on the first Tester run means coded and unverified. A block on a
+   *re-test inside the fix loop* means something else entirely: blocking
+   defects were proven, a Coder attempted fixes, and those fixes were never
+   verified. Say which, and carry the earlier run's blocking findings into what
+   you show the human — never tell them "nothing about the code was disproved"
+   on a path where something was.
+5. **Ask the human, and wait — in every command.** Present the ask and take one
+   of two replies:
+   - `resume` — carrying what the Tester asked for when it named a credential
+     (`resume: the device PIN is 1234`), or on its own once the human has
+     cleared the gate themselves. Re-invoke the Tester with `PLAN_PATH`,
+     PIPELINE_DOC, DRIVER_DOC, the same `DEVICE`, `BUILD_INSTALLED` and
+     `RUN_RESULTS`, the previous `test-results.md`, any `TEST CREDENTIALS` they
+     just supplied, and the instruction to resume from the case it stopped at,
+     carrying the earlier results forward. The device stays leased while the
+     run waits, and the flows do not run again: nothing about the build
+     changed.
+   - `stop` — halt, reporting as in step 4, and release the device.
+
+   There is no `approve` and no `revise:` here. A run that could not finish its
+   cases is not something to approve, and the Coder is not the answer to a
+   locked screen.
+
+   **The unattended commands pause here too, and that is not a contradiction.** What
+   makes `/build-auto` and `/build-auto-reviewed` unattended is the absence of
+   *approval* gates — nobody signs off on the plan, the code, or the results.
+   This gate approves nothing. The run has hit a wall it cannot pass, and the
+   only two options are to wait for one short answer or to throw the run away.
+   Stopping costs strictly more: it discards a finished Architect phase and a
+   finished Coder phase that a re-run has to pay for all over again. If nobody
+   is watching, the run waits, and nothing is lost that stopping would have
+   saved.
+
+6. **A resumed run rejoins the normal flow.** `✅ TESTER DONE` is handled on
+   its verdict like any other run — `READY TO MERGE` closes the run,
+   `NEEDS FIXES` enters the Tester fix loop with its iteration budget
+   untouched, because a block consumed a resume rather than a fix. Only another
+   `⛔ TESTER BLOCKED` comes back here.
+7. **Close the run as usual** on the way out — Implementation Notes when a
+   design doc exists, per "Design Doc Defaults Per Command". A STOP is an exit
+   path like any other.
+
+A resumed Tester may block again — on the same gate, if the human's fix did not
+take, or on the next one. Allow **at most 2 resumes** in every command; after
+that, report and stop, so a device that cannot be made to cooperate does not
+turn into an unbounded loop.
+
+Never report a blocked run as a pass, and never let it exit silently. The
+failure this path exists to prevent is a green summary on a feature no one ever
+saw run.
+
 ## Orchestration Workflow (Antigravity)
 
 When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
@@ -737,7 +983,8 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Before the run**: resolve the test driver and the script, run the preflight, and check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot.
-   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED` and `RUN_RESULTS`. It judges the flow results, drives what no flow covers, and writes `test-results.md`.
+   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
+   - **Tester Blocked**: on `⛔ TESTER BLOCKED`, take "The Blocked Path" above instead of the fix loop, and do not advance.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
      iterations) — each re-test is a run of "The Test Phase" on the same
@@ -746,7 +993,7 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
      see "The Targeted Re-Review" above; the code that ships must have been
      reviewed after its last mutation. A run never ends by declaring a
      `NEEDS FIXES` feature complete.
-3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval. For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
+3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval — `approve`, `revise: <feedback>`, or `stop`, except at a blocked Tester gate, which takes `resume` or `stop` (see "Approval Gates" and "The Blocked Path"). For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
 4. **Close the run**: release the run's device (see "The Test Phase"), on every exit including a STOP. When a design doc was produced, append its Implementation Notes before reporting the final summary (see "Design Doc Defaults Per Command"), and report the design doc path alongside the verdict.
 
 ## Native Workflow Registration

@@ -45,7 +45,12 @@ with the slug lowercase and hyphenated (for example `background-link-checks`).
 | `adt-android-architect` | `implementation-plan.md`, and `design-doc.md` when the command asks for one | `✅ ARCHITECT DONE` |
 | `adt-android-coder` | Nothing. Only uncommitted code | `✅ CODER DONE` |
 | `adt-android-test-writer` | `flows/`, one flow per test case, and `flows/INDEX.md` | `✅ TEST WRITER DONE` |
-| `adt-android-tester` | `test-results.md` | `✅ TESTER DONE` |
+| `adt-android-tester` | `test-results.md` | `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` |
+
+The Tester is the only agent with two terminal markers, because it is the one
+that has to get past whatever the device puts in front of it, and some of that
+only you can open. See [When the Tester is
+blocked](#when-the-tester-is-blocked).
 
 The flow run between those two is not an agent. The orchestrator runs
 `adt.sh run`, which writes `run-results.md` and `run-logs/`. After a final
@@ -135,6 +140,36 @@ containing a single `*` line. The second mechanism is what covers a plugin-only
 install, where no `install.sh` run ever happened. Without either one, run scratch
 files would show up in the reviewer's changed-file manifest, and in the commit of
 anyone who ran `git add -A` over the Coder's uncommitted tree.
+
+### Review-driven fixes
+
+Most of what a code reviewer finds has no fix in the plan. The plan is written
+before the code exists, so it cannot name the missing null check or the
+unhandled error branch a reviewer catches by reading the implementation. Read
+"build exactly what the plan specifies" strictly and the gate deadlocks: the
+reviewer blocks on a real defect, the Coder is forbidden to fix it, and the run
+dies after three attempts having changed nothing.
+
+So a change made to satisfy a numbered `🔧 CODE CHANGES REQUESTED` item counts
+as in scope, plan or no plan, and the reviewer does not flag it as scope creep on
+the next pass. Four bounds keep that narrow:
+
+| Bound | Effect |
+|---|---|
+| Only what the finding names | The minimal fix, no adjacent cleanup |
+| Only from a reviewer | The Coder's own initiative still stops, as before |
+| No new dependencies | The plan owns the dependency set; that is still a stop |
+| Correctness beats the plan, stated out loud | The Coder writes the right code and declares the departure |
+
+The plan is never rewritten mid-run — it is the Tester's contract too. Instead
+each departure is reported in the run summary, so the plan and the tree
+disagreeing somewhere is something you are told rather than something you find.
+
+This only exists where a code reviewer does, which is `/build-auto-reviewed`.
+`/build-auto` and `/build-guided` are unaffected.
+
+> **Invariant:** a genuine defect the reviewer found is fixed in the tree you are
+> handed, and every place a fix departed from the plan is named in the summary.
 
 ### Review currency
 
@@ -382,6 +417,120 @@ is an observation for you to promote into a future request. In `/build-guided`
 you can promote one on the spot by feeding it back through `revise:`, which makes
 it a real requirement because you created it.
 
+### When the Tester is blocked
+
+The Tester is the one agent that can be stopped by something outside the
+repository: an emulator that quietly stops accepting input, a keyguard, a login
+it has no account for. It has a third verdict for exactly that, and its own
+marker.
+
+| Verdict | Marker | What it means | What happens next |
+|---|---|---|---|
+| `READY TO MERGE` | `✅ TESTER DONE` | Cases ran, nothing blocking | The run closes |
+| `NEEDS FIXES` | `✅ TESTER DONE` | Cases ran, something blocking | The fix loop |
+| `BLOCKED` | `⛔ TESTER BLOCKED` | The run could not finish | The ask goes to you |
+
+`BLOCKED` is never `READY TO MERGE` — a case that did not run is not a case
+that passed — and it does not enter the fix loop, because a fix cannot be
+re-tested on a device that will not take input.
+
+A run can find a real defect and *then* get stopped. When both rules fire,
+BLOCKED wins: what has to be acted on is that the run cannot continue. The
+defect is not lost — it stays in the report, the `⛔` line says how many are
+waiting, and a resumed run carries them forward.
+
+Instead the report gains a **Human Assistance Needed** section: what stopped it,
+where, what it already tried, and the one thing it needs from you. The
+`⛔ TESTER BLOCKED` line repeats that need in a sentence, so the orchestrator can
+relay it without opening the file.
+
+Every build command then puts that ask to you and waits. You reply `resume` —
+carrying what it asked for, if it named a credential — or `stop`. There is no
+`approve` at this gate, because a run that could not finish its cases is not
+something to approve. Two resumes is the limit; after that it stops.
+
+That includes `/build-auto` and `/build-auto-reviewed`. Unattended means nobody
+approves the plan, the code, or the results — not that the run may never ask a
+question it cannot proceed without. See [Test
+credentials](#test-credentials) for why waiting beats stopping here.
+
+> **Invariant:** a blocked run reaches you. It is never absorbed, retried
+> silently, or rounded up to a pass.
+
+The failure this replaced was real: a run sent raw `adb shell input keyevent 26`,
+locked the screen, then read every dead tap as a broken feature, fell back to
+`./gradlew test`, and reported `READY TO MERGE` on a feature it had never seen
+run.
+
+### No raw adb
+
+Neither the Tester nor the Test Writer has a shell, so neither can reach for
+`adb`. That is the point. A raw `adb` command acts on the *device*, not on your
+app: POWER locks the screen, HOME sends the app to the background, and every
+tap after that lands on the launcher and looks exactly like a feature that does
+not respond. That is how the false pass above happened.
+
+Nothing a test plan asks for needs the shell any more:
+
+- **Device state** (rotation, dark mode, permissions, offline, backgrounding,
+  process death, force-stop) has a tool in each test driver, named in that
+  driver's adapter.
+- **Installing the build and reading Android's crash log** are done by
+  `adt.sh`, which the build command runs, not an agent.
+- **Anything the driver cannot do** makes that case *inconclusive*, with the
+  reason, and it is listed as not verified. **Anything only you can open** (a
+  PIN, a sign-in) makes the run `BLOCKED`, as above.
+
+Neither is ever worked around. And whatever sent it, a tap that seemed to do
+nothing is first checked against the obvious explanation: is your app still in
+front?
+
+> **Invariant:** no agent that tests or judges the app runs a shell command
+> against the device.
+
+### Test credentials
+
+Because the pipeline drives development builds on development devices, the gates
+in front of them are gates the Tester may pass — a keyguard PIN or pattern, a
+device passcode, a test-account email and password, a 2FA code. It just has to be
+handed the values, and only you can hand them over.
+
+You never pass a credential on the command line. There is no `creds:` argument,
+because a PIN or a password has no natural end marker the way `doc: on` does —
+the command could not tell where your credential stopped and your feature
+request resumed without guessing, and a wrong guess writes the PIN into
+`implementation-plan.md`.
+
+Instead the Tester asks, using the blocked path it already has:
+
+```
+⛔ TESTER BLOCKED — the emulator is locked. I need the device PIN.
+
+you: resume: the PIN is 1234
+```
+
+It picks back up at the case it stopped on. The whole reply is the answer to
+that one question, so there is nothing to parse apart.
+
+**This works in every flow, including the auto ones.** They are unattended in
+the sense that nobody approves the plan, the code, or the results — but a
+blocked run is not asking for approval, it is asking for one thing it cannot
+proceed without. Stopping instead would discard a finished Architect phase and
+a finished Coder phase that a re-run has to pay for again. If nobody is
+watching, the run waits, and nothing is lost that stopping would have saved.
+
+Four rules keep that narrow:
+
+- Only the Tester ever receives them. No other agent has a use for one.
+- It types only what this run gave it. It does not guess a PIN, read one out of
+  the repository or the environment, or reuse another app's stored session — a
+  credential it was not handed is one it does not have, and that is a `BLOCKED`.
+- No value reaches an artifact: not `test-results.md`, not a screenshot, not a
+  recorded plan, not the final summary. Artifacts record *that* a sign-in
+  happened. The value stays in the conversation.
+- Test accounts only. A gate wanting a real person's account or production
+  access is a `BLOCKED`, however it was supplied.
+
 ### Retry budgets
 
 Nothing retries forever. Each budget is separate, and exhausting one stops the
@@ -393,6 +542,7 @@ pipeline with a report rather than advancing.
 | Code review gate | 2 re-runs, so 3 attempts | Stops, reporting the same |
 | Targeted re-review | 1 re-run, per fix iteration | Stops. Does not re-test, and does not spend the remaining Tester iteration |
 | Tester fix loop | 2 iterations | Stops. Never declares a `NEEDS FIXES` feature complete |
+| Blocked resumes (every build command) | 2 resumes | Stops. A device that will not cooperate is not fixed by more attempts |
 | Cross-section check | 2 rounds | Stops, reporting the failing output and the sections involved |
 | Test Writer, per flow | 3 runs while writing it | Records the flow as not checked; the Tester drives that case if its flow fails |
 | Flow run, per flow | 1 retry | Reports it `FAIL`; a pass on the retry is reported `FLAKY`, not a failure |

@@ -1235,6 +1235,30 @@ OpenCode stubs already do. Against the current prompts:
   the missing test tag by hand as a blocking finding. The commands also fall
   back to counting the Coverage table if that line is ever missing.
 
+## 16c. Merged with main: the blocked verdict, credentials and review fixes
+
+Two PRs landed on `main` while this one was open. Both are merged in.
+
+- **The blocked verdict (#14), kept.** The Tester can end on
+  `⛔ TESTER BLOCKED` with a Human Assistance Needed section. Every build
+  command then asks the person and waits for `resume` or `stop`, at most twice.
+  Test credentials reach the Tester only through a `resume` reply and are never
+  written down. The foreground check, the non-mutating probe before the first
+  case, and "never substitute the unit tests" are kept too. The one adaptation:
+  a resume re-invokes only the Tester, on the same leased device with the same
+  build and flow results, so nothing is booted, installed or run again.
+- **Raw `adb` as a declared fallback (#14), not kept.** It conflicts with this
+  PR's starting point (section 5). The Tester and the Test Writer still have no
+  shell. Device state has a driver tool for each thing a plan asks for,
+  installing and reading the crash log are `adt.sh`'s job, and a check the
+  driver cannot make is `INCONCLUSIVE` and listed as not verified. A device
+  that stops responding is `BLOCKED`. The pipeline doc's "No Raw adb" section
+  replaces "Raw adb Fallbacks", and the report and the DONE line no longer
+  carry a fallback count.
+- **Review-driven fixes (#16), unchanged.** A numbered code-review finding is
+  in scope for the Coder even where the plan is silent, and the run summary
+  lists plan departures and the reviewer's nits.
+
 ## 17. Deferred
 
 | Cut | What would bring it back |

@@ -45,7 +45,9 @@ separate mandates, and puts a reviewer between them.
   Deciding an approach is wrong is cheapest before the code exists, and a diff is
   the most expensive place to discover it.
 * In the reviewed flow, code review always covers the final state of the tree,
-  including fixes made after testing.
+  including fixes made after testing. A defect the reviewer finds gets fixed
+  even when the plan never anticipated it, and anywhere a fix had to depart from
+  the plan is reported back to you.
 * Device tests are planned before the code and written after it. The
   Architect decides what to test; once the feature exists, the Test Writer
   turns each test case into a file that runs in seconds; the Tester judges the
@@ -150,6 +152,12 @@ every new untracked file, not just what shows up in `git diff`.
 When a reviewer requests changes, the producing agent re-runs with that feedback,
 at most twice per gate. If the reviewer is still unsatisfied after the second
 re-run, the pipeline stops and reports instead of shipping rejected work.
+
+The code reviewer reviews the way a colleague would: a real bug is a blocker
+whether or not the plan anticipated it, and the Coder is allowed to fix what it
+finds even where the plan is silent. The plan is not rewritten mid-run, so on the
+rare occasion a fix has to contradict it, the run summary tells you where the two
+now disagree — along with the nits the reviewer raised but chose not to block on.
 
 ```mermaid
 flowchart LR
@@ -462,6 +470,34 @@ crashes, data loss, and regressions. Anything else it notices, such as a UX
 opinion or an unspecified edge case, is recorded as an *observation* in
 `test-results.md` for you to decide on. QA finds defects. It does not get to add
 scope mid-run.
+
+### A test that could not run never counts as a pass
+
+The Tester depends on hardware, and hardware stalls: an emulator stops taking
+input, a keyguard appears, a screen asks for an account. When that happens it
+stops on a third verdict, `BLOCKED`, and ends on `⛔ TESTER BLOCKED` with one
+concrete ask — the credential it needs, by name, or the thing only you can do.
+Every build command puts that to you and waits, `resume` picks it back up, and
+two resumes is the limit. A blocked run is never rounded up to
+`READY TO MERGE`, and it never sends a Coder to change working code over a
+locked screen.
+
+It never works around a problem with the shell, either. The Tester and the Test
+Writer have no `adb`: everything goes through the test driver, which knows which
+app is under test. A shell command acts on the whole device instead, and one
+that locks the screen makes every later tap look like a broken feature. A check
+the driver cannot make is reported as not verified, with the reason, rather
+than faked.
+
+Because these are development builds on development devices, you can also just
+tell it the PIN. The blocked run asks for what it needs and your reply carries
+it — `resume: the PIN is 1234` — and it picks back up where it stopped. That
+holds in the unattended commands too: they skip *approval* gates, but a run that
+cannot proceed is worth one question rather than a discarded Architect and
+Coder phase. There is no credential syntax on the commands themselves, so there
+is nothing to fumble: it types only what you sent in answer to its question,
+never guesses a PIN, never lifts one out of your repository or environment, and
+never writes one into `test-results.md`, a screenshot, or its summary.
 
 ### Unit tests are specified, not left to chance
 
