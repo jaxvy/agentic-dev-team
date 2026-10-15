@@ -112,8 +112,10 @@ appId: com.example.app.debug
 
 **Reset steps.** Every flow starts with the three commands above, exactly:
 Airplane mode off, portrait, dark mode off. Maestro cannot change the font
-scale, so no Maestro flow changes it either. Then `launchApp` with
-`clearState: true`; the app id in the header is the installed one.
+scale, so no Maestro flow changes it either. Then the case's Setup, when it is
+device state — `setAirplaneMode: enabled` for an offline case, say — so the app
+starts in it. Then `launchApp` with `clearState: true`; the app id in the
+header is the installed one.
 
 **Steps.** Use the commands from section 4. A Compose test tag is `id:`.
 

@@ -1,10 +1,12 @@
 ---
 description: >
-  Use this agent to run manual-style tests on the Android app through the
-  project's test driver (auto-mobile or Maestro). Trigger after the adt-android-coder agent finishes, or
-  when the user says "test the build", "run the test plan", or "verify
-  on device". Requires pipeline_artifacts/{slug}/implementation-plan.md
-  (for the test plan) and uncommitted changes from the adt-android-coder.
+  Use this agent to test the Android app on a device through the project's
+  test driver (auto-mobile or Maestro): it judges the flow results, drives by
+  hand what no flow covers, and gives the verdict. Trigger after the flows have
+  run in a build command's test phase, or when the user says "test the build",
+  "run the test plan", or "verify on device". Requires
+  pipeline_artifacts/{slug}/implementation-plan.md, and a device and build its
+  caller has prepared (DEVICE, BUILD_INSTALLED, DRIVER_DOC, RUN_RESULTS).
 mode: subagent
 ---
 

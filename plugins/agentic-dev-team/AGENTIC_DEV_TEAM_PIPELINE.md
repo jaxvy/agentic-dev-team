@@ -186,8 +186,9 @@ selector-annotated cases either way.
 ## Flows
 
 Every device test is written once, by one agent, at the right time. The
-Architect writes each case **once**, as the spec: steps with selectors and an Expected result, before
-any code exists. After the Coder, `adt-android-test-writer` turns each case into
+Architect writes each case **once**, as the spec: steps with selectors and an
+Expected result, before any code exists. After the Coder,
+`adt-android-test-writer` turns each case into
 a **flow** — the same test as a file in the test driver's own format — reading
 the code that now exists and checking each flow once on the run's device. A
 script then runs every flow with no model in the loop, and `adt-android-tester`
@@ -197,6 +198,18 @@ judges the results.
   flows; the Tester writes neither. A flow's assertions come only from its
   case's Expected — the Test Writer may add waits and scrolls the real app
   needs, never weaken a check to make it pass.
+- **The plan's selectors are requirements.** A flow reaches each element with
+  the selector the case names. When the app does not have it — a test tag the
+  Coder left out — the flow keeps the plan's selector and fails there, and the
+  Tester reports the missing selector as a blocking finding, since it
+  contradicts the plan. The Test Writer never works around it with another
+  selector, which would hide the defect and leave the suite depending on text.
+- **Every check must be able to fail.** Where a step is meant to make
+  something appear or disappear, the flow first checks that it is not already
+  so. A check that would pass before the action proves nothing.
+- **Crashes fail flows.** After each flow, the script reads Android's crash
+  log for the window the flow ran in. A crash or ANR of the app fails the flow
+  even when every check in it passed, and is never retried away as flaky.
 - **What a flow is not.** It is not a Kotlin test and not part of the build
   gate. It lives in `pipeline_artifacts/{slug}/flows/`, beside the plan.
 - **A failed flow** is driven by hand by the Tester, who decides whether the app
@@ -204,7 +217,15 @@ judges the results.
   defect is listed under "Flow Defects" in `test-results.md`, never sent to the
   Coder, and rewritten by the Test Writer before the next re-test.
 - **Cases with no flow** — one that needs a credential, or whose Expected is a
-  judgment a machine cannot check — are driven by hand by the Tester.
+  judgment a machine cannot check — are driven by hand by the Tester. A case
+  the driver can check only in part gets a **partial** flow, marked in
+  `flows/INDEX.md` with what it leaves out; the Tester checks just that part by
+  hand, and the case counts as verified only after it has.
+- **Coverage is reported, not implied.** `test-results.md` says, for every
+  case, how it was verified — by a flow, by hand — or that it was not, and
+  why. The verdict rule does not change: an unverified case is not a blocking
+  finding. But a `READY TO MERGE` with cases nobody could verify says so in
+  the summary the user reads.
 
 ## The Regression Suite
 
@@ -557,27 +578,69 @@ It differs from the full gate in scope and budget, not in authority:
 A run may only reach `READY TO MERGE` with an approval that post-dates the last
 code mutation. If the loop exits any other way, it exits through a STOP.
 
+## Before the Run
+
+Testing should never be the first place a broken setup shows up. Before any
+agent runs, each build command:
+
+1. **Resolves the script**, `adt.sh`, the same way PIPELINE_DOC was resolved:
+   the relative path `.claude/adt/scripts/adt.sh`, kept exactly like that, if
+   it exists in the project, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`.
+   It is always run as one plain command — `bash <adt.sh> …`, from the project
+   root, with no `cd`, no `&&`, no variables in front and no absolute form of
+   the relative path — so the pre-approved permission rule matches it (see
+   "Permissions" below).
+2. **Runs the preflight**, `bash <adt.sh> preflight --driver <the test
+   driver>`. It checks `adb`, the emulator and the AVDs it would boot (or the
+   attached device), and the driver: for auto-mobile, that its background
+   service is on the pinned version or can be started, which it then does; for
+   Maestro, the CLI's version and Java. Each problem is a `FAIL` line that says
+   how to fix it, and exit 16 means STOP before planning or coding anything.
+   `warn` lines go into the final summary.
+3. **Checks its own tool list** for the driver's MCP tools. None means the
+   server is not registered: STOP. Under auto-mobile, a missing
+   `mcp__auto-mobile__rotate`, `setDeviceState` or `executePlan` means its
+   hidden tools are not switched on, which the run reports at the start and in
+   the summary.
+
+Then, as soon as the plan names the slug `S` and before the Coder starts, the
+command **boots the run's device early**:
+`bash <adt.sh> device-acquire --slug S --background`. It returns at once, and
+the emulator boots while the Coder works. The test phase's own
+`device-acquire` waits for it, so the boot costs no extra time. From this
+point on, every exit releases the device.
+
+**Permissions.** `install.sh` adds the pipeline's own rules to the project's
+`.claude/settings.local.json`: `Bash(bash .claude/adt/scripts/adt.sh *)`,
+`mcp__auto-mobile__*` and `mcp__maestro__*`. The build commands also list them
+under `allowed-tools`. So Claude Code does not stop a run to ask about the
+script or the driver's tools. An agent never adds permission rules itself;
+only a person runs `install.sh` or `adt.sh allow`.
+
+**Long-running calls.** `device-acquire`, `install` and `run` can each take
+several minutes — a cold boot, a Gradle install, a long suite. Give them a
+long timeout (in Claude Code, the Bash tool's maximum, ten minutes), or run
+them in the background and wait for them to finish.
+
 ## The Test Phase
 
 The three build commands test the same way. A run leases one device for its
 whole life (Part A, "Devices"), and each test — the first one and every
-re-test in the fix loop — goes through the same steps.
-
-**The script.** Devices are handled by `adt.sh`. Resolve its path once per
-run, the same way PIPELINE_DOC was resolved: `.claude/adt/scripts/adt.sh` if
-it exists in the project, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`.
-Always run it as `bash <path> …`, from the project root. Below, `S` is the
-feature's slug, the `{slug}` in PLAN_PATH.
+re-test in the fix loop — goes through the same steps. Below, `S` is the
+feature's slug, the `{slug}` in PLAN_PATH, and `<adt.sh>` is the script
+resolved in "Before the Run".
 
 Each test:
 
 1. **Lease the device — the run's first test only.**
-   `bash <adt.sh> device-acquire --slug S`. It boots a headless emulator of the
-   run's own (never one the developer has open), waits until it is ready, and
-   prints its serial on the last line: that is `DEVICE`. Running it again for
-   the same slug in the same project returns the same device, so a re-run of a
-   command that died picks its emulator back up. If it fails, STOP and report
-   its message; there is nothing to release.
+   `bash <adt.sh> device-acquire --slug S`. It returns the device the early
+   boot started, waiting for it to finish booting; without an early boot, it
+   boots a headless emulator of the run's own (never one the developer has
+   open). It prints the serial on its last line: that is `DEVICE`. Running it
+   again for the same slug in the same project returns the same device, so a
+   re-run of a command that died picks its emulator back up. If it fails,
+   release the device (an early boot may hold one), then STOP and report its
+   message.
 2. **Install — every test.**
    `bash <adt.sh> install --slug S -- <the install command from the plan's Section 0>`.
    It installs on `DEVICE` only, and prints a UTC timestamp on its last line:
@@ -597,13 +660,13 @@ Each test:
    Retired. It runs this run's own flows plus the regression suite flows it
    selects — every P0, the named tiers per area, never a flow this run
    re-specifies — on `DEVICE` with no model in the loop, and writes
-   `pipeline_artifacts/S/run-results.md`. Exit 0 means every flow passed and
-   exit 1 that at least one failed — both continue, because judging failures is
-   the Tester's job. Any other exit: release the device, then STOP and report
-   its message. It can take several minutes, since each flow may run for up to
-   `ADT_FLOW_TIMEOUT_S` (300 s by default): give the call a long timeout (in
-   Claude Code, the Bash tool's maximum) or run it in the background and wait
-   for it to finish.
+   `pipeline_artifacts/S/run-results.md`. After each flow it reads Android's
+   crash log, so a crash or ANR of the app fails that flow even when every
+   check in it passed. Exit 0 means every flow passed and exit 1 that at least
+   one failed — both continue, because judging failures is the Tester's job.
+   Any other exit: release the device, then STOP and report its message. Each
+   flow may run for up to `ADT_FLOW_TIMEOUT_S` (300 s by default), so this is
+   one of the long-running calls in "Before the Run".
 5. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
    DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`,
    `RUN_RESULTS: pipeline_artifacts/S/run-results.md`, and whatever the command
@@ -632,7 +695,9 @@ fails, report it; the verdict stands.
 Note the time around steps 3, 4 and 5. The final summary names the test
 driver and the device, and reports, for each test, how long the Test Writer,
 the flow run and the Tester took, so the user can see where the run's time
-went. It also gives the last run's regression counts (replayed, failed, flaky),
+went. It repeats the preflight's warnings, and the Tester's Coverage: how many
+cases were verified by a flow, by hand, or not at all, with each unverified
+case and why — so `READY TO MERGE` always says how sure it is. It also gives the last run's regression counts (replayed, failed, flaky),
 any P0 warning from `run-results.md`, and the suite flows promote added,
 replaced and removed — reminding the user to commit `e2e/flows/` with the
 feature.
@@ -647,7 +712,8 @@ case by hand; to use flows instead, run the Test Writer and `adt.sh run` first.
 **Script exit codes.** 0 success, 1 a flow failed (`run` only), 2 usage, 10 no
 usable device, 11 the emulator did not start or boot, 12 the install command
 failed, 13 a device could not be stopped, 14 the driver's command line is not
-installed, 15 no device is leased for this run. Its messages say what to do;
+installed, 15 no device is leased for this run, 16 the preflight found a
+problem. Its messages say what to do;
 report them verbatim.
 
 **The Tester and the Test Writer have no shell.** Their tool lists hold file
@@ -670,6 +736,7 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
+   - **Before the run**: resolve the test driver and the script, run the preflight, and check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot.
    - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED` and `RUN_RESULTS`. It judges the flow results, drives what no flow covers, and writes `test-results.md`.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2

@@ -6,6 +6,7 @@
 #   <repo-clone>/install.sh                # install into current working directory
 #   <repo-clone>/install.sh <project-dir>  # install into the given project directory
 #   <repo-clone>/install.sh --uninstall    # uninstall from current working directory
+#   <repo-clone>/install.sh --no-allow     # install, but add no permission rules
 #
 # What it does:
 #   - For each agent, command, workflow, pipeline script and driver adapter in this repo,
@@ -17,6 +18,10 @@
 #     containing the inlined persona stubs from this repo's
 #     .agents/AGENTIC_DEV_TEAM.md (Antigravity auto-loads agents.md into
 #     user_rules).
+#   - Adds the pipeline's own permission rules (its script and the test
+#     drivers' MCP tools) to the project's .claude/settings.local.json, so
+#     Claude Code does not stop to ask mid-run. --no-allow skips this, and
+#     --uninstall removes exactly the rules it added.
 #
 # Safety:
 #   - Never overwrites a developer's own files. Real files at our install
@@ -33,9 +38,11 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Parse args: first non-flag arg is project dir; --uninstall switches mode.
 MODE="install"
 PROJECT_DIR=""
+ALLOW=1
 for arg in "$@"; do
   case "$arg" in
     --uninstall) MODE="uninstall" ;;
+    --no-allow) ALLOW=0 ;;
     -h|--help)
       sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed 's/^#//'
       exit 0
@@ -359,6 +366,11 @@ do_install() {
     echo "  synced: .agents/agents.md (marker block)"
   fi
 
+  # Pre-approve the pipeline's own commands in Claude Code.
+  if [ "$ALLOW" = 1 ] && [ -f "$REPO_DIR/.claude/adt/scripts/adt.sh" ]; then
+    bash "$REPO_DIR/.claude/adt/scripts/adt.sh" allow --project "$PROJECT_DIR" 2>&1 | sed 's/^adt: /  /'
+  fi
+
 
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
@@ -387,6 +399,11 @@ do_uninstall() {
       printf '%s\n' "$previous"
     } | awk 'NF' | sort -u
   )"
+
+  # Remove the permission rules install added, and only those.
+  if [ -f "$REPO_DIR/.claude/adt/scripts/adt.sh" ]; then
+    bash "$REPO_DIR/.claude/adt/scripts/adt.sh" allow --remove --project "$PROJECT_DIR" 2>&1 | sed 's/^adt: /  /'
+  fi
 
   local removed=0
   while IFS= read -r dest; do

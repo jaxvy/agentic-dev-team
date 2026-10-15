@@ -231,15 +231,27 @@ Every test case is written once, by one agent, at the right moment:
    Because the app now exists, it reads the real screens' code, runs each flow
    once on the emulator, and fixes how a step finds its button or how long it
    waits — never what the test checks.
-3. **A script runs every flow**, with no AI in the loop. A flow that fails is
-   run once more, so a one-off hiccup is reported as *flaky* rather than as a
-   failure.
+3. **A script runs every flow**, with no AI in the loop. After each one it
+   reads Android's crash log, so if the app crashed or froze, the test fails
+   even when everything on screen looked right. A flow that fails for any other
+   reason is run once more, so a one-off hiccup is reported as *flaky* rather
+   than as a failure.
 4. **The Tester judges the results.** A passing flow needs nothing more. For a
    failing one, the Tester repeats the case by hand on the emulator and decides
    whether the app is wrong (a finding the Coder fixes) or the flow is (the
    Test Writer rewrites it before the next test). It also drives the few cases
    no flow can cover — ones that need you to be signed in, or whose expected
-   result is a judgment, such as "the layout looks right in dark mode".
+   result is a judgment, such as "the layout looks right in dark mode" — and
+   the part of a case a flow cannot check, such as which field has focus.
+5. **The report says how sure it is.** It opens with "Verified 9 of 10 plan
+   cases; 1 not verified", and lists each case it could not verify and why. A
+   `READY TO MERGE` never hides a gap.
+
+Two rules keep the tests honest. A test uses the exact element names the plan
+asked for, so if the Coder forgot a test tag, the test fails and you hear about
+it instead of the test quietly finding the button by its label. And every check
+is made able to fail: before checking that a confirmation appeared, the test
+first checks it was not already on screen.
 
 This is what makes testing fast. A passing case costs a few seconds of the
 script's time instead of an AI working through it step by step, and a re-test
@@ -355,9 +367,10 @@ missing, adds that one line to the plan, so you do not need to do anything.
 
 ### Each run gets its own emulator
 
-When a run reaches testing, it boots an emulator of its own in the background,
-with no window. It installs the build only on that emulator, keeps it for
-every re-test, and shuts it down when the run ends.
+As soon as the plan is ready, the run starts booting an emulator of its own in
+the background, with no window, so it is ready by the time the Coder is done.
+It installs the build only on that emulator, keeps it for every re-test, and
+shuts it down when the run ends.
 
 That gives you two things:
 
@@ -386,6 +399,39 @@ All optional. Set them in your shell profile, or for Claude Code in
 | `ADT_BOOT_TIMEOUT_S` | How long to wait for the emulator to start, in seconds (default 240) |
 | `ADT_FLOW_TIMEOUT_S` | How long one flow may run before it counts as failed, in seconds (default 300) |
 | `ADT_P0_BUDGET_S` | When to warn that the P0 flows are getting slow, in seconds (default 180) |
+
+### Before a run starts
+
+Each build command first checks your setup, before any planning or coding:
+`adb`, the emulator and the AVD it would boot, and the test driver. For
+auto-mobile, that includes its background service being on the pinned version,
+and able to start. If something is wrong, the run stops right away with what to
+fix, instead of failing at testing time after the coding is done.
+
+You can run the same check yourself at any time:
+
+```bash
+bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile
+```
+
+### Running without interruptions
+
+Claude Code normally asks before running a command or using a tool for the
+first time. `install.sh` pre-approves the pipeline's own: the device script and
+the test drivers' tools. It adds three rules to your project's
+`.claude/settings.local.json`, a personal file that stays out of git:
+
+```json
+"Bash(bash .claude/adt/scripts/adt.sh *)",
+"mcp__auto-mobile__*",
+"mcp__maestro__*"
+```
+
+Run `install.sh --no-allow` to skip this; uninstalling removes exactly the
+rules it added. With the Claude Code plugin and no per-project install, the
+pre-run check notices the missing rules and prints the one command that adds
+them, with the plugin's path filled in. The build commands also pre-approve
+these for the turn they run in.
 
 ### One-time setup
 
@@ -453,7 +499,10 @@ spawning anyone, then verifies the result again after every group.
 ### The installer never overwrites anything
 
 `install.sh` only creates symlinks for files this repo owns. If something of
-yours already sits at one of those paths, it refuses and names the path.
+yours already sits at one of those paths, it refuses and names the path. The
+one file it edits, `.claude/settings.local.json`, gets only the pipeline's
+three permission rules added; every other setting stays as it was, a file that
+is not valid JSON is left alone, and uninstalling removes only those rules.
 
 ## Requirements
 
@@ -506,7 +555,11 @@ cd /path/to/your-android-project
 
 It links the agents and commands into the project's `.claude/`,
 `.agents/workflows/`, and `.opencode/`. Your existing content in those
-directories is never touched, modified, or migrated.
+directories is never touched, modified, or migrated, with one deliberate
+exception: it adds the pipeline's three permission rules to
+`.claude/settings.local.json` (see
+[Running without interruptions](#running-without-interruptions)), keeping
+every setting already there.
 
 ### Updating
 
@@ -526,8 +579,9 @@ an append.
 ~/code/agentic-dev-team/install.sh --uninstall
 ```
 
-This removes only what it created: its own symlinks, and its marker-fenced blocks
-in `.gitignore` and `.agents/agents.md`. Your files and the clone are left alone.
+This removes only what it created: its own symlinks, its marker-fenced blocks
+in `.gitignore` and `.agents/agents.md`, and the permission rules it added to
+`.claude/settings.local.json`. Your files and the clone are left alone.
 
 ## Further reading
 

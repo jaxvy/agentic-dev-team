@@ -1,6 +1,11 @@
 ---
 name: build-auto
 description: Architect → Coder → Tester for an already-specified Android feature
+allowed-tools:
+  - Bash(bash .claude/adt/scripts/adt.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh *)
+  - mcp__auto-mobile__*
+  - mcp__maestro__*
 ---
 
 You will run the Android development pipeline for: $ARGUMENTS
@@ -25,6 +30,28 @@ the way PIPELINE_DOC was found — `.claude/adt/drivers/<driver>.md` if it exist
 otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md` — and store that path as
 DRIVER_DOC. The test phase passes it on (pipeline doc Part A, "The Test
 Driver").
+
+Then resolve the device script the same way and store it as ADT_SH: the
+relative path `.claude/adt/scripts/adt.sh`, written exactly like that, if it
+exists, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`. Run it only as one
+plain command, `bash <ADT_SH> …`, from the project root: no `cd`, no `&&`, no
+variables in front, and no absolute form of the relative path — that is what
+the pre-approved permission rule matches, so the run is not stopped to ask.
+
+Preflight — still before any agent runs (pipeline doc Part B, "Before the
+Run"):
+  1. Run `bash <ADT_SH> preflight --driver <driver>`. It checks the Android
+     SDK, the AVDs, and the driver's command line and background service. On
+     exit 16, STOP and report its FAIL lines; each says how to fix it. Keep its
+     warn lines for the final summary.
+  2. Check your own tool list for the driver's MCP tools (`mcp__auto-mobile__…`
+     or `mcp__maestro__…`). None at all: STOP — the driver's MCP server is not
+     registered (README, "Choosing a test driver"). For auto-mobile, if
+     `mcp__auto-mobile__rotate`, `mcp__auto-mobile__setDeviceState` or
+     `mcp__auto-mobile__executePlan` is missing, its hidden tools are not
+     switched on: say so now and in the final summary, because rotation,
+     offline and permission cases will come back INCONCLUSIVE and the Test
+     Writer cannot check its flows.
 
 This is the /build-auto flow — assumes the feature is already understood.
 No PM phase. If the request is vague, suggest the user run /build-guided instead.
@@ -51,6 +78,12 @@ Phase 1 — Architect:
   Store the design doc path: DOC_PATH (on only)
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
+  Early boot — first, once PLAN_PATH gives the slug S: run
+  `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
+  boots this run's emulator while the Coder works; the test phase's own
+  `device-acquire` waits for it. From here on, every exit releases the device
+  (see "Release the device" below).
+
   Read PLAN_PATH Section 3 ("Work Breakdown & Execution Strategy").
   Look at the **Parallel-safe** field.
 
@@ -131,8 +164,9 @@ the promote step of the pipeline doc's Part B, "The Test Phase" (`adt.sh
 promote`, with one `--remove` per Flows Retired row and per "Suite Flows to
 Remove" entry in the last test-results.md). Never after NEEDS FIXES or a STOP.
 
-Release the device — on every exit once the test phase has leased one: before
-the summary below, and before reporting any STOP. Run the release step of the
+Release the device — on every exit from Phase 2 on, since the early boot may
+already have leased one: before the summary below, and before reporting any
+STOP. Run the release step of the
 pipeline doc's Part B, "The Test Phase". It is separate from "Close the run",
 which is skipped when there is no design doc.
 
@@ -147,7 +181,10 @@ Close the run — before the summary below, and on any exit path including a STO
   the summary.
 
 When complete, summarise the final verdict from the test-results.md in the same
-directory as PLAN_PATH, including how many fix iterations ran, and list any
+directory as PLAN_PATH — starting with its "Verified V of N plan cases; U not
+verified" line (count it from its Coverage section if the line is missing) and
+each unverified case with its reason — including how many
+fix iterations ran, any preflight warnings, and list any
 Observations the Tester recorded — those are unrequested behaviours it noticed
 and deliberately did not fix, for the user to accept or turn into a follow-up.
 Also report whether parallel execution was used and how many adt-android-coder

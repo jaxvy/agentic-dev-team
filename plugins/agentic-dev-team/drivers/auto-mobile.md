@@ -14,10 +14,12 @@ agent's rules.
   `rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan`.
   The README's Requirements give the exact registration command.
 - Its tools appear as `mcp__auto-mobile__<name>`. auto-mobile hides most of its
-  tools until they are enabled. If a tool named below is missing from your
-  tool list, the server was started without it: any case that needs it is
-  `INCONCLUSIVE`, with "auto-mobile tool `<name>` is not enabled" as the reason.
-  Never work around a missing tool.
+  tools until they are enabled. The list is fixed by whichever process starts
+  auto-mobile's background service — the MCP registration, or `adt.sh`, which
+  passes the same list — and every client then sees it. If a tool named below
+  is missing from your tool list, the service was started without it: any case
+  that needs it is `INCONCLUSIVE`, with "auto-mobile tool `<name>` is not
+  enabled" as the reason. Never work around a missing tool.
 
 ## 2. Binding to the leased device
 
@@ -67,13 +69,18 @@ auto-mobile documents as best-effort on emulators.
 `tapOn` and `sendKeys` accept a Compose test tag directly as
 `selector: {testTag: …}`.
 
-**Looking at the screen.** When you need to read the screen, use one `observe`
-that waits for it to stop changing and returns the whole hierarchy:
-`waitFor: {for: "stable"}`, `project: "full"`, `screenshot: "none"`. The
-default `observe` returns only tappable elements and does not wait, so it would
-miss a plain label and could read the screen before a save finished. Ask for a
-screenshot (`screenshot: "settled"`) only when the image itself is the evidence:
-a failure, or the final happy-path state.
+**Looking at the screen.** Call `observe` with `screenshot: "none"` and
+nothing else. It returns a compact list of what is on screen: every tappable
+element with its `label` and `sublabel` (a row's title and summary text), and
+non-tappable text such as status lines under `context`. To check whether one
+particular text or element is there — including a plain label the compact list
+leaves out — use `observe` with `waitFor` (below): it searches the whole screen
+and waits for the screen to catch up. Do not use `project: "full"` or
+`waitFor: {for: "stable"}` in 0.0.84: the first can fail with an output-schema
+error or come back as a large file instead of a result, and the second times
+out within about a second and a half on a screen that is still animating. Ask
+for a screenshot (`screenshot: "settled"`) only when the image itself is the
+evidence: a failure, or the final happy-path state.
 
 **Waiting for something.** `observe` with `waitFor` fails when its `timeout`
 passes: `waitFor: {elementId: …, timeout: 10000}` waits for an element to
@@ -120,6 +127,8 @@ steps:
 
 **Reset steps.** Every flow starts with the three steps above, exactly: Airplane
 mode off and Wi-Fi on, portrait, light theme at the default font scale. Then
+the case's Setup, when it is device state — `setDeviceState` with
+`airplaneMode: true` for an offline case, say — so the app starts in it. Then
 `launchApp` with the installed app id and `clearAppData: true`.
 
 **Steps.** Use the tools from section 4, with the same arguments a direct call
@@ -134,8 +143,11 @@ as an assertion. `waitFor` does not match test tags directly: a Compose tag is
 found by `elementId` only when the app sets `testTagsAsResourceId`.
 
 **Checking a flow.** Run it with one `executePlan` call: the file's content as
-`planContent`, and `platform: "android"`. The result's `success` says whether
-it passed; on a failure, `failedStep` gives the step's index, tool and error.
+`planContent`, `platform: "android"`, and `deviceId: DEVICE` — without it,
+auto-mobile refuses the call whenever more than one device is attached. The
+result's `success` says whether it passed; on a failure, `failedStep` gives the
+step's index, tool and error. `executePlan` ends your device session when it
+finishes, so bind to `DEVICE` again before your next call.
 
 ## 6. How the script runs flows
 

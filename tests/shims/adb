@@ -4,6 +4,9 @@
 #   avd.<serial>        the AVD name `emu avd name` reports
 #   booted.<serial>     present once sys.boot_completed is 1
 #   stubborn.<serial>   present = `emu kill` is ignored
+#   clock               a fake device clock: each `date` call advances it
+#   logcat.<serial>     fake log lines, "<clock> TAB <line>"; `logcat -T <t>`
+#                       prints the lines written at or after <t>
 #   adb.calls           every invocation, one per line
 state="${FAKE_ADT_STATE:?}"
 mkdir -p "$state/dev"
@@ -38,8 +41,23 @@ case "${1:-}" in
       "getprop sys.boot_completed")
         if [ -f "$state/booted.$serial" ]; then echo 1; else echo; fi
         ;;
+      date*)
+        clock=$(( $(cat "$state/clock" 2>/dev/null || echo 0) + 1 ))
+        echo "$clock" > "$state/clock"
+        printf '10-14 12:00:00.%03d\r\n' "$clock"
+        ;;
       *) : ;;
     esac
+    ;;
+  logcat)
+    since=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -T) since="${2##*.}"; since=$((10#$since)); shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    [ -f "$state/logcat.$serial" ] && awk -F'\t' -v s="$since" '$1 + 0 >= s { print $2 }' "$state/logcat.$serial"
     ;;
   *) : ;;
 esac

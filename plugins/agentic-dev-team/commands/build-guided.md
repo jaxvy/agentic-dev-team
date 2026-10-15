@@ -1,6 +1,11 @@
 ---
 name: build-guided
 description: PM → Architect → Coder → Tester for a vague Android idea, with human gates
+allowed-tools:
+  - Bash(bash .claude/adt/scripts/adt.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh *)
+  - mcp__auto-mobile__*
+  - mcp__maestro__*
 ---
 
 You will run the full Android pipeline with human approval gates for:
@@ -26,6 +31,28 @@ the way PIPELINE_DOC was found — `.claude/adt/drivers/<driver>.md` if it exist
 otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md` — and store that path as
 DRIVER_DOC. The test phase passes it on (pipeline doc Part A, "The Test
 Driver").
+
+Then resolve the device script the same way and store it as ADT_SH: the
+relative path `.claude/adt/scripts/adt.sh`, written exactly like that, if it
+exists, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`. Run it only as one
+plain command, `bash <ADT_SH> …`, from the project root: no `cd`, no `&&`, no
+variables in front, and no absolute form of the relative path — that is what
+the pre-approved permission rule matches, so the run is not stopped to ask.
+
+Preflight — still before any agent runs (pipeline doc Part B, "Before the
+Run"):
+  1. Run `bash <ADT_SH> preflight --driver <driver>`. It checks the Android
+     SDK, the AVDs, and the driver's command line and background service. On
+     exit 16, STOP and report its FAIL lines; each says how to fix it. Keep its
+     warn lines for the final summary.
+  2. Check your own tool list for the driver's MCP tools (`mcp__auto-mobile__…`
+     or `mcp__maestro__…`). None at all: STOP — the driver's MCP server is not
+     registered (README, "Choosing a test driver"). For auto-mobile, if
+     `mcp__auto-mobile__rotate`, `mcp__auto-mobile__setDeviceState` or
+     `mcp__auto-mobile__executePlan` is missing, its hidden tools are not
+     switched on: say so now and in the final summary, because rotation,
+     offline and permission cases will come back INCONCLUSIVE and the Test
+     Writer cannot check its flows.
 
 This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
@@ -85,6 +112,12 @@ Phase 2 — Architect (after approval):
   in the design doc's Implementation Notes at the end of the run (Phase 5).
 
 Phase 3 — Coder (after approval, execution strategy decided by Architect):
+  Early boot — first, once PLAN_PATH gives the slug S: run
+  `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
+  boots this run's emulator while the Coder works; the test phase's own
+  `device-acquire` waits for it. From here on, every exit releases the device
+  (see "Release the device" below).
+
   Read PLAN_PATH Section 3. Check the **Parallel-safe** field.
 
   If Parallel-safe is YES, run the parallel-safety pre-check before anything
@@ -145,8 +178,10 @@ Phase 4 — Tester (after approval):
   The device stays up while you wait at the gate below, so a `revise:`
   re-tests without a new boot.
   Summarise the final test results for the user from the test-results.md
-  in the same directory as PLAN_PATH, with the flow counts from RUN_RESULTS
-  (passed, failed, flaky). Present blocking findings and Observations
+  in the same directory as PLAN_PATH: first its "Verified V of N plan cases;
+  U not verified" line (count it from its Coverage section if the line is
+  missing) and each unverified case with its reason, then the
+  flow counts from RUN_RESULTS (passed, failed, flaky). Present blocking findings and Observations
   separately: blocking findings are defects against the plan;
   Observations are unrequested behaviours the Tester noticed and did not fix,
   which only you — the user — can promote into requirements.
@@ -179,8 +214,9 @@ Part B, "The Test Phase" (`adt.sh promote`, with one `--remove` per Flows
 Retired row and per "Suite Flows to Remove" entry in the last test-results.md),
 before releasing the device. Never on `stop`, after NEEDS FIXES, or on a STOP.
 
-Release the device — whenever the run ends once Phase 4 has leased one: on
-`approve` at Phase 4, on `stop` at any gate, and on a STOP of your own. Run the
+Release the device — whenever the run ends from Phase 3 on, since the early
+boot may already have leased one: on `approve` at Phase 4, on `stop` at any
+gate, and on a STOP of your own. Run the
 release step of the pipeline doc's Part B, "The Test Phase", before anything
 else in Phase 5. It is separate from Phase 5, which is skipped when there is no
 design doc.
@@ -200,7 +236,7 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
   alongside the test verdict and the list of changed files.
 
 Whenever the run ends, include the test driver, the device the run tested on,
-and for each test phase how long the Test Writer, the flow run and the Tester
+any preflight warnings, and for each test phase how long the Test Writer, the flow run and the Tester
 took (Part B, "The Test Phase") in what you report — plus the regression
 counts, any P0 warning, and the suite flows promote added, replaced and
 removed, with a reminder to commit `e2e/flows/` alongside the feature.

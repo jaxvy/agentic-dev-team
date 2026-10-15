@@ -1,10 +1,11 @@
 # Tester v2: one emulator per feature, a Test Writer after the Coder, two drivers, and a regression suite
 
-**Status**: implemented on branch `claude/tester-v2`, one commit per PR below · **Date**: 2026-10-13, updated 2026-10-14 · **Owner**: jaxvy
+**Status**: implemented on branch `claude/tester-v2`, one commit per PR below, plus a sixth commit · **Date**: 2026-10-13, updated 2026-10-15 · **Owner**: jaxvy
 
 > **As implemented.** The five PRs below landed as five commits in one pull
-> request. Where the code differs from this proposal, the code and the
-> "As implemented" section at the end of Part 2 are right; the rest of this
+> request, and a sixth commit (section 16b) made testing check itself and fail
+> fast. Where the code differs from this proposal, the code and the "As
+> implemented" sections at the end of Part 2 are right; the rest of this
 > document is the reasoning, kept as written.
 
 ## What this gives you
@@ -1165,6 +1166,74 @@ fake command and by its source and docs), the agents themselves in a full
 `/build-*` run (the new Test Writer agent cannot be loaded into the session
 that wrote it), Compose test tags through `testTagsAsResourceId`, and
 Antigravity and OpenCode.
+
+## 16b. Commit 6: testing that checks itself and fails fast
+
+Five additions, chosen after reviewing what still stopped the pipeline from
+running unattended and reporting with confidence.
+
+| Addition | What it does |
+|---|---|
+| **Preflight** | `adt.sh preflight --driver D` runs before any agent: `adb`, the emulator and the AVD it would boot (or the attached device), and the driver — auto-mobile's background service on the pinned version, or started now so a service that cannot start is found now; Maestro's version and Java. Exit 16 STOPs the run in its first minute. The orchestrator also checks its own tool list for the driver's MCP tools. |
+| **Early boot** | `device-acquire --slug S --background` right after the plan exists. The emulator boots while the Coder works; the test phase's `device-acquire` waits for it. A per-run lock (`mkdir`, with the holder's PID) makes the two acquires share one emulator. Reusing a lease now waits for boot to finish. |
+| **Crash detection** | `run` reads `logcat -b crash,system -T <device time>` after each flow. A `FATAL EXCEPTION`, native crash or ANR of the flow's app (its `appId`) fails the flow, is not retried, and its crash log is appended to the flow's log. Under Maestro, one call runs every flow, so a crash becomes its own row. |
+| **Pre-approval** | The preflight warns, with the exact command, when no settings file pre-approves the pipeline. `adt.sh allow` adds `Bash(bash .claude/adt/scripts/adt.sh *)`, `mcp__auto-mobile__*` and `mcp__maestro__*` to `.claude/settings.local.json`, records what it added under `~/.adt/allowed/`, and keeps a new file out of git through `.git/info/exclude`. `install.sh` runs it (`--no-allow` skips it) and `--uninstall` removes exactly those rules. The build commands list the same rules under `allowed-tools`. Only a person grants them. |
+| **Honest coverage** | The Test Writer keeps the plan's selectors (a missing test tag fails the flow and becomes a blocking finding instead of being routed around) and makes every check able to fail (it checks the result is not already on screen first). The Tester's report opens with `Verified V of N plan cases; U not verified.` and a Coverage table that puts every case in one row. |
+
+**Found while building it, on this machine:**
+
+- The shared auto-mobile service was 30 days old and every call to it from
+  0.0.84, the session's MCP tools included, timed out. The preflight catches
+  this in one second. After it was stopped, 0.0.84 could not start on the old
+  database (`duplicate column name: size_unknown`); the preflight now starts
+  the service and names the fix (move `~/.auto-mobile/auto-mobile.db` aside).
+- auto-mobile's enabled-tools list belongs to whichever process starts its
+  service, not to each client. So `adt.sh` now passes the same
+  `AUTOMOBILE_ENABLED_TOOLS` on every call, in case it is the one that starts
+  the service.
+- `observe` with `project: "full"` fails with an output-schema error or comes
+  back as a large file, and `waitFor: {for: "stable"}` times out in about a
+  second and a half. The auto-mobile adapter now uses the default compact
+  `observe`, and `waitFor` on a specific text or element.
+- `executePlan` through MCP needs `deviceId` when more than one device is
+  attached, and ends the device session; the adapter says so.
+
+**A real trial of the agents.** The Test Writer and the Tester ran for real on
+a five-case plan for Android's Settings app. The Test Writer wrote four flows
+and gave the sign-in case none. It kept an impossible Expected (the flow fails)
+and a missing test tag (the flow fails at the tap) instead of working around
+either. It checked each result was not already on screen first. Re-run with
+`CASES`, it rewrote only the case it was sent back. The script ran the flows
+in 83–91 seconds. The Tester returned `NEEDS FIXES` with exactly the two
+planted defects as blocking findings, each traced to the plan, and listed the
+sign-in case as not verified. The trial also found the adapter problems above
+and three behaviours now fixed in the prompts: the case's Setup goes before
+the launch; no extra diagnostic runs; passed cases are not driven again. A
+second Tester run took 5.7 minutes instead of 7.5 and 34 tool calls instead
+of 43, with the same verdict.
+
+**One caution, found the hard way.** Claude Code loads a subagent's definition
+once per session and does not reload it when the file changes. The trial agents
+above therefore ran an older copy of their own prompts, and followed the new
+rules only where the pipeline doc, which they read at run time, also states
+them. So the final trial ran each agent from its current file, the way the
+OpenCode stubs already do. Against the current prompts:
+
+- **Test Writer:** 25 tool calls instead of 57. It put the offline case's
+  Setup before the launch, kept the impossible Expected, and made every check
+  able to fail. It gave the search case no flow, because the driver cannot
+  check its "field is focused" Expected — which is now handled by a
+  **partial** flow: the flow checks what the driver can, `flows/INDEX.md`
+  names what it leaves out, and the Tester checks only that by hand.
+- **Flow run:** it showed that auto-mobile writes a result over 64 KB to a
+  file and prints only a pointer, so a passing flow was reported as failing
+  with no reason. `run` now follows the pointer, keeps the full result with the
+  run's logs, and names the exit code when a failure gives no reason.
+- **Tester:** 26 tool calls. Its report opened with exactly
+  `Verified 4 of 5 plan cases; 1 not verified.`, had a `## Coverage` section
+  with every case in one row, did not drive the passed cases again, and found
+  the missing test tag by hand as a blocking finding. The commands also fall
+  back to counting the Coverage table if that line is ever missing.
 
 ## 17. Deferred
 

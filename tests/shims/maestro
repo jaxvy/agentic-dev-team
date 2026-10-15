@@ -6,6 +6,7 @@
 # $FAKE_ADT_STATE/maestro.calls.
 state="${FAKE_ADT_STATE:?}"
 device="" output="" files=()
+if [ "${1:-}" = "--version" ]; then cat "$state/maestro.version" 2>/dev/null || echo "2.11.0"; exit 0; fi
 while [ $# -gt 0 ]; do
   case "$1" in
     --device) device="$2"; shift 2 ;;
@@ -16,6 +17,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 echo "test device=$device flows=${#files[@]}" >> "$state/maestro.calls"
+clock="$(cat "$state/clock" 2>/dev/null || echo 0)"
 failures=0
 {
   echo '<?xml version="1.0" encoding="UTF-8"?>'
@@ -25,6 +27,11 @@ failures=0
     name="$(basename "$f" .yaml)"
     outcome=pass
     if grep -q '# fake: fail' "$f"; then outcome=fail; fi
+    if grep -q '# fake: crash' "$f"; then
+      app="$(sed -n 's/^appId: *//p' "$f" | head -n 1)"
+      printf '%s\t%s\n' "$clock" "10-14 12:00:01.000  4242  4242 E AndroidRuntime: Process: $app, PID: 4242" >> "$state/logcat.$device"
+      printf '%s\t%s\n' "$clock" "10-14 12:00:01.000  4242  4242 E AndroidRuntime: java.lang.NullPointerException: crash in a passing flow" >> "$state/logcat.$device"
+    fi
     if grep -q '# fake: flaky' "$f" && [ ! -f "$state/flaky.$name" ]; then
       touch "$state/flaky.$name"; outcome=fail
     fi
@@ -33,7 +40,7 @@ failures=0
     else
       failures=$((failures + 1))
       echo "    <testcase id=\"$name\" name=\"$name\" classname=\"$name\" file=\"$f\" time=\"3.2\" status=\"ERROR\">"
-      echo "      <failure>Assertion is false: id: order_confirmation_title is visible</failure>"
+      echo "      <failure>Assertion is false: id: &quot;order_confirmation_title&quot; is visible &amp; enabled</failure>"
       echo "    </testcase>"
     fi
   done

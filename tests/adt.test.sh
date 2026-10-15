@@ -55,6 +55,7 @@ setup() {
   export FAKE_ADT_STATE="$SANDBOX/state"
   export ADT_HOME="$SANDBOX/adt-home"
   export ANDROID_HOME="$SANDBOX/sdk"
+  export CLAUDE_CONFIG_DIR="$SANDBOX/claude-config"
   unset ANDROID_SDK_ROOT ADT_AVD ADT_DEVICE_MODE ADT_HEADLESS ANDROID_SERIAL
   export ADT_BOOT_TIMEOUT_S=6
   export ADT_PORT_FIRST=15554
@@ -86,7 +87,7 @@ adt() {
 
 lease_file() { cat "$ADT_HOME/leases/$1/$2" 2>/dev/null; }
 device_state() { cat "$FAKE_ADT_STATE/dev/$1" 2>/dev/null; }
-boots() { grep -c -- '-read-only' "$FAKE_ADT_STATE/emulator.calls" 2>/dev/null || echo 0; }
+boots() { local n; n="$(grep -c -- '-read-only' "$FAKE_ADT_STATE/emulator.calls" 2>/dev/null)"; echo "${n:-0}"; }
 
 # A device that is online and not started by adt.sh, e.g. your own emulator.
 attach() {
@@ -308,6 +309,7 @@ flow() {
     echo "# adt:driver: $4"
     [ -n "${5:-}" ] && echo "# fake: $5"
     echo "name: $(basename "$3" .yaml)"
+    echo "appId: com.example.app"
     echo "steps:"
     echo "  - tool: launchApp"
   } > "$f"
@@ -359,6 +361,14 @@ adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
 expect_code "with no failing flow, the run passes" 0 $?
 expect_eq "and run-results.md is rewritten, not appended" "0" "$(grep -c '^| 02-fail' "$SANDBOX/proj1/pipeline_artifacts/a/run-results.md")"
 
+flow "$SANDBOX/proj1" a 06-big.yaml auto-mobile big
+flow "$SANDBOX/proj1" a 07-quiet.yaml auto-mobile quiet-fail
+adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+row_has "a passing flow whose result was too big to print is PASS" "$SANDBOX/proj1" a 06-big "| PASS |"
+expect_true "  (its full result is kept with the run's logs)" grep -q '"success":true' "$SANDBOX/proj1/pipeline_artifacts/a/run-logs/feature-06-big.attempt1.log.out"
+row_has "a failure with no error message still says why" "$SANDBOX/proj1" a 07-quiet "| FAIL | auto-mobile exited with code 3 and no error; see the log |"
+rm -f "$SANDBOX/proj1/pipeline_artifacts/a/flows/06-big.yaml" "$SANDBOX/proj1/pipeline_artifacts/a/flows/07-quiet.yaml"
+
 flow "$SANDBOX/proj1" a 05-hang.yaml auto-mobile hang
 ADT_FLOW_TIMEOUT_S=2 adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
 expect_code "a flow that hangs fails the run" 1 $?
@@ -380,7 +390,7 @@ expect_eq "one maestro call for all flows, one for the retries, on the leased de
   "test device=$serial flows=3
 test device=$serial flows=2" "$(cat "$FAKE_ADT_STATE/maestro.calls")"
 row_has "PASS, with its time from the report (a path with a space)" "$SANDBOX/my project" m 01-pass "| PASS |  | 2 |"
-row_has "FAIL, with the report's failure message" "$SANDBOX/my project" m 02-fail "| FAIL | Assertion is false: id: order_confirmation_title is visible |"
+row_has "FAIL, with the report's failure message, unescaped" "$SANDBOX/my project" m 02-fail '| FAIL | Assertion is false: id: "order_confirmation_title" is visible & enabled |'
 row_has "FLAKY when it passes on the retry" "$SANDBOX/my project" m 03-flaky "| FLAKY |"
 row_has "an auto-mobile flow is SKIPPED in a Maestro run" "$SANDBOX/my project" m 04-automobile "| SKIPPED | written for auto-mobile |"
 unset ADT_AUTOMOBILE ADT_MAESTRO
@@ -471,6 +481,176 @@ expect_true "--remove never deletes a flow this run just replaced" [ -f "$SANDBO
 adt "$SANDBOX/proj2" promote --slug nothing >/dev/null 2>&1
 expect_code "promote with no run results is refused" 2 $?
 unset ADT_AUTOMOBILE
+
+# ---------- crashes ----------
+
+echo "crash detection"
+setup
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile" ADT_MAESTRO="$SHIMS/maestro"
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug c 2>/dev/null | tail -n 1)"
+flow "$SANDBOX/proj1" c 01-crash.yaml auto-mobile crash
+flow "$SANDBOX/proj1" c 02-anr.yaml auto-mobile anr
+flow "$SANDBOX/proj1" c 03-other-app.yaml auto-mobile other-crash
+flow "$SANDBOX/proj1" c 04-clean.yaml auto-mobile
+adt "$SANDBOX/proj1" run --slug c --driver auto-mobile >/dev/null 2>&1
+expect_code "a crash fails the run, even though every check passed" 1 $?
+row_has "a crash of the app is FAIL, with the exception" "$SANDBOX/proj1" c 01-crash "| FAIL | app crashed: java.lang.IllegalStateException: boom |"
+row_has "an ANR of the app is FAIL" "$SANDBOX/proj1" c 02-anr "| FAIL | app not responding (ANR) |"
+row_has "another app crashing does not fail the flow" "$SANDBOX/proj1" c 03-other-app "| PASS |"
+row_has "a crash in an earlier flow does not leak into a later one" "$SANDBOX/proj1" c 04-clean "| PASS |"
+expect_eq "a crash is not retried" "1" "$(grep -c 'name=01-crash' "$FAKE_ADT_STATE/automobile.calls")"
+expect_true "the crash log is saved with the flow's log" grep -q 'IllegalStateException: boom' "$SANDBOX/proj1/pipeline_artifacts/c/run-logs/feature-01-crash.attempt1.log"
+expect_eq "every auto-mobile call carries the pipeline's tool list" \
+  "rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan" "$(cat "$FAKE_ADT_STATE/automobile.tools")"
+
+echo "crash detection, Maestro"
+setup
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile" ADT_MAESTRO="$SHIMS/maestro"
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug m 2>/dev/null | tail -n 1)"
+flow "$SANDBOX/proj1" m 01-crash.yaml maestro crash
+flow "$SANDBOX/proj1" m 02-clean.yaml maestro
+adt "$SANDBOX/proj1" run --slug m --driver maestro >/dev/null 2>&1
+expect_code "a crash during a Maestro run fails it" 1 $?
+row_has "as its own row, since one Maestro call ran every flow" "$SANDBOX/proj1" m crash-check-1 "| check | — | FAIL | app crashed: java.lang.NullPointerException: crash in a passing flow (com.example.app, during the Maestro run) |"
+unset ADT_AUTOMOBILE ADT_MAESTRO
+
+# ---------- early boot ----------
+
+echo "device-acquire --background"
+setup
+start=$(date +%s)
+adt "$SANDBOX/proj1" device-acquire --slug b --background >/dev/null 2>&1
+expect_code "--background returns at once" 0 $?
+expect_true "  (in under two seconds)" [ $(( $(date +%s) - start )) -le 2 ]
+out="$(adt "$SANDBOX/proj1" device-acquire --slug b 2>/dev/null | tail -n 1)"
+expect_eq "a later device-acquire waits for that device and prints it" "emulator-15554" "$out"
+expect_eq "only one emulator was booted" "1" "$(boots)"
+expect_eq "and it has finished booting" "device" "$(device_state "$out")"
+
+setup
+adt "$SANDBOX/proj1" device-acquire --slug b --background >/dev/null 2>&1
+out="$(adt "$SANDBOX/proj1" device-acquire --slug b 2>/dev/null | tail -n 1)"
+out2="$(adt "$SANDBOX/proj1" device-acquire --slug b 2>/dev/null | tail -n 1)"
+expect_eq "acquiring right after a background boot, twice, still boots once" "1 $out" "$(boots) $out2"
+
+# ---------- preflight ----------
+
+# preflight <project> <driver> — runs with the fake ps on PATH.
+preflight() {
+  (cd "$1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" preflight --driver "$2" 2>&1)
+}
+
+echo "preflight"
+setup
+mkdir -p "$SANDBOX/bin"
+ln -s "$SHIMS/ps" "$SANDBOX/bin/ps"
+# The pinned version is read from the command, as with the real default.
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile @kaeawc/auto-mobile@0.0.84" ADT_MAESTRO="$SHIMS/maestro"
+out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
+expect_code "a ready machine passes" 0 $rc
+expect_true "  (it names the AVD it will boot)" grep -q '^ok    AVD: Pixel_A' <<EOF
+$out
+EOF
+expect_true "  (and recommends setting ADT_AVD)" grep -q '^warn  ADT_AVD is not set' <<EOF
+$out
+EOF
+expect_eq "preflight leases and boots nothing" "0 " "$(boots) $(ls "$ADT_HOME/leases" 2>/dev/null)"
+
+echo "running 0.0.80" > "$FAKE_ADT_STATE/daemon"
+out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
+expect_code "an auto-mobile service on another version fails preflight" 16 $rc
+expect_true "  (and says how to fix it)" grep -q 'runs 0.0.80, but the pipeline uses' <<EOF
+$out
+EOF
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" preflight "$SANDBOX/proj1" auto-mobile > /dev/null
+expect_code "  (a command with no pinned version skips the version check)" 0 $?
+
+echo "not-running" > "$FAKE_ADT_STATE/daemon"
+echo "56825 /opt/homebrew/bin/bun /tmp/auto-mobile/dist/src/index.js --daemon-mode --daemon-socket-path=x" > "$FAKE_ADT_STATE/ps"
+out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
+expect_code "a service this version cannot reach fails preflight" 16 $rc
+expect_true "  (and names the PID to stop)" grep -q 'Stop it with: kill 56825' <<EOF
+$out
+EOF
+: > "$FAKE_ADT_STATE/ps"
+echo db > "$FAKE_ADT_STATE/daemon-start"
+out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
+expect_code "a service that cannot start fails preflight" 16 $rc
+expect_true "  (with the way out for a broken database)" grep -q 'mv ~/.auto-mobile/auto-mobile.db ~/.auto-mobile/auto-mobile.db.bak' <<EOF
+$out
+EOF
+echo ok > "$FAKE_ADT_STATE/daemon-start"
+out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
+expect_code "no service running yet: preflight starts it" 0 $rc
+expect_true "  (and says so)" grep -q '^ok    auto-mobile: started its background service' <<EOF
+$out
+EOF
+
+export ADT_AVD=Nope
+preflight "$SANDBOX/proj1" auto-mobile > /dev/null
+expect_code "an unknown ADT_AVD fails preflight" 16 $?
+export ADT_AVD=Pixel_A
+attach emulator-5554 Pixel_A
+preflight "$SANDBOX/proj1" auto-mobile > /dev/null
+expect_code "an ADT_AVD open in normal mode fails preflight" 16 $?
+unset ADT_AVD
+attach emulator-5556 Pixel_B
+out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
+expect_code "every AVD open, but a device attached: a warning, not a failure" 0 $rc
+expect_true "  (naming the device it would use)" grep -q '^warn  every AVD is open in normal mode, so the run will test on emulator-5554' <<EOF
+$out
+EOF
+rm -f "$FAKE_ADT_STATE/dev/emulator-5554" "$FAKE_ADT_STATE/dev/emulator-5556"
+: > "$FAKE_ADT_STATE/avds"
+preflight "$SANDBOX/proj1" auto-mobile > /dev/null
+expect_code "no AVD and no device fails preflight" 16 $?
+printf 'Pixel_A\n' > "$FAKE_ADT_STATE/avds"
+
+ADT_AUTOMOBILE=/nonexistent/bunx preflight "$SANDBOX/proj1" auto-mobile > /dev/null
+expect_code "a missing auto-mobile command fails preflight" 16 $?
+preflight "$SANDBOX/proj1" maestro > /dev/null
+expect_code "Maestro 2.11.0 passes" 0 $?
+echo "2.9.1" > "$FAKE_ADT_STATE/maestro.version"
+preflight "$SANDBOX/proj1" maestro > /dev/null
+expect_code "Maestro older than 2.11.0 fails preflight" 16 $?
+ADT_MAESTRO=/nonexistent/maestro preflight "$SANDBOX/proj1" maestro > /dev/null
+expect_code "a missing Maestro fails preflight" 16 $?
+expect_true "with no permission rules anywhere, preflight says how to add them" grep -q "^warn  in Claude Code, the pipeline's own commands are not pre-approved" <<EOF
+$(preflight "$SANDBOX/proj1" maestro)
+EOF
+adt "$SANDBOX/proj1" allow >/dev/null 2>&1
+expect_true "after allow, that warning is gone" sh -c "! grep -q 'not pre-approved' <<EOF
+$(preflight "$SANDBOX/proj1" maestro)
+EOF"
+unset ADT_AUTOMOBILE ADT_MAESTRO
+
+# ---------- allow ----------
+
+echo "allow"
+setup
+settings="$SANDBOX/proj1/.claude/settings.local.json"
+adt "$SANDBOX/proj1" allow >/dev/null 2>&1
+expect_code "allow succeeds" 0 $?
+expect_eq "it writes the three rules" '["Bash(bash .claude/adt/scripts/adt.sh *)", "mcp__auto-mobile__*", "mcp__maestro__*"]' \
+  "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["permissions"]["allow"]))' "$settings")"
+expect_true "and keeps the new file out of git without touching .gitignore" git -C "$SANDBOX/proj1" check-ignore -q "$settings"
+expect_true "  (.gitignore was not created)" [ ! -f "$SANDBOX/proj1/.gitignore" ]
+before="$(cksum < "$settings")"
+adt "$SANDBOX/proj1" allow >/dev/null 2>&1
+expect_eq "running it again changes nothing" "$before" "$(cksum < "$settings")"
+adt "$SANDBOX/proj1" allow --remove >/dev/null 2>&1
+expect_true "--remove takes them out, and deletes a file that held only them" [ ! -f "$settings" ]
+
+mkdir -p "$SANDBOX/proj2/.claude"
+printf '{"model": "opus", "permissions": {"allow": ["Bash(npm test *)", "mcp__maestro__*"]}}\n' > "$SANDBOX/proj2/.claude/settings.local.json"
+adt "$SANDBOX/proj2" allow >/dev/null 2>&1
+adt "$SANDBOX/proj2" allow --remove >/dev/null 2>&1
+expect_eq "--remove leaves the developer's own settings and rules, even one it would have added" \
+  '{"model": "opus", "permissions": {"allow": ["Bash(npm test *)", "mcp__maestro__*"]}}' \
+  "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$SANDBOX/proj2/.claude/settings.local.json")"
+printf 'not json' > "$SANDBOX/proj2/.claude/settings.local.json"
+adt "$SANDBOX/proj2" allow >/dev/null 2>&1
+expect_eq "a settings file that is not valid JSON is left alone" "not json" "$(cat "$SANDBOX/proj2/.claude/settings.local.json")"
 
 # ---------- summary ----------
 

@@ -230,12 +230,22 @@ written well.
 | The run | `adt.sh run` | Every test and re-test | Every flow, with no model in the loop. A failure gets one retry; a pass on the retry is `FLAKY` |
 | The verdict | Tester | After the run | Passing flows need nothing. A failing one is driven by hand to decide: the app is wrong, or the flow is |
 
-Three rules keep it honest:
+Six rules keep it honest:
 
 * **A flow's checks come only from its case's Expected.** The Test Writer may
   add a wait or a scroll the real app needs. It never loosens a check to make it
   pass; if the app does not show what the case expects, the flow fails, and
   that is the Tester's call.
+* **The plan's selectors are requirements.** A flow reaches each element with
+  the selector its case names. If the Coder left out a test tag, the flow keeps
+  the plan's selector and fails there, and the Tester reports it as a blocking
+  finding — instead of the test quietly finding the button by its label.
+* **Every check can fail.** Where a step should make something appear or go
+  away, the flow first checks that it has not already happened.
+* **Crashes fail tests.** After each flow, the script reads Android's crash
+  log for the time the flow ran. A crash or "app not responding" of the app
+  fails the flow even if every check passed, and is never retried away as
+  flaky.
 * **The agent that judges never writes the test.** The Tester never creates or
   edits a flow. A flow that fails while the case passes by hand is listed under
   "Flow Defects" in `test-results.md`, never sent to the Coder, and rewritten
@@ -247,7 +257,15 @@ Three rules keep it honest:
 
 Cases that need a credential, or whose Expected is a judgment a machine cannot
 check, get no flow. The Tester drives those by hand, and `flows/INDEX.md` says
-why each one has none.
+why each one has none. A case a flow can check only in part — the screen opens,
+but not which field has focus — gets a *partial* flow, and the Tester checks
+just the part it leaves out.
+
+**The report says how sure it is.** `test-results.md` opens with "Verified V
+of N plan cases; U not verified", and its Coverage table puts every case in
+exactly one row: its flow passed, driven by hand, failed, or not verified with
+the reason. The verdict rule is unchanged — an unverified case is not a
+blocking finding — but the gap is never hidden.
 
 ### The regression suite
 
@@ -301,13 +319,16 @@ that run alone, so two features in two git worktrees can be tested at the same
 time.
 
 ```
-first test:  device-acquire  ->  install  ->  Tester
-re-test:                         install  ->  Tester      (same device)
-run ends:    device-release                               (also on any stop)
+plan ready:  device-acquire --background                  (boots while the Coder works)
+first test:  device-acquire  ->  install  ->  flows  ->  Tester
+re-test:                         install  ->  flows  ->  Tester    (same device)
+run ends:    device-release                                        (also on any stop)
 ```
 
-* **One device per run.** The first test leases it; every re-test reuses it,
-  so a fix loop never waits for a second boot. It stays up while a Coder fixes
+* **One device per run, booted early.** As soon as the plan names the
+  feature, the run starts booting its emulator in the background, so the boot
+  overlaps the Coder's work. The first test waits for it if it is not ready
+  yet; every re-test reuses it, so a fix loop never waits for a second boot. It stays up while a Coder fixes
   something, and in `/build-guided` while the run waits for you.
 * **Installs land only there.** The install command runs with `ANDROID_SERIAL`
   set to the run's device.
@@ -323,6 +344,22 @@ run ends:    device-release                               (also on any stop)
 
 The settings and the one-time AVD setup are in the README, under
 [Testing on a device](README.md#testing-on-a-device).
+
+### Before a run: preflight and permissions
+
+Each build command checks the machine before any agent runs, with
+`adt.sh preflight`: `adb`, the emulator and the AVD it would boot (or the
+attached device), and the test driver — for auto-mobile, that its background
+service is on the pinned version or can be started; for Maestro, its version
+and Java. A problem stops the run in its first minute, with the fix, instead of
+at the test phase after the planning and coding are paid for. The command also
+checks its own tool list for the driver's MCP tools.
+
+So that a run is not stopped to ask permission, `install.sh` adds three rules
+to the project's `.claude/settings.local.json` — the device script and the two
+drivers' MCP tools — and the build commands list the same rules under
+`allowed-tools`. Only a person grants these, by running `install.sh` or
+`adt.sh allow`; no agent changes its own permissions.
 
 ### Blocking findings and observations
 
@@ -563,8 +600,8 @@ those directories. The clone's
 `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, which leaves the
 project-side path above unchanged, so installed projects need no re-install.
 
-Two further changes happen through marker-fenced managed blocks rather than
-symlinks.
+Three further changes happen outside symlinks: two marker-fenced managed
+blocks, and three permission rules.
 
 **`.gitignore`** gains a block listing the symlink paths above, plus
 `/pipeline_artifacts/`. This block only exists on the `install.sh` path. See
@@ -573,6 +610,14 @@ symlinks.
 **`.agents/agents.md`** gains a block containing the inlined persona stubs from
 this repo's `.agents/AGENTIC_DEV_TEAM.md`. The file is created if it does not
 exist, and your content outside the markers is left untouched.
+
+**`.claude/settings.local.json`** gains three permission rules, so Claude Code
+does not stop a run to ask: `Bash(bash .claude/adt/scripts/adt.sh *)`,
+`mcp__auto-mobile__*` and `mcp__maestro__*`. Every other setting in the file
+stays as it was, a file that is not valid JSON is left alone, and a rule you
+already had is not counted as ours. If the file is new, it is kept out of git
+through `.git/info/exclude`, not your `.gitignore`. `install.sh --uninstall`
+removes exactly the rules it added; `install.sh --no-allow` skips this step.
 
 After install, `ls -la .claude/commands/` makes ownership obvious. Our entries
 show an arrow pointing into the clone, and yours do not.
@@ -694,9 +739,29 @@ features being built — the Coder stops rather than "fixing" unrelated code.
 Fix the flow by hand, or delete it from `e2e/flows/`; a later feature that
 covers the same area can write it again.
 
+**The run stopped at the start, at the preflight.** Each `FAIL` line says what
+to fix. Run the same check yourself until it passes:
+`bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile` (or
+`--driver maestro`).
+
+**auto-mobile's background service cannot start: "Database startup migrations
+failed".** Its own database, `~/.auto-mobile/auto-mobile.db`, was left by an
+older version in a state the pinned version cannot upgrade. Move it aside,
+keeping it as a backup, and auto-mobile creates a fresh one:
+
+```bash
+mv ~/.auto-mobile/auto-mobile.db ~/.auto-mobile/auto-mobile.db.bak
+```
+
+**Claude Code still asks for permission during a run.** Re-run `install.sh` in
+the project, or `bash .claude/adt/scripts/adt.sh allow`, then start a new
+session. A rule only matches the script run as one plain command,
+`bash .claude/adt/scripts/adt.sh …`, which is how the commands run it.
+
 **The flow run fails with "Timed out waiting for concurrent daemon restart".**
-An older auto-mobile background service is still running, and the pinned
-version cannot take over from it. Restart it on the pinned version:
+The preflight now stops a run before this happens. An older auto-mobile
+background service is still running, and the pinned version cannot take over
+from it. Restart it on the pinned version:
 
 ```bash
 bunx @kaeawc/auto-mobile@0.0.84 --daemon restart
