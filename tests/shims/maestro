@@ -1,0 +1,50 @@
+#!/bin/bash
+# Fake Maestro CLI for tests/adt.test.sh: answers
+#   --device <serial> test --format junit --output <xml> --test-output-dir <dir> <flows...>
+# with a JUnit report shaped like Maestro's own. Each flow's comments decide
+# its outcome, as in tests/shims/auto-mobile. Calls are recorded in
+# $FAKE_ADT_STATE/maestro.calls.
+state="${FAKE_ADT_STATE:?}"
+device="" output="" files=()
+if [ "${1:-}" = "--version" ]; then cat "$state/maestro.version" 2>/dev/null || echo "2.11.0"; exit 0; fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --device) device="$2"; shift 2 ;;
+    --output) output="$2"; shift 2 ;;
+    --format|--test-output-dir) shift 2 ;;
+    test) shift ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+echo "test device=$device flows=${#files[@]}" >> "$state/maestro.calls"
+clock="$(cat "$state/clock" 2>/dev/null || echo 0)"
+failures=0
+{
+  echo '<?xml version="1.0" encoding="UTF-8"?>'
+  echo "<testsuites>"
+  echo "  <testsuite name=\"Test Suite\" device=\"$device\" tests=\"${#files[@]}\">"
+  for f in "${files[@]}"; do
+    name="$(basename "$f" .yaml)"
+    outcome=pass
+    if grep -q '# fake: fail' "$f"; then outcome=fail; fi
+    if grep -q '# fake: crash' "$f"; then
+      app="$(sed -n 's/^appId: *//p' "$f" | head -n 1)"
+      printf '%s\t%s\n' "$clock" "10-14 12:00:01.000  4242  4242 E AndroidRuntime: Process: $app, PID: 4242" >> "$state/logcat.$device"
+      printf '%s\t%s\n' "$clock" "10-14 12:00:01.000  4242  4242 E AndroidRuntime: java.lang.NullPointerException: crash in a passing flow" >> "$state/logcat.$device"
+    fi
+    if grep -q '# fake: flaky' "$f" && [ ! -f "$state/flaky.$name" ]; then
+      touch "$state/flaky.$name"; outcome=fail
+    fi
+    if [ "$outcome" = pass ]; then
+      echo "    <testcase id=\"$name\" name=\"$name\" classname=\"$name\" file=\"$f\" time=\"1.6\" status=\"SUCCESS\"/>"
+    else
+      failures=$((failures + 1))
+      echo "    <testcase id=\"$name\" name=\"$name\" classname=\"$name\" file=\"$f\" time=\"3.2\" status=\"ERROR\">"
+      echo "      <failure>Assertion is false: id: &quot;order_confirmation_title&quot; is visible &amp; enabled</failure>"
+      echo "    </testcase>"
+    fi
+  done
+  echo "  </testsuite>"
+  echo "</testsuites>"
+} > "$output"
+[ "$failures" -eq 0 ]

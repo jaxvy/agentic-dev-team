@@ -17,12 +17,12 @@ Every run is the same chain of handoffs. The five commands differ only in which
 links are present and who approves each one.
 
 ```
-   PM   ->   Architect   ->   Coder   ->   Tester   ->   your diff
-feature.md  impl-plan.md    the code    test-results.md
+   PM   ->   Architect   ->   Coder   ->   Test Writer   ->   Tester   ->   your diff
+feature.md  impl-plan.md    the code       flows/         test-results.md
             design-doc.md
 ```
 
-| Command | PM | Architect | Plan review | Coder | Code review | Tester | Gates |
+| Command | PM | Architect | Plan review | Coder | Code review | Test Writer + Tester | Gates |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
 | `/build-guided` | yes | yes | | yes | | yes | Human, at every boundary |
 | `/build-auto` | | yes | | yes | | yes | None |
@@ -44,11 +44,18 @@ with the slug lowercase and hyphenated (for example `background-link-checks`).
 | `adt-android-pm` | `feature.md` | `✅ PM DONE` |
 | `adt-android-architect` | `implementation-plan.md`, and `design-doc.md` when the command asks for one | `✅ ARCHITECT DONE` |
 | `adt-android-coder` | Nothing. Only uncommitted code | `✅ CODER DONE` |
+| `adt-android-test-writer` | `flows/`, one flow per test case, and `flows/INDEX.md` | `✅ TEST WRITER DONE` |
 | `adt-android-tester` | `test-results.md` | `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` |
 
-The Tester is the only agent with two terminal markers, because it is the only
-one that depends on hardware. See [When the Tester is
+The Tester is the only agent with two terminal markers, because it is the one
+that has to get past whatever the device puts in front of it, and some of that
+only you can open. See [When the Tester is
 blocked](#when-the-tester-is-blocked).
+
+The flow run between those two is not an agent. The orchestrator runs
+`adt.sh run`, which writes `run-results.md` and `run-logs/`. After a final
+`READY TO MERGE`, it also runs `adt.sh promote`, which copies the passing flows
+into your project's `e2e/flows/` — the one output meant to be committed.
 
 Reviewers write nothing at all. They are read-only by design, and each ends with
 exactly one verdict marker.
@@ -69,13 +76,15 @@ written.
 | Artifact | Written by | Read by |
 |---|---|---|
 | `feature.md` | PM | The Architect, and you at the spec gate |
-| `implementation-plan.md` | Architect | The Coder, both reviewers, and the Tester |
+| `implementation-plan.md` | Architect | The Coder, both reviewers, the Test Writer, and the Tester |
 | `design-doc.md` | Architect | **You.** Whoever maintains this later |
-| `test-results.md` | Tester | The Coder on failures, and you |
+| `flows/` | Test Writer | The flow run, and the Tester when a flow fails |
+| `run-results.md` | `adt.sh run` | The Tester |
+| `test-results.md` | Tester | The Coder on failures, the Test Writer on flow defects, and you |
 
 ```mermaid
 flowchart LR
-  A["architect"] --> P["implementation-plan.md"] --> C["coder"] --> T["tester"]
+  A["architect"] --> P["implementation-plan.md"] --> C["coder"] --> W["test writer"] --> T["tester"]
   A --> D["design-doc.md"] --> H["human review"]
   D -. "links into" .-> P
 ```
@@ -182,6 +191,10 @@ Unreviewed code is never re-tested.
 > **Invariant:** the tree handed back to you passed code review after its last
 > change.
 
+Regression-suite flows in `e2e/` are the one exemption. They are test assets
+rather than code, added after the final verdict, so the code reviewer leaves
+them out and promoting them does not re-open a review.
+
 Without that rule a run can reach `READY TO MERGE` carrying code no reviewer ever
 read. Tests prove the feature behaves, not that the code making it behave is
 sound.
@@ -189,8 +202,8 @@ sound.
 ### Required unit tests
 
 Unit tests are specified by the Architect and written by the Coder. No other
-agent authors them — reviewers are read-only, and the Tester drives the running
-app rather than writing Kotlin.
+agent authors them — reviewers are read-only, the Test Writer writes device
+flows rather than Kotlin, and the Tester writes no tests at all.
 
 The requirement travels in the plan. Section 1 records the project's **Test
 Stack**, discovered from its version catalog and an existing test, so the Coder
@@ -239,6 +252,149 @@ the tests actually exist and that each one would fail if the logic were wrong.
 The build gate runs the project's unit-test task, but that only executes tests
 that exist — it can never fail for one that was never written. That is why the
 requirement lives in the plan and is checked by a reviewer instead.
+
+### Device tests: cases, flows and results
+
+Every device test is written once, by one agent, at the moment it can be
+written well.
+
+| Step | Who | When | What |
+|---|---|---|---|
+| The case | Architect | Before the code | Steps with selectors, and an Expected result. The spec the Coder builds to |
+| The flow | Test Writer | After the Coder, on the run's emulator | The same case as a file in the test driver's format, checked with one run |
+| The run | `adt.sh run` | Every test and re-test | Every flow, with no model in the loop. A failure gets one retry; a pass on the retry is `FLAKY` |
+| The verdict | Tester | After the run | Passing flows need nothing. A failing one is driven by hand to decide: the app is wrong, or the flow is |
+
+Six rules keep it honest:
+
+* **A flow's checks come only from its case's Expected.** The Test Writer may
+  add a wait or a scroll the real app needs. It never loosens a check to make it
+  pass; if the app does not show what the case expects, the flow fails, and
+  that is the Tester's call.
+* **The plan's selectors are requirements.** A flow reaches each element with
+  the selector its case names. If the Coder left out a test tag, the flow keeps
+  the plan's selector and fails there, and the Tester reports it as a blocking
+  finding — instead of the test quietly finding the button by its label.
+* **Every check can fail.** Where a step should make something appear or go
+  away, the flow first checks that it has not already happened.
+* **Crashes fail tests.** After each flow, the script reads Android's crash
+  log for the time the flow ran. A crash or "app not responding" of the app
+  fails the flow even if every check passed, and is never retried away as
+  flaky.
+* **The agent that judges never writes the test.** The Tester never creates or
+  edits a flow. A flow that fails while the case passes by hand is listed under
+  "Flow Defects" in `test-results.md`, never sent to the Coder, and rewritten
+  by the Test Writer before the next re-test.
+* **Every flow starts from the same device.** It first turns Airplane mode off,
+  sets portrait and the light theme, then launches the installed app with clean
+  data, so a flow that failed halfway cannot leave the next one offline or
+  sideways.
+
+Cases that need a credential, or whose Expected is a judgment a machine cannot
+check, get no flow. The Tester drives those by hand, and `flows/INDEX.md` says
+why each one has none. A case a flow can check only in part — the screen opens,
+but not which field has focus — gets a *partial* flow, and the Tester checks
+just the part it leaves out.
+
+**The report says how sure it is.** `test-results.md` opens with "Verified V
+of N plan cases; U not verified", and its Coverage table puts every case in
+exactly one row: its flow passed, driven by hand, failed, or not verified with
+the reason. The verdict rule is unchanged — an unverified case is not a
+blocking finding — but the gap is never hidden.
+
+### The regression suite
+
+A run that ends in `READY TO MERGE` keeps its passing flows in the project, at
+`e2e/flows/<area>/<name>.yaml`, and every later run replays part of that suite
+in the same script call as its own flows.
+
+| Rule | How it works |
+|---|---|
+| **What is replayed** | Every P0 flow, always, plus the tiers the plan's **Regression Scope** names per area (`--area checkout:p1,p2`) |
+| **What is kept** | A flow of this run whose last result was `PASS` and whose priority is P0, P1 or P2. Not a `FLAKY` one, a failed one, or a `none` |
+| **Changed behaviour** | A case whose id matches a suite flow re-specifies it: the old flow is not replayed, and the new one replaces it if kept, or the old one is removed if not |
+| **Removed behaviour** | A flow listed under the plan's **Flows Retired** is not replayed, and is deleted |
+| **Stale flows** | A suite flow that fails because the plan changed that behaviour on purpose (outdated), or because the flow itself is wrong, is removed instead of failing every later run |
+| **Real regressions** | A suite flow that fails and whose behaviour really broke is a blocking finding. A Coder whose change cannot have caused it stops and reports it |
+| **When the suite changes** | Only through `adt.sh promote`, only after a final `READY TO MERGE` |
+
+The priorities come from the Architect, one per test case, with a reason: P0
+for what makes the app unusable (keep it small, since every run replays it),
+P1 for the main path of an area, P2 for edge cases. The plan reviewer checks
+that a P0 is really critical and that every area the plan touches has a
+Regression Scope row.
+
+Suite flows are test assets, not code: the code reviewer leaves `e2e/` out of
+its review, and promoting them does not re-open a review.
+
+### Test drivers
+
+The Tester never talks to a device directly. It goes through a *test driver*,
+an MCP server: auto-mobile by default, or Maestro when the project's
+`AGENTS.md` or `CLAUDE.md` says `Test driver: maestro`. The orchestrator reads
+that line once, at the start of a build command, and stops if it names anything
+else.
+
+Everything driver-specific lives in one **adapter** file per driver,
+`drivers/auto-mobile.md` and `drivers/maestro.md`. The orchestrator passes the
+right one to the Tester as `DRIVER_DOC`. The Tester's own prompt says how to
+test; the adapter says which tool does it — how to bind to the run's device,
+change device settings, tap, type and read the screen. Adding a third driver
+means writing a third adapter, not editing the agents.
+
+The Architect's test plan is the same for both: steps with test-tag selectors.
+For a Compose app the Architect also makes sure the root composable sets
+`testTagsAsResourceId`, because both drivers find elements by resource id.
+
+### Devices
+
+Each build command leases one device for its whole run, through a small script,
+`adt.sh`. Normally it boots a headless, read-only copy of one of your AVDs for
+that run alone, so two features in two git worktrees can be tested at the same
+time.
+
+```
+plan ready:  device-acquire --background                  (boots while the Coder works)
+first test:  device-acquire  ->  install  ->  flows  ->  Tester
+re-test:                         install  ->  flows  ->  Tester    (same device)
+run ends:    device-release                                        (also on any stop)
+```
+
+* **One device per run, booted early.** As soon as the plan names the
+  feature, the run starts booting its emulator in the background, so the boot
+  overlaps the Coder's work. The first test waits for it if it is not ready
+  yet; every re-test reuses it, so a fix loop never waits for a second boot. It stays up while a Coder fixes
+  something, and in `/build-guided` while the run waits for you.
+* **Installs land only there.** The install command runs with `ANDROID_SERIAL`
+  set to the run's device.
+* **The Tester uses only that device.** It receives the serial as `DEVICE`,
+  binds to it in its first call, and never starts, stops or switches devices.
+* **Leases are per project and feature.** A lease belongs to the project
+  directory and the feature slug together, so two worktrees never share a
+  device. Leases live in `~/.adt/leases/`.
+* **Your emulator is never touched.** An attached device is used only when you
+  set `ADT_DEVICE_MODE=reuse`, or when no AVD can be booted (none exists, or
+  every one is open normally). The script says which device it took and why,
+  and never stops a device it did not start.
+
+The settings and the one-time AVD setup are in the README, under
+[Testing on a device](README.md#testing-on-a-device).
+
+### Before a run: preflight and permissions
+
+Each build command checks the machine before any agent runs, with
+`adt.sh preflight`: `adb`, the emulator and the AVD it would boot (or the
+attached device), and the test driver — for auto-mobile, that its background
+service is on the pinned version or can be started; for Maestro, its version
+and Java. A problem stops the run in its first minute, with the fix, instead of
+at the test phase after the planning and coding are paid for. The command also
+checks its own tool list for the driver's MCP tools.
+
+So that a run is not stopped to ask permission, `install.sh` adds three rules
+to the project's `.claude/settings.local.json` — the device script and the two
+drivers' MCP tools — and the build commands list the same rules under
+`allowed-tools`. Only a person grants these, by running `install.sh` or
+`adt.sh allow`; no agent changes its own permissions.
 
 ### Blocking findings and observations
 
@@ -306,29 +462,31 @@ locked the screen, then read every dead tap as a broken feature, fell back to
 `./gradlew test`, and reported `READY TO MERGE` on a feature it had never seen
 run.
 
-### Raw adb is a fallback, not a ban
+### No raw adb
 
-`adb` is not forbidden. The Tester drives the device through auto-mobile by
-default, because those tools know which app is under test and the shell does
-not — but where auto-mobile has no equivalent, or its call fails, the shell is
-a legitimate fallback rather than a dead end. Some test cases arguably need it:
-"background the app for 30 seconds, then return" is a real case in the plan.
+Neither the Tester nor the Test Writer has a shell, so neither can reach for
+`adb`. That is the point. A raw `adb` command acts on the *device*, not on your
+app: POWER locks the screen, HOME sends the app to the background, and every
+tap after that lands on the launcher and looks exactly like a feature that does
+not respond. That is how the false pass above happened.
 
-What makes it safe is that it is **declared**. A shell command can silently move
-the ground under a run — POWER locks the screen, HOME backgrounds the app, and
-every tap afterwards lands on the launcher — so each fallback owes three things:
-re-confirm the app is foregrounded before trusting the next observation, record
-the command and why auto-mobile could not do it under **Raw adb Fallbacks** in
-the report, and never treat shell-only interaction as proof the feature works.
+Nothing a test plan asks for needs the shell any more:
 
-The count rides on the `✅ TESTER DONE` line, so the orchestrator surfaces it in
-the run summary without opening the file. A run that needed fallbacks is not a
-failed run, and the count never moves the verdict — it tells you where
-auto-mobile came up short. The only thing still out of bounds is `monkey`:
-random input cannot execute a test case.
+- **Device state** (rotation, dark mode, permissions, offline, backgrounding,
+  process death, force-stop) has a tool in each test driver, named in that
+  driver's adapter.
+- **Installing the build and reading Android's crash log** are done by
+  `adt.sh`, which the build command runs, not an agent.
+- **Anything the driver cannot do** makes that case *inconclusive*, with the
+  reason, and it is listed as not verified. **Anything only you can open** (a
+  PIN, a sign-in) makes the run `BLOCKED`, as above.
 
-> **Invariant:** no raw `adb` interaction happens silently. Using one is a
-> normal working step; hiding one is the defect.
+Neither is ever worked around. And whatever sent it, a tap that seemed to do
+nothing is first checked against the obvious explanation: is your app still in
+front?
+
+> **Invariant:** no agent that tests or judges the app runs a shell command
+> against the device.
 
 ### Test credentials
 
@@ -386,6 +544,8 @@ pipeline with a report rather than advancing.
 | Tester fix loop | 2 iterations | Stops. Never declares a `NEEDS FIXES` feature complete |
 | Blocked resumes (every build command) | 2 resumes | Stops. A device that will not cooperate is not fixed by more attempts |
 | Cross-section check | 2 rounds | Stops, reporting the failing output and the sections involved |
+| Test Writer, per flow | 3 runs while writing it | Records the flow as not checked; the Tester drives that case if its flow fails |
+| Flow run, per flow | 1 retry | Reports it `FAIL`; a pass on the retry is reported `FLAKY`, not a failure |
 
 On a gate's second re-run, the producing agent receives all prior feedback from
 both rounds, with previously accepted items marked resolved.
@@ -422,7 +582,7 @@ Three named commands are the only Gradle the pipeline runs.
 |---|---|---|
 | Build gate | The full end-of-work check | The Coder in a sequential run, before declaring done. Also the code reviewer, as part of every review |
 | Cross-section check | The build gate minus the assemble task | The orchestrator, after every parallel coder group |
-| Install command | Puts the build on the device | The Tester, before driving the app. A failure here is a stop condition |
+| Install command | Puts the build on the device | The orchestrator, through `adt.sh install`, right before every test and re-test, on the run's own device only. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
 
 The cross-section check still catches compile errors, because its unit-test leg
 compiles the main sources.
@@ -500,7 +660,8 @@ exists for. The orchestrator resolves it rather than reporting and stopping:
 ### Model selection
 
 Each agent file records a recommended model: `opus` for the PM, the Architect,
-and both reviewers, and `sonnet` for the Coder and the Tester.
+and both reviewers, and `sonnet` for the Coder, the Test Writer and the
+Tester.
 
 Claude Code honours those per agent. Antigravity and OpenCode do not support
 per-subagent model selection, so every subagent inherits your globally selected
@@ -520,7 +681,7 @@ Each Android project that wants the pipeline links this repo's files into its ow
    agents alongside ours, and they coexist freely.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` by filename. Our symlinks sit at those canonical paths, so
-   all five commands and all six `@adt-*` agents are available automatically.
+   all five commands and all seven `@adt-*` agents are available automatically.
 3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for slash
    commands and auto-loads `.agents/agents.md` into the system prompt as
    user_rules. `install.sh` inlines the persona stubs from this repo's
@@ -558,8 +719,12 @@ path inside your project.
 | `.claude/agents/adt-android-architect-reviewer.md` | `<clone>/.claude/agents/adt-android-architect-reviewer.md` |
 | `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
 | `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
+| `.claude/agents/adt-android-test-writer.md` | `<clone>/.claude/agents/adt-android-test-writer.md` |
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
+| `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
+| `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
+| `.claude/adt/drivers/maestro.md` | `<clone>/.claude/adt/drivers/maestro.md` |
 | `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
 | `.agents/workflows/build-auto-reviewed.md` | `<clone>/.agents/workflows/build-auto-reviewed.md` |
@@ -575,15 +740,18 @@ path inside your project.
 | `.opencode/agents/adt-android-architect-reviewer.md` | `<clone>/.opencode/agents/adt-android-architect-reviewer.md` |
 | `.opencode/agents/adt-android-coder.md` | `<clone>/.opencode/agents/adt-android-coder.md` |
 | `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
+| `.opencode/agents/adt-android-test-writer.md` | `<clone>/.opencode/agents/adt-android-test-writer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 
-The canonical `AGENTIC_DEV_TEAM_PIPELINE.md` lives in
-`plugins/agentic-dev-team/` so the Claude Code plugin can package it. The clone's
+The canonical `AGENTIC_DEV_TEAM_PIPELINE.md`, `scripts/adt.sh` and `drivers/`
+live in `plugins/agentic-dev-team/` so the Claude Code plugin can package them;
+the clone's `.claude/adt/scripts` and `.claude/adt/drivers` are symlinks to
+those directories. The clone's
 `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, which leaves the
 project-side path above unchanged, so installed projects need no re-install.
 
-Two further changes happen through marker-fenced managed blocks rather than
-symlinks.
+Three further changes happen outside symlinks: two marker-fenced managed
+blocks, and three permission rules.
 
 **`.gitignore`** gains a block listing the symlink paths above, plus
 `/pipeline_artifacts/`. This block only exists on the `install.sh` path. See
@@ -592,6 +760,14 @@ symlinks.
 **`.agents/agents.md`** gains a block containing the inlined persona stubs from
 this repo's `.agents/AGENTIC_DEV_TEAM.md`. The file is created if it does not
 exist, and your content outside the markers is left untouched.
+
+**`.claude/settings.local.json`** gains three permission rules, so Claude Code
+does not stop a run to ask: `Bash(bash .claude/adt/scripts/adt.sh *)`,
+`mcp__auto-mobile__*` and `mcp__maestro__*`. Every other setting in the file
+stays as it was, a file that is not valid JSON is left alone, and a rule you
+already had is not counted as ours. If the file is new, it is kept out of git
+through `.git/info/exclude`, not your `.gitignore`. `install.sh --uninstall`
+removes exactly the rules it added; `install.sh --no-allow` skips this step.
 
 After install, `ls -la .claude/commands/` makes ownership obvious. Our entries
 show an arrow pointing into the clone, and yours do not.
@@ -660,10 +836,95 @@ symlinked and never need this.
 **Both `AGENTS.md` and `CLAUDE.md` exist.** Agents read whichever they find first.
 Pick one as canonical and keep them in sync, or delete one.
 
-**The Tester cannot verify on device.** Check that the
-[auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) is registered with
-your tool and that a device or emulator is attached. In OpenCode it belongs in
-`opencode.json` under the `mcp` key, as `type: "remote"` with auto-mobile's URL.
+**The Tester stops saying its driver's tools are missing.** The test driver's
+MCP server is not registered with your tool, or not under the expected name.
+auto-mobile must be registered as `auto-mobile` and Maestro as `maestro`; the
+README's [Choosing a test driver](README.md#choosing-a-test-driver) has the
+commands. In OpenCode both belong in `opencode.json` under the `mcp` key.
+
+**The run stopped at the start, naming the test driver.** Your `AGENTS.md` or
+`CLAUDE.md` has a `Test driver:` line with a value other than `auto-mobile` or
+`maestro`. Fix the line, or delete it to use auto-mobile.
+
+**Rotation, dark mode, permission or offline cases come back inconclusive.** The
+Tester has no shell, so it only uses the test driver's own tools. Under
+auto-mobile, the ones that change device settings are hidden until they are
+switched on: check the `AUTOMOBILE_ENABLED_TOOLS` value and the pinned version
+from the README's [Choosing a test driver](README.md#choosing-a-test-driver),
+then restart auto-mobile's background service once
+(`bunx @kaeawc/auto-mobile@0.0.84 --daemon restart`) and start a new session.
+Under Maestro, font-scale cases are always inconclusive, because Maestro cannot
+change the font scale.
+
+**The Tester stopped saying the build was not installed.** It only tests a build
+the orchestrator has just installed, which the orchestrator confirms with a
+`BUILD_INSTALLED` line. When you call the Tester yourself, outside a build
+command, install the build first and pass that line with the plan path.
+
+**"No usable AVD", or the run took my attached phone.** Testing needs an AVD
+it can boot read-only, and a read-only copy cannot start while the same AVD is
+open normally. Create a second AVD in Android Studio's Device Manager, or close
+the one you have open, or set `ADT_AVD` to an AVD you do not use day to day.
+
+**An emulator was left running.** A session that dies mid-run leaves its
+emulator up. Running the same command again for the same feature picks it back
+up. To stop it instead, list the leases and release the one you want:
+
+```bash
+bash .claude/adt/scripts/adt.sh device-list
+bash .claude/adt/scripts/adt.sh device-release --serial emulator-5556
+```
+
+With the Claude Code plugin and no per-project install, the script is in the
+plugin's directory instead, under `scripts/adt.sh`.
+
+**A flow fails, but the Tester says the case passes by hand.** The flow
+expressed a step or a wait wrongly, not the app. The Tester lists it under
+"Flow Defects", and the Test Writer rewrites it before the next re-test. If no
+re-test happens, the run is still judged by the Tester's hand check, and the
+flow is left as it was.
+
+**The same suite flow fails on every run.** It is broken independently of the
+features being built — the Coder stops rather than "fixing" unrelated code.
+Fix the flow by hand, or delete it from `e2e/flows/`; a later feature that
+covers the same area can write it again.
+
+**The run stopped at the start, at the preflight.** Each `FAIL` line says what
+to fix. Run the same check yourself until it passes:
+`bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile` (or
+`--driver maestro`).
+
+**auto-mobile's background service cannot start: "Database startup migrations
+failed".** Its own database, `~/.auto-mobile/auto-mobile.db`, was left by an
+older version in a state the pinned version cannot upgrade. Move it aside,
+keeping it as a backup, and auto-mobile creates a fresh one:
+
+```bash
+mv ~/.auto-mobile/auto-mobile.db ~/.auto-mobile/auto-mobile.db.bak
+```
+
+**Claude Code still asks for permission during a run.** Re-run `install.sh` in
+the project, or `bash .claude/adt/scripts/adt.sh allow`, then start a new
+session. A rule only matches the script run as one plain command,
+`bash .claude/adt/scripts/adt.sh …`, which is how the commands run it.
+
+**The flow run fails with "Timed out waiting for concurrent daemon restart".**
+The preflight now stops a run before this happens. An older auto-mobile
+background service is still running, and the pinned version cannot take over
+from it. Restart it on the pinned version:
+
+```bash
+bunx @kaeawc/auto-mobile@0.0.84 --daemon restart
+```
+
+If that refuses with "could not verify the live PID", the old service predates
+the pinned version's restart protocol. Find it and stop it by hand, then start
+a new session:
+
+```bash
+ps aux | grep 'auto-mobile.*--daemon-mode'
+kill <pid>
+```
 
 **A run stopped mid-pipeline.** That is the intended behaviour. Every loop is
 bounded, as described under "Retry budgets", and a stop reports the gate, the
