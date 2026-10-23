@@ -67,6 +67,7 @@ exactly one verdict marker.
 |---|---|
 | `adt-android-architect-reviewer` | `✅ PLAN APPROVED` or `🔧 PLAN CHANGES REQUESTED` |
 | `adt-android-code-reviewer` | `✅ CODE APPROVED` or `🔧 CODE CHANGES REQUESTED` |
+| `adt-android-review-judge` (review panels only) | The verdict of the gate it judges, as the last line |
 
 A `🔧 CHANGES REQUESTED` verdict is always followed by a numbered list. The
 producing agent applies every fix, since a reviewer never edits what it reviewed.
@@ -862,12 +863,51 @@ exists for. The orchestrator resolves it rather than reporting and stopping:
 
 Each agent file records a recommended model: `opus` for the PM, the Architect,
 and both reviewers, and `sonnet` for the Coder, the Test Writer and the
-Tester.
+Tester. The review judge uses the main model.
 
-Claude Code honours those per agent. Antigravity and OpenCode do not support
-per-subagent model selection, so every subagent inherits your globally selected
-model. Select the strongest model available before a full pipeline run in those
-tools.
+Claude Code honours those per agent, and the `agents:` part of
+`.agentic-dev-team/config.yaml` overrides them per role, in every command (see
+the README, "Configuration"). The orchestrator passes the configured alias in
+the Agent tool's `model` parameter. With no configured value it passes
+nothing, so the agent file applies as before. Antigravity and OpenCode do not
+support per-subagent model selection, so every subagent inherits your globally
+selected model, and they ignore `agents:`. Select the strongest model
+available before a full pipeline run in those tools, or, in
+`/build-auto-reviewed`, run a role through an external CLI (next section).
+
+### The config file and its two switches
+
+`.agentic-dev-team/config.yaml` is optional and created with every setting
+commented out. At the start of every command the orchestrator validates it and
+sets two switches:
+
+| Switch | On when | Effect |
+|---|---|---|
+| `MODELS` | A model is set for a role the command starts | Claude Code passes that model when it starts the agent |
+| `RUNS` | `/build-auto-reviewed` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as the pipeline doc's "Configured Runs" section says |
+
+With both switches off, a command runs exactly as it would without the file.
+
+### Review panels and external runners
+
+With `RUNS` on, `/build-auto-reviewed` can run a role as a separate CLI
+process (`claude -p`, `codex exec`, `agy -p`, `opencode run`, or a command
+template) through `scripts/adt-run-agent.sh`, which writes a prompt file,
+starts the CLI detached in its own process group, enforces a timeout, and
+reports a result with the agent's verdict marker. A gate with 2 to 5 reviewers
+is a panel:
+
+```
+ build gate (once, by the orchestrator) → snapshot of the tree
+   reviewers in parallel, read-only, anonymous (A, B, C in a random order)
+   all approve?  yes → the gate passes, unless the build gate failed
+                 no  → the judge checks each finding: CONFIRMED / REJECTED / DISPUTED
+ snapshot of the tree again → any change stops the run
+ CHANGES REQUESTED → the producer fixes the build item and the confirmed list
+```
+
+A gate that is not configured runs exactly as before, with one native
+reviewer. The retry budgets do not change: a panel round counts as one review.
 
 ## Safeguards
 
@@ -946,7 +986,7 @@ Each Android project that wants the pipeline links this repo's files into its ow
    agents alongside ours, and they coexist freely.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` by filename. Our symlinks sit at those canonical paths, so
-   all five commands and all seven `@adt-*` agents are available automatically.
+   all five commands and all eight `@adt-*` agents are available automatically.
 3. **Antigravity discovery.** Antigravity scans `.agents/workflows/` for slash
    commands and auto-loads `.agents/agents.md` into the system prompt as
    user_rules. `install.sh` inlines the persona stubs from this repo's
@@ -986,8 +1026,10 @@ path inside your project.
 | `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
 | `.claude/agents/adt-android-test-writer.md` | `<clone>/.claude/agents/adt-android-test-writer.md` |
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
+| `.claude/agents/adt-android-review-judge.md` | `<clone>/.claude/agents/adt-android-review-judge.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
 | `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
+| `.claude/adt/scripts/adt-run-agent.sh` | `<clone>/.claude/adt/scripts/adt-run-agent.sh` |
 | `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
 | `.claude/adt/drivers/maestro.md` | `<clone>/.claude/adt/drivers/maestro.md` |
 | `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
@@ -1007,6 +1049,7 @@ path inside your project.
 | `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
 | `.opencode/agents/adt-android-test-writer.md` | `<clone>/.opencode/agents/adt-android-test-writer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
+| `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` |
 
 The canonical `AGENTIC_DEV_TEAM_PIPELINE.md`, `scripts/adt.sh` and `drivers/`
 live in `plugins/agentic-dev-team/` so the Claude Code plugin can package them;
@@ -1033,6 +1076,12 @@ stays as it was, a file that is not valid JSON is left alone, and a rule you
 already had is not counted as ours. If the file is new, it is kept out of git
 through `.git/info/exclude`, not your `.gitignore`. `install.sh --uninstall`
 removes exactly the rules it added; `install.sh --no-allow` skips this step.
+
+**`.agentic-dev-team/`** gets `config.yaml` (a copy of
+`plugins/agentic-dev-team/config.example.yaml`) and a `.gitignore` with `*`,
+only when `config.yaml` does not exist yet. `install.sh` never edits or deletes
+anything in that folder, not even on `--uninstall`. With the plugin install,
+the first command you run creates the same two files.
 
 After install, `ls -la .claude/commands/` makes ownership obvious. Our entries
 show an arrow pointing into the clone, and yours do not.
