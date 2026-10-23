@@ -68,6 +68,14 @@ against the actual codebase. Judge it on:
    Selectors table must be present at the end of Section 2 listing every testTag
    introduced.
 
+   Check every case, step by step, against each rule in Part A, "Test Cases a
+   Flow Can Run". A broken rule is a blocker: that case cannot become a flow.
+   Report **every** violation you find in this round, each with its concrete
+   fix — the tag to add and where, the step to write — because a violation left
+   for a later round costs the run a whole Architect re-run, and the gate has
+   only two. On a re-review, check all of Section 4 again, not only the cases
+   you flagged: a fix can break another rule.
+
    Every real case needs an **Id** (`<area>/<name>`) and a **Priority** with a
    reason; either missing is a blocker, because the case's flow cannot be named
    or kept. A `p0` must be on the app's critical path — launch, sign-in, the
@@ -78,11 +86,13 @@ against the actual codebase. Judge it on:
    one and is neither re-specified (a case with its Id) nor listed under Flows
    Retired is a blocker, because it would fail in every later run.
 
-   A Compose app whose code has no `testTagsAsResourceId`, and whose plan does
-   not add it, is a blocker: the test drivers find elements by resource id, so
-   none of the plan's test tags could be waited for, and under Maestro none
-   could even be tapped. Check with Grep before raising it. Apps built with
-   XML Views need nothing.
+   A Compose app whose plan puts test tags in a window that does not set
+   `testTagsAsResourceId` — the Activity, or a `ModalBottomSheet`, `Dialog` or
+   `Popup`, each of which composes in a window of its own — and does not add
+   it there, is a blocker: the test drivers find elements by resource id, so
+   none of those tags could be waited for, and under Maestro none could even be
+   tapped. Check with Grep before raising it. Apps built with XML Views need
+   nothing.
 7. **Required unit tests.** Section 1 records a Test Stack discovered from this
    project's build files and an existing test — not a generic list, and not
    silence. Every section in Section 3 has a **Tests required** field filled in
