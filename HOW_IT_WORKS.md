@@ -294,6 +294,17 @@ written well.
 | The fix | Test Writer | After the first run, only if this run's own flows failed | Each failed flow checked on the emulator once: fixed if it reached the app the wrong way, and re-run (`adt.sh run --only`); otherwise left failing, with what the screen showed |
 | The verdict | Tester | After the run | Passing flows need nothing. A failing one is driven by hand to decide: the app is wrong, or the flow is |
 
+**Every case is written so a flow can run it.** A flow can only find an
+element by an exact value, act on it, and check whether something is on
+screen. So the Architect writes each case to a short checklist: exact
+selectors, predictable tags for items that repeat (a row's position, never a
+generated id), checks that look at the whole screen, cases that stand alone
+and write their preconditions as steps, and test tags exposed in bottom sheets
+and dialogs as well as the main screen. The plan reviewer checks every case
+against the whole list in its first round, so a case no flow could run is
+fixed before any code is written. The checklist is in the pipeline doc, under
+"Test Cases a Flow Can Run".
+
 Seven rules keep it honest:
 
 * **The Test Writer adds no tests.** It writes one flow for each case the
