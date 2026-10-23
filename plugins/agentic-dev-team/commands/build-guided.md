@@ -1,6 +1,11 @@
 ---
 name: build-guided
 description: PM → Architect → Coder → Tester for a vague Android idea, with human gates
+allowed-tools:
+  - Bash(bash .claude/adt/scripts/adt.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh *)
+  - mcp__auto-mobile__*
+  - mcp__maestro__*
 ---
 
 You will run the full Android pipeline with human approval gates for:
@@ -17,6 +22,37 @@ If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
 (plugin-only install), read `${CLAUDE_PLUGIN_ROOT}/AGENTIC_DEV_TEAM_PIPELINE.md`
 instead. Store the path that worked as PIPELINE_DOC and pass it to every
 subagent you spawn, alongside the artifact paths you already pass.
+
+Resolve the test driver now, before any agent runs. Read the `Test driver:`
+line in the project's `AGENTS.md` (or `CLAUDE.md`): `auto-mobile` or
+`maestro`, and `auto-mobile` when there is no such line. Any other value is a
+STOP — report it and name the two valid values. Then find the driver's adapter
+the way PIPELINE_DOC was found — `.claude/adt/drivers/<driver>.md` if it exists,
+otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md` — and store that path as
+DRIVER_DOC. The test phase passes it on (pipeline doc Part A, "The Test
+Driver").
+
+Then resolve the device script the same way and store it as ADT_SH: the
+relative path `.claude/adt/scripts/adt.sh`, written exactly like that, if it
+exists, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`. Run it only as one
+plain command, `bash <ADT_SH> …`, from the project root: no `cd`, no `&&`, no
+variables in front, and no absolute form of the relative path — that is what
+the pre-approved permission rule matches, so the run is not stopped to ask.
+
+Preflight — still before any agent runs (pipeline doc Part B, "Before the
+Run"):
+  1. Run `bash <ADT_SH> preflight --driver <driver>`. It checks the Android
+     SDK, the AVDs, and the driver's command line and background service. On
+     exit 16, STOP and report its FAIL lines; each says how to fix it. Keep its
+     warn lines for the final summary.
+  2. Check your own tool list for the driver's MCP tools (`mcp__auto-mobile__…`
+     or `mcp__maestro__…`). None at all: STOP — the driver's MCP server is not
+     registered (HOW_IT_WORKS, "Setting up device testing"). For auto-mobile, if
+     `mcp__auto-mobile__rotate`, `mcp__auto-mobile__setDeviceState` or
+     `mcp__auto-mobile__executePlan` is missing, its hidden tools are not
+     switched on: say so now and in the final summary, because rotation,
+     offline and permission cases will come back INCONCLUSIVE and the Test
+     Writer cannot check its flows.
 
 This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
@@ -88,6 +124,12 @@ Phase 2 — Architect (after approval):
   in the design doc's Implementation Notes at the end of the run (Phase 5).
 
 Phase 3 — Coder (after approval, execution strategy decided by Architect):
+  Early boot — first, once PLAN_PATH gives the slug S: run
+  `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
+  boots this run's emulator while the Coder works; the test phase's own
+  `device-acquire` waits for it. From here on, every exit releases the device
+  (see "Release the device" below).
+
   Read PLAN_PATH Section 3. Check the **Parallel-safe** field.
 
   If Parallel-safe is YES, run the parallel-safety pre-check before anything
@@ -131,11 +173,29 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     "Approve the implementation to proceed to Tester, or revise?"
 
 Phase 4 — Tester (after approval):
-  Delegate to the `adt-android-tester` subagent.
-  Pass: PLAN_PATH. On a first run you have no credentials to pass — the Tester
-  asks for one only if it hits a gate, at Phase 4B below.
+  Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
+  defines it:
+    1. lease this run's device with `adt.sh device-acquire` (DEVICE);
+    2. install the build on it with `adt.sh install` (BUILD_INSTALLED;
+       release and STOP if it fails);
+    3. delegate to the `adt-android-test-writer` subagent, which writes one
+       flow per test case from the plan and the code, without a device (you
+       may run step 2 while it writes), and wait for ✅ TEST WRITER DONE;
+    4. run the flows with `adt.sh run` (RUN_RESULTS) — this run's own flows
+       plus the regression suite: one `--area` per row of PLAN_PATH's
+       Regression Scope, one `--exclude` per row of its Flows Retired;
+    5. if any of this run's own flows failed for a reason other than a crash
+       or an ANR, send just those back to the Test Writer to fix (`FIX`), then
+       re-run the ones it fixed with `adt.sh run --only`;
+    6. delegate to the `adt-android-tester` subagent.
+  Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
+  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`. On a first run you
+  have no credentials to pass — the Tester asks for one only if it hits a
+  gate, at Phase 4B below.
   Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on exactly
   one of them, never both.
+  The device stays up while you wait at the gates below, so a `revise:` or a
+  `resume` re-tests without a new boot.
 
   **On ⛔ TESTER BLOCKED, go straight to Phase 4B and skip the rest of this
   phase.** Everything below assumes the plan's cases actually ran. Presenting a
@@ -144,13 +204,13 @@ Phase 4 — Tester (after approval):
 
   On ✅ TESTER DONE:
   Summarise the final test results for the user from the test-results.md
-  in the same directory as PLAN_PATH. Present blocking findings and
-  Observations separately: blocking findings are defects against the plan;
+  in the same directory as PLAN_PATH: first its "Verified V of N plan cases;
+  U not verified" line (count it from its Coverage section if the line is
+  missing) and each unverified case with its reason, then the
+  flow counts from RUN_RESULTS (passed, failed, flaky). Present blocking findings and Observations
+  separately: blocking findings are defects against the plan;
   Observations are unrequested behaviours the Tester noticed and did not fix,
   which only you — the user — can promote into requirements.
-  If its DONE line reported raw `adb` fallbacks, say so and point at the
-  report's Raw adb Fallbacks section — they signal an auto-mobile gap rather
-  than a failure, and never change the verdict.
   Then ask the user: `approve` to finish, `revise: <feedback>` to send the
   failures back to the Coder, or `stop`.
 
@@ -161,11 +221,18 @@ Phase 4 — Tester (after approval):
     the user explicitly asked for in their `revise:` feedback is fair game —
     that is the user creating a requirement, which is allowed; the Tester
     doing it on its own is not. Wait for ✅ CODER DONE.
-    Re-run `adt-android-tester` with PLAN_PATH, the previous
-    `test-results.md`, and the same `TEST CREDENTIALS` block, instructing it to
-    re-run the failed cases and the happy path — other previously-passing cases
-    only if the fix plausibly affects them. Wait for ✅ TESTER DONE, then return
-    to this gate with the fresh results. On ⛔ TESTER BLOCKED, go to Phase 4B.
+    Re-run the test phase (Part B, "The Test Phase") on the same device —
+    install included, so the re-test sees the fixed build. The Test Writer runs
+    again only if the previous `test-results.md` lists Flow Defects (pass
+    those flows and the Tester's notes as FIX), and `adt.sh run` re-runs every
+    flow. Pass
+    `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
+    `BUILD_INSTALLED` and `RUN_RESULTS` lines, the previous `test-results.md`
+    and the same `TEST CREDENTIALS` block if a resume supplied one,
+    instructing it to judge every flow result again and to drive by hand only
+    the cases without a flow that failed before or that the fix plausibly
+    affects. Wait for ✅ TESTER DONE, then return to this gate with the fresh
+    results. On ⛔ TESTER BLOCKED, go to Phase 4B.
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
 
@@ -181,15 +248,32 @@ Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   not a `revise:` for the Coder.
 
   Where the resumed run lands:
-    - ✅ TESTER DONE → return to the Phase 4 gate and handle it on its verdict
-      like any other run. READY TO MERGE goes to Phase 5; NEEDS FIXES enters
-      Phase 4's fix loop with its 2 iterations untouched — a block consumed a
-      resume, not a fix iteration.
+    - ✅ TESTER DONE → return to the Phase 4 gate and handle it like any other
+      run: summarise the results and ask for `approve`, `revise:` or `stop`. A
+      `revise:` enters Phase 4's fix loop with its 2 iterations untouched — a
+      block consumed a resume, not a fix iteration.
     - ⛔ TESTER BLOCKED → back to the top of this phase.
+
+  A resume re-invokes only the Tester, on the same device, with the same
+  DEVICE, BUILD_INSTALLED and RUN_RESULTS: the build did not change, so the
+  flows do not run again.
 
   On `stop`, or after the 2nd resume still comes back blocked, STOP and report
   per the Blocked Path. Never present a blocked run as a pass; the feature is
   untested until a Tester run executes the cases.
+
+Keep the passing flows — when the user answers `approve` at Phase 4 and the
+last verdict was READY TO MERGE: run the promote step of the pipeline doc's
+Part B, "The Test Phase" (`adt.sh promote`, with one `--remove` per Flows
+Retired row and per "Suite Flows to Remove" entry in the last test-results.md),
+before releasing the device. Never on `stop`, after NEEDS FIXES, or on a STOP.
+
+Release the device — whenever the run ends from Phase 3 on, since the early
+boot may already have leased one: on `approve` at Phase 4, on `stop` at any
+gate, and on a STOP of your own. Run the
+release step of the pipeline doc's Part B, "The Test Phase", before anything
+else in Phase 5. It is separate from Phase 5, which is skipped when there is no
+design doc.
 
 Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
 `stop`, or on a STOP of your own — a stop out of Phase 4B included):
@@ -204,3 +288,9 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
   implemented this document as written." when there is nothing to record.
   Then report DOC_PATH to the user as the document to review this work from,
   alongside the test verdict and the list of changed files.
+
+Whenever the run ends, include the test driver, the device the run tested on,
+any preflight warnings, and for each test phase how long the Test Writer, the flow run and the Tester
+took (Part B, "The Test Phase") in what you report — plus the regression
+counts, any P0 warning, and the suite flows promote added, replaced and
+removed, with a reminder to commit `e2e/flows/` alongside the feature.
