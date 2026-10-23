@@ -1,0 +1,5 @@
+#!/bin/bash
+# Fake ps for tests/adt.test.sh: prints $FAKE_ADT_STATE/ps, so the preflight
+# tests do not depend on what is running on the machine.
+cat "${FAKE_ADT_STATE:?}/ps" 2>/dev/null
+exit 0
