@@ -1,9 +1,9 @@
 # Agentic Android Dev Team
 
-Six specialist AI agents that work like an Android team. You describe a feature
-in your editor's chat prompt, and they pass it down the line: product spec,
-implementation plan, code, then testing on a real device. What comes back is an
-uncommitted diff and a test report.
+Seven specialist AI agents that work like an Android team. You describe a
+feature in your editor's chat prompt, and they pass it down the line: product
+spec, implementation plan, code, then testing on a real device. What comes back
+is an uncommitted diff and a test report.
 
 Works the same way in [Claude Code](https://claude.com/claude-code),
 [Antigravity](https://antigravity.google), and [OpenCode](https://opencode.ai).
@@ -12,13 +12,14 @@ Works the same way in [Claude Code](https://claude.com/claude-code),
 
 Every run is the same chain of handoffs. Each agent reads the previous agent's
 output in full before it starts, so the spec constrains the plan, the plan
-constrains the code, and the plan's test cases are what the Tester actually runs.
+constrains the code, and the plan's test cases are what actually gets tested.
 
 ```mermaid
 flowchart LR
   PM["pm"] -->|"feature.md"| AR["architect"]
   AR -->|"implementation-plan.md<br/>& design-doc.md"| CO["coder"]
-  CO -->|"uncommitted code"| TE["tester"]
+  CO -->|"uncommitted code"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"test-results.md"| OUT(["diff + report"])
 ```
 
@@ -29,7 +30,8 @@ the phases. Two more run a single phase and stop.
 
 Written artifacts land in a git-ignored folder for the feature. The code itself
 stays uncommitted in your working tree, so you review it and commit on your own
-terms.
+terms. [What a run leaves behind](HOW_IT_WORKS.md#what-a-run-leaves-behind)
+lists both.
 
 ## Why it is split up this way
 
@@ -47,7 +49,11 @@ separate mandates, and puts a reviewer between them.
   including fixes made after testing. A defect the reviewer finds gets fixed
   even when the plan never anticipated it, and anywhere a fix had to depart from
   the plan is reported back to you.
-* The Tester drives the real app on a device or emulator, not a mocked harness.
+* Device tests are planned before the code and written after it. The
+  Architect decides what to test; once the feature exists, the Test Writer
+  turns each test case into a file that runs in seconds; the Tester judges the
+  results on a real emulator, not a mocked harness. No agent grades its own
+  work.
 * Retry loops are bounded. Reviewers get at most two rounds, the fix loop gets at
   most two, and a run that still fails stops and explains why instead of
   reporting success.
@@ -62,6 +68,7 @@ separate mandates, and puts a reviewer between them.
 | `adt-android-architect-reviewer` | Plan reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-coder` | Implementer | Uncommitted code in your working tree |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
+| `adt-android-test-writer` | Test engineer | One runnable *flow* file for each test case the Architect wrote, and no tests of its own |
 | `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
 
 Each agent reads your project's `AGENTS.md` (or `CLAUDE.md`) for stack,
@@ -74,9 +81,9 @@ Five slash commands. Three run the full pipeline, two stop after a single phase.
 
 | Command | Phases | Who approves | Use it for |
 |---|---|---|---|
-| `/build-guided` | PM, Architect, Coder, Tester | You, at every phase boundary | A rough idea you want shaped before code exists |
-| `/build-auto` | Architect, Coder, Tester | Nobody, it runs start to finish | A feature you have already specified precisely |
-| `/build-auto-reviewed` | Architect, Coder, Tester, plus a reviewer after the first two | Reviewer agents, with no human pause | An unattended run you want to trust. Costs more tokens |
+| `/build-guided` | PM, Architect, Coder, Test Writer, Tester | You, at every phase boundary | A rough idea you want shaped before code exists |
+| `/build-auto` | Architect, Coder, Test Writer, Tester | Nobody, it runs start to finish | A feature you have already specified precisely |
+| `/build-auto-reviewed` | Architect, Coder, Test Writer, Tester, plus a reviewer after the Architect and the Coder | Reviewer agents, with no human pause | An unattended run you want to trust. Costs more tokens |
 | `/plan-research` | PM only | n/a | Turning a vague idea into a spec and nothing more |
 | `/plan-design` | Architect only | n/a | Auto-detects input: produces whichever of the plan and design doc is missing |
 
@@ -99,7 +106,8 @@ flowchart LR
   I(["idea"]) --> PM["pm"]
   PM -->|"spec gate"| AR["architect"]
   AR -->|"plan gate"| CO["coder"]
-  CO -->|"code gate"| TE["tester"]
+  CO -->|"code gate"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"results gate"| E(["done"])
 ```
 
@@ -125,7 +133,8 @@ you want one.
 flowchart LR
   I(["feature"]) --> AR["architect"]
   AR -->|"implementation-plan.md"| CO["coder"]
-  CO -->|"uncommitted code"| TE["tester"]
+  CO -->|"uncommitted code"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"test-results.md"| E(["done"])
 ```
 
@@ -157,7 +166,8 @@ flowchart LR
   AR -->|"plan review<br/>(max 2)"| AR
   AR -->|"implementation-plan.md"| CO["coder"]
   CO -->|"code review<br/>(max 2)"| CO
-  CO -->|"uncommitted diff"| TE["tester"]
+  CO -->|"uncommitted diff"| TW["test writer"]
+  TW -->|"flows"| TE["tester"]
   TE -->|"test-results.md"| E(["done"])
 ```
 
@@ -195,96 +205,20 @@ it produces or skips the design doc:
 Pass `doc: on` or `doc: off` in the command arguments to override the default for a run.
 Where the two documents differ, the implementation plan is the source of truth for code.
 
-## What a run leaves behind
+## Testing on a device
 
-Artifacts land in `pipeline_artifacts/<feature-slug>/`, which is git-ignored:
+The Tester tests every feature on an Android emulator the run starts for
+itself, never on yours. The Architect writes the test cases before the code;
+once the code exists, the Test Writer turns them into small test files, a
+script runs them, and the Tester judges the results and checks by hand what the
+files cannot. Tests that pass are kept in `e2e/flows/` as a regression suite
+that later features replay; commit them with the feature.
 
-```
-pipeline_artifacts/recently-played-carousel/
-├── feature.md              # the spec (PM phases only)
-├── implementation-plan.md  # the plan, including the manual test plan
-├── design-doc.md           # the same design, written for you
-└── test-results.md         # per-case results, verdict, observations
-```
-
-Alongside that is the actual work: uncommitted changes in your working tree.
-Review them, stage what you want, and commit on your own terms.
-
-## Safeguards
-
-### Testing cannot invent requirements
-
-The Tester only sends work back for *blocking* findings: behaviour that
-contradicts your request, the approved plan, or your project's conventions, plus
-crashes, data loss, and regressions. Anything else it notices, such as a UX
-opinion or an unspecified edge case, is recorded as an *observation* in
-`test-results.md` for you to decide on. QA finds defects. It does not get to add
-scope mid-run.
-
-### A test that could not run never counts as a pass
-
-The Tester depends on hardware, and hardware stalls: an emulator stops taking
-input, a keyguard appears, a screen asks for an account. When that happens it
-stops on a third verdict, `BLOCKED`, and ends on `⛔ TESTER BLOCKED` with one
-concrete ask — the credential it needs, by name, or the thing only you can do.
-Every flow puts that to you and waits, `resume` picks it back up, and two
-resumes is the limit. A blocked run is never rounded up to `READY TO MERGE`, and it never
-sends a Coder to change working code over a locked screen.
-
-It reaches for the shell the same way. `adb` is not banned — auto-mobile is the
-default because it knows which app is under test, but where it falls short the
-Tester may use the shell, then re-confirm your app is still in front and record
-what it ran. The count appears in the run summary. That way a fallback is a
-visible working step rather than the silent screen-lock that produced the false
-pass above.
-
-Because these are development builds on development devices, you can also just
-tell it the PIN. The blocked run asks for what it needs and your reply carries
-it — `resume: the PIN is 1234` — and it picks back up where it stopped. That
-holds in the unattended flows too: they skip *approval* gates, but a run that
-cannot proceed is worth one question rather than a discarded Architect and
-Coder phase. There is no credential syntax on the commands themselves, so there
-is nothing to fumble: it types only what you sent in answer to its question,
-never guesses a PIN, never lifts one out of your repository or environment, and
-never writes one into `test-results.md`, a screenshot, or its summary.
-
-### Unit tests are specified, not left to chance
-
-The Architect names the unit tests each section needs, using the libraries your
-project already uses — discovered from your version catalog, not chosen from a
-default list. Every case is phrased GIVEN / WHEN / THEN, and that line becomes
-the test's name and the shape of its body, so a failing test says which
-behaviour broke without anyone opening the file. The Coder writes exactly
-those, and both reviewers check them:
-the plan reviewer that the cases are worth writing, the code reviewer that they
-exist and would fail if the logic were wrong. A section with no logic worth
-testing says so explicitly rather than padding itself with tests that cannot
-fail.
-
-### Reviews cover the final code
-
-An approval applies to the tree that existed when it was issued. When the Tester
-finds a defect and the Coder patches it, a targeted re-review of that patch runs
-before the re-test. The tree you are handed has passed review after its last
-change, not before it.
-
-### Build commands are discovered, not assumed
-
-The Architect resolves your project's real build, lint, test, and install
-commands against your Gradle setup and records them in the plan. A project
-without `detekt`, or one that needs `:app:lintDebug` and a `demoDebug` variant,
-runs its own commands instead of failing on tasks it never defined.
-
-### Parallel work is checked before it starts
-
-When the Architect marks sections parallel-safe, the orchestrator verifies
-mechanically that no file is claimed by two sections in the same group before
-spawning anyone, then verifies the result again after every group.
-
-### The installer never overwrites anything
-
-`install.sh` only creates symlinks for files this repo owns. If something of
-yours already sits at one of those paths, it refuses and names the path.
+It needs a test driver, auto-mobile (the default) or Maestro, registered with
+your tool. [Setting up device testing](HOW_IT_WORKS.md#setting-up-device-testing)
+has the steps for Claude Code, OpenCode and Antigravity, and
+[HOW_IT_WORKS.md](HOW_IT_WORKS.md#device-tests-cases-flows-and-results)
+explains how the tests work.
 
 ## Requirements
 
@@ -293,9 +227,13 @@ yours already sits at one of those paths, it refuses and names the path.
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)
 * An Android project with an `AGENTS.md` or `CLAUDE.md` describing its stack,
   architecture, conventions, and verification rules
-* The [auto-mobile MCP server](https://github.com/kaeawc/auto-mobile) registered
-  with your tool. The Tester drives the app on a device or emulator through it,
-  and without it the Tester phase cannot finish its device verification.
+* The Android SDK's emulator and platform tools (both come with Android
+  Studio), and at least one AVD. See [Testing on a device](#testing-on-a-device)
+* A **test driver** registered with your tool: the
+  [auto-mobile](https://github.com/kaeawc/auto-mobile) MCP server (the default)
+  or [Maestro](https://maestro.dev). The Tester drives the app on a device
+  through it, and without it the test phase cannot run. See
+  [Setting up device testing](HOW_IT_WORKS.md#setting-up-device-testing).
 
 ## Installation
 
@@ -310,13 +248,13 @@ The fastest path if you only use Claude Code. From inside the CLI:
 /plugin install agentic-dev-team@adt-pipeline
 ```
 
-This installs all six agents and all five commands with no per-project setup. It
+This installs all seven agents and all five commands with no per-project setup. It
 does not wire up Antigravity or OpenCode.
 
 ### Install per project with install.sh
 
-This is the only supported path for Antigravity and OpenCode, since neither has a
-plugin marketplace. It also works alongside the plugin.
+Use this for Antigravity and OpenCode. It also works alongside the Claude Code
+plugin.
 
 Clone the repo once, anywhere you like:
 
@@ -333,7 +271,12 @@ cd /path/to/your-android-project
 
 It links the agents and commands into the project's `.claude/`,
 `.agents/workflows/`, and `.opencode/`. Your existing content in those
-directories is never touched, modified, or migrated.
+directories is never touched, modified, or migrated, with one deliberate
+exception: it adds the pipeline's three permission rules to
+`.claude/settings.local.json`, keeping every setting already there, so a run
+does not stop to ask (see
+[Permissions](HOW_IT_WORKS.md#before-a-run-preflight-and-permissions)). Pass
+`--no-allow` to skip that.
 
 ### Updating
 
@@ -353,13 +296,14 @@ an append.
 ~/code/agentic-dev-team/install.sh --uninstall
 ```
 
-This removes only what it created: its own symlinks, and its marker-fenced blocks
-in `.gitignore` and `.agents/agents.md`. Your files and the clone are left alone.
+This removes only what it created: its own symlinks, its marker-fenced blocks
+in `.gitignore` and `.agents/agents.md`, and the permission rules it added to
+`.claude/settings.local.json`. Your files and the clone are left alone.
 
 ## Further reading
 
-[HOW_IT_WORKS.md](HOW_IT_WORKS.md) covers the pipeline phase by phase, the rules
-that keep it honest, how the three tools discover the same files, everything
+[HOW_IT_WORKS.md](HOW_IT_WORKS.md) covers the pipeline phase by phase, its
+[safeguards](HOW_IT_WORKS.md#safeguards), how the three tools discover the same files, everything
 `install.sh` creates, how to add your own agents and commands, and
 troubleshooting.
 

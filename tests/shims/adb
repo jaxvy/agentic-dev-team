@@ -1,0 +1,69 @@
+#!/bin/bash
+# Fake adb for tests/adt.test.sh. State lives in $FAKE_ADT_STATE:
+#   dev/<serial>        one file per device; its content is the adb state
+#   avd.<serial>        the AVD name `emu avd name` reports
+#   booted.<serial>     present once sys.boot_completed is 1
+#   stubborn.<serial>   present = `emu kill` is ignored
+#   clock               a fake device clock: each `date` call advances it
+#   logcat.<serial>     fake log lines, "<clock> TAB <line>"; `logcat -T <t>`
+#                       prints the lines written at or after <t>
+#   free.<serial>       KB free on /data that `df` reports (default 800000)
+#   adb.calls           every invocation, one per line
+state="${FAKE_ADT_STATE:?}"
+mkdir -p "$state/dev"
+echo "adb $*" >> "$state/adb.calls"
+serial="${ANDROID_SERIAL:-}"
+if [ "${1:-}" = "-s" ]; then serial="$2"; shift 2; fi
+case "${1:-}" in
+  devices)
+    echo "List of devices attached"
+    for f in "$state"/dev/*; do
+      [ -f "$f" ] && printf '%s\t%s\n' "$(basename "$f")" "$(cat "$f")"
+    done
+    echo
+    ;;
+  emu)
+    [ -f "$state/dev/$serial" ] || { echo "error: device '$serial' not found" >&2; exit 1; }
+    case "$2" in
+      kill)
+        [ -f "$state/stubborn.$serial" ] || rm -f "$state/dev/$serial"
+        echo "OK"
+        ;;
+      avd)
+        cat "$state/avd.$serial" 2>/dev/null
+        echo "OK"
+        ;;
+    esac
+    ;;
+  shell)
+    [ -f "$state/dev/$serial" ] || { echo "error: device '$serial' not found" >&2; exit 1; }
+    shift
+    case "$*" in
+      "getprop sys.boot_completed")
+        if [ -f "$state/booted.$serial" ]; then echo 1; else echo; fi
+        ;;
+      df*)
+        echo "Filesystem       1K-blocks    Used Available Use% Mounted on"
+        echo "/dev/block/dm-54   6082144 5000000 $(cat "$state/free.$serial" 2>/dev/null || echo 800000)  87% /data/user/0"
+        ;;
+      date*)
+        clock=$(( $(cat "$state/clock" 2>/dev/null || echo 0) + 1 ))
+        echo "$clock" > "$state/clock"
+        printf '10-14 12:00:00.%03d\r\n' "$clock"
+        ;;
+      *) : ;;
+    esac
+    ;;
+  logcat)
+    since=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -T) since="${2##*.}"; since=$((10#$since)); shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    [ -f "$state/logcat.$serial" ] && awk -F'\t' -v s="$since" '$1 + 0 >= s { print $2 }' "$state/logcat.$serial"
+    ;;
+  *) : ;;
+esac
+exit 0

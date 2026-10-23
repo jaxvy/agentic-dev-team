@@ -26,7 +26,10 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
 1. **Build the changed-file manifest, then read all of it.** Run the manifest
    commands (defined in the pipeline doc's Part A) to get the complete inventory
    of this run's changes: tracked modifications, deletions, renames, and
-   untracked files. Review only the uncommitted working-tree changes.
+   untracked files. Review only the uncommitted working-tree changes. Files
+   under `e2e/` are out of scope: they are regression-suite flows the pipeline
+   keeps from earlier runs, written by the Test Writer and judged by the
+   Tester, not code.
 
    `git diff` alone is not the review. It does not contain the contents of
    untracked files, and in Android feature work most new code lands in new

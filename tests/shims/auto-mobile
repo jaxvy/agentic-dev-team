@@ -1,0 +1,108 @@
+#!/bin/bash
+# Fake auto-mobile CLI for tests/adt.test.sh: answers
+#   --cli executePlan --platform android --deviceId <serial> --planContent <yaml>
+# The plan's own comments decide the outcome:
+#   # fake: fail    fails at step 2, every time
+#   # fake: flaky   fails the first time, passes after
+#   # fake: hang    never finishes
+#   # fake: crash   passes, but the app crashes (written to the fake logcat)
+#   # fake: anr     passes, but the app stops responding
+#   # fake: other-crash   passes, while a different app crashes
+#   # fake: big     passes, with a result too big to print (written to a file)
+#   # fake: quiet-fail  fails with no error message at all
+#   # fake: fail-then-crash  fails the first time; on the retry it passes,
+#                            but the app crashes
+#   # fake: slow    passes after a second, so a second device has time to join
+# Every call is recorded in $FAKE_ADT_STATE/automobile.calls.
+state="${FAKE_ADT_STATE:?}"
+device="" plan=""
+echo "$AUTOMOBILE_ENABLED_TOOLS" > "$state/automobile.tools"
+case " $* " in *" --daemon start "*)
+  # $FAKE_ADT_STATE/daemon-start: "ok" (default) or "db" (a broken database)
+  if [ "$(cat "$state/daemon-start" 2>/dev/null || echo ok)" = db ]; then
+    echo "Starting AutoMobile daemon..."
+    echo "Error: Daemon subprocess exited before becoming ready (exit code 1)"
+    echo "Fatal error in main(): Error: Database initialization failed at daemon startup: duplicate column name: size_unknown"
+    exit 1
+  fi
+  echo "running 0.0.84" > "$state/daemon"
+  echo "Daemon started successfully (PID 4747, port 3000)"
+  exit 0 ;;
+esac
+case " $* " in *" --cli getAndroid "*)
+  # Binding to a device: recorded apart from the plan runs.
+  echo "getAndroid $*" | sed 's/.*--deviceId \([^ ]*\).*/getAndroid device=\1/' >> "$state/automobile.binds"
+  echo '{"content":[{"type":"text","text":"{\"message\":\"android is ready (booted)\"}"}]}'
+  exit 0 ;;
+esac
+case " $* " in *" --daemon status "*) daemon_status=1 ;; *) daemon_status=0 ;; esac
+if [ "$daemon_status" = 1 ]; then
+  # $FAKE_ADT_STATE/daemon: "running <version>" or "not-running"
+  case "$(cat "$state/daemon" 2>/dev/null || echo 'running 0.0.84')" in
+    running*) echo "Daemon is running"; echo "  Version: $(cut -d' ' -f2 "$state/daemon" 2>/dev/null || echo 0.0.84)" ;;
+    *) echo "Daemon is not running" ;;
+  esac
+  exit 0
+fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --deviceId) device="$2"; shift 2 ;;
+    --planContent) plan="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+name="$(printf '%s\n' "$plan" | sed -n 's/^name: *//p' | head -n 1)"
+app="$(printf '%s\n' "$plan" | sed -n 's/^[[:space:]-]*appId:[[:space:]]*//p' | head -n 1)"
+clock="$(cat "$state/clock" 2>/dev/null || echo 0)"
+log_line() { printf '%s\t%s\n' "$clock" "$1" >> "$state/logcat.$device"; }
+case "$plan" in
+  *"# fake: crash"*)
+    log_line "10-14 12:00:01.000  4242  4242 E AndroidRuntime: FATAL EXCEPTION: main"
+    log_line "10-14 12:00:01.000  4242  4242 E AndroidRuntime: Process: $app, PID: 4242"
+    log_line "10-14 12:00:01.000  4242  4242 E AndroidRuntime: java.lang.IllegalStateException: boom" ;;
+  *"# fake: anr"*)
+    log_line "10-14 12:00:01.000   660   699 E ActivityManager: ANR in $app ($app/.MainActivity)" ;;
+  *"# fake: other-crash"*)
+    log_line "10-14 12:00:01.000  5151  5151 E AndroidRuntime: FATAL EXCEPTION: main"
+    log_line "10-14 12:00:01.000  5151  5151 E AndroidRuntime: Process: com.google.android.gms, PID: 5151"
+    log_line "10-14 12:00:01.000  5151  5151 E AndroidRuntime: java.lang.RuntimeException: not ours" ;;
+  *"# fake: fail-then-crash"*)
+    if [ -f "$state/fail-then-crash.$name" ]; then
+      log_line "10-14 12:00:01.000  4343  4343 E AndroidRuntime: FATAL EXCEPTION: main"
+      log_line "10-14 12:00:01.000  4343  4343 E AndroidRuntime: Process: $app, PID: 4343"
+      log_line "10-14 12:00:01.000  4343  4343 E AndroidRuntime: java.lang.IllegalStateException: boom on the retry"
+    fi ;;
+esac
+echo "executePlan device=$device name=$name" >> "$state/automobile.calls"
+case "$plan" in *"# fake: slow"*) sleep 1 ;; esac
+outcome=pass
+case "$plan" in
+  # Before "fail", which it would otherwise match.
+  *"# fake: fail-then-crash"*)
+    if [ ! -f "$state/fail-then-crash.$name" ]; then touch "$state/fail-then-crash.$name"; outcome=fail; fi ;;
+  *"# fake: fail"*) outcome=fail ;;
+  *"# fake: hang"*) outcome=hang ;;
+  *"# fake: flaky"*)
+    if [ ! -f "$state/flaky.$name" ]; then touch "$state/flaky.$name"; outcome=fail; fi ;;
+esac
+case "$plan" in
+  *"# fake: big"*)
+    mkdir -p "$state/tool_outputs"
+    printf '{"content":[{"type":"text","text":"{\\"success\\":true}"}],"success":true}\n' > "$state/tool_outputs/big.json"
+    printf '{\n  "truncated": false,\n  "artifact": {\n    "path": "%s",\n    "tool": "executePlan"\n  },\n  "note": "Tool output was over the CLI inline limit."\n}\n' "$state/tool_outputs/big.json"
+    exit 0 ;;
+  *"# fake: quiet-fail"*)
+    exit 3 ;;
+esac
+case "$outcome" in
+  pass)
+    echo '{"content":[{"type":"text","text":"{\"success\":true,\"executedSteps\":2,\"totalSteps\":2}"}]}'
+    exit 0 ;;
+  fail)
+    echo '{"content":[{"type":"text","text":"{\"success\":false,\"executedSteps\":1,\"totalSteps\":2}"}],"isError":true}'
+    echo "Failed at step 2: observe" >&2
+    echo "Step error: observe waitFor timed out after 4000ms" >&2
+    exit 1 ;;
+  hang)
+    sleep 30 ;;
+esac
