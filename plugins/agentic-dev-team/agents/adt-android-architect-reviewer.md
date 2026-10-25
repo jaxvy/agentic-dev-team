@@ -45,6 +45,10 @@ against the actual codebase. Judge it on:
    verbatim, with no Source line and no evidence of discovery, is itself worth
    a flag. The `device API` line must be the app's real `targetSdk`; a wrong
    one tests the feature on the wrong platform version, which is a blocker.
+   The release check is a real R8 task when the release build is minified,
+   and `none` only when it is not. The device tests are a filtered connected
+   test task when any case is `(instrumented)`, with the instrumented test
+   APK's assemble task in the build gate, and `none` otherwise.
 4. **Correctness & fit.** The design matches existing patterns (MVI/DI/module
    layout), doesn't conflict with the architecture, and actually satisfies the
    feature request.
@@ -119,6 +123,13 @@ against the actual codebase. Judge it on:
      observable result becomes a test that documents nothing — and a filler
      clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
      an omission, since it looks compliant.
+   - A section that changes a Room schema (or another stored format the app
+     reads after an update) without the migration, the exported schema JSON in
+     its **Files**, and an instrumented migration test, as Part A, "Data that
+     outlives an update", says, is a blocker. So is
+     `fallbackToDestructiveMigration` on user data that the request did not
+     ask for. A case marked `(instrumented)` that a JVM test could prove is a
+     nit, not a blocker.
    - A test file named in **Tests required** but absent from that section's
      **Files** list is a blocker. Scope, the parallel-safety overlap pre-check,
      and cross-section failure attribution all read **Files**: leave the test

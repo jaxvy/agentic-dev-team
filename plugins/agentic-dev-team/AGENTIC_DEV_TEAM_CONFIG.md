@@ -766,7 +766,7 @@ Confirmed list is empty. Take the producing agent's feedback from the
 | Case | Rule |
 |---|---|
 | Parallel coders | Each section's coder uses the `coder` slot. External coders in one group run as parallel detached jobs. They run no Gradle, as usual. The cross-section check after each group is unchanged. |
-| Tester | May be external. That CLI must have the test driver's MCP server (auto-mobile or Maestro) in its own config. It gets the same DRIVER_DOC, DEVICE, BUILD_INSTALLED and RUN_RESULTS lines as a native Tester. The Test Writer and the steps of ORCHESTRATION_DOC, "The Test Phase", always run native. |
+| Tester | May be external. That CLI must have the test driver's MCP server (auto-mobile or Maestro) in its own config. It gets the same DRIVER_DOC, DEVICE, BUILD_INSTALLED, RUN_RESULTS and CHECKS lines as a native Tester. The Test Writer and the steps of ORCHESTRATION_DOC, "The Test Phase", always run native. |
 | Tester and credentials | Credentials are never written to a file, and an external run needs a prompt file. So: **from the first reply at the blocked gate that is anything other than exactly `resume` or `stop`** (for example `resume: the PIN is 1234`), **every later Tester start in that run runs native**: that resume itself, every later resume, and every Phase 3F re-test. Only a reply that is exactly the word `resume` (spaces around it do not matter) keeps an external Tester external. Its native model comes from `agents.tester.model`, else the frontmatter (the external slot's `model` is for its CLI only). The summary says so. |
 | Architect | May be external (write). Read its `✅ ARCHITECT DONE` line and artifact paths from the output file. |
 | External Coder or Tester in Codex | See the warning of "Start" step 5. |

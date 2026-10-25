@@ -318,6 +318,15 @@ cannot fail every later run. Never under "Flow Defects", which is only for this
 feature's own flows. When there are regression rows, they replace your light
 regression sanity check of an adjacent screen; skip it and say so.
 
+**Checks.** When your prompt has a `CHECKS` line, it names `checks.md`: one
+row per Section 0 check your caller ran before the install, the **release
+check** (the release build, with R8) and the **device tests** (the plan's
+instrumented tests, on your device). A `PASS` needs nothing. A `FAIL` is a
+blocking finding, with Basis "the plan's Section 0 <check> must pass": name the
+check, the exit code and its log, and quote the first error from the log (open
+it with your file tools). You cannot reproduce it on the device and need not:
+the log is the repro. In Recommendations for Coder, name the check and its log.
+
 A case `flows/INDEX.md` lists as `none` has no flow: drive it by hand, as
 below. If your prompt has no `RUN_RESULTS` at all — you were invoked outside a
 build command — drive every case by hand.
@@ -435,6 +444,7 @@ device or emulator.
    - Blocking findings: B (these drive the verdict)
    - Observations: O (recorded for the human; no code change)
    - Crashes or ANRs of the app during the flow run: C (from RUN_RESULTS)
+   - Checks failed: K of M (release check, device tests; from CHECKS)
    - Not executed (device blocked): W
 
    ## Coverage

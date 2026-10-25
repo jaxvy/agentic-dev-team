@@ -11,6 +11,7 @@
 #                         [--only <id>]...
 #   adt.sh select         --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
+#   adt.sh check          --slug <slug> --name <name> [--device] -- <command...>
 #   adt.sh promote        --slug <slug> [--remove <id>]...
 #   adt.sh state          --slug <slug> set <key> <value> | get <key>
 #                         | bump <key> --max <n> | show
@@ -39,7 +40,9 @@
 # emulators when it has two, and writes run-results.md. It reads Android's
 # crash log after each flow, so a crash or ANR of the app fails the flow.
 # With --only, it re-runs just the named flows of this run and updates their
-# rows. promote keeps this run's passing flows in e2e/flows/, and only when
+# rows. check runs one of the plan's Section 0 checks (the release check, or
+# the device tests on the run's device) and records it in checks.md for the
+# Tester. promote keeps this run's passing flows in e2e/flows/, and only when
 # the Tester's test-results.md says READY TO MERGE. state is the run's
 # ledger: the phase, paths and budgets a build command records as it goes, so
 # a run can be resumed and a spent budget is refused (exit 17). device-release
@@ -76,11 +79,11 @@
 #   ADT_MAESTRO          Maestro command (default: maestro)
 #
 # Exit codes:
-#   0 success, 1 a flow failed (run), 2 usage, 10 no device, 11 the emulator
-#   did not start or boot, 12 install failed, 13 a device could not be
-#   stopped, 14 the driver's command was not found, 15 no live device is
-#   leased for this run, 16 preflight found a problem, 17 a budget is spent
-#   (state bump)
+#   0 success, 1 a flow or a check failed (run, check), 2 usage, 10 no
+#   device, 11 the emulator did not start or boot, 12 install failed, 13 a
+#   device could not be stopped, 14 the driver's command was not found, 15 no
+#   live device is leased for this run, 16 preflight found a problem, 17 a
+#   budget is spent (state bump)
 #
 # Runs under bash 3.2 (the macOS system shell): no associative arrays, no
 # mapfile, no ${var,,}.
@@ -1499,6 +1502,65 @@ ${2:-}"; shift 2 ;;
   select_suite "$project" "$driver" "$areas" "$excludes" "" | cut -f3
 }
 
+# ---------- checks ----------
+# A check is one of the plan's Section 0 commands that the test phase runs
+# beside the flows: the release check (R8 on the release build) and the
+# device tests (instrumented tests, on the run's device). Its output goes to
+# pipeline_artifacts/<slug>/checks/<name>.log, and its row to checks.md,
+# which the Tester reads. A failed check is the Tester's to report, so it
+# exits 1, like a failed flow.
+
+cmd_check() {
+  local slug="" name="" on_device=0 project serial dir log table rc start secs status row tmp
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slug) slug="${2:-}"; shift 2 ;;
+      --name) name="${2:-}"; shift 2 ;;
+      --device) on_device=1; shift ;;
+      --) shift; break ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$name" ] && [ $# -gt 0 ] || usage
+  case "$name" in *[!a-z0-9-]*) die 2 "a check name is lowercase letters, digits and '-': $name" ;; esac
+  project="$(project_dir)"
+  dir="$project/pipeline_artifacts/$slug"
+  mkdir -p "$dir/checks"
+  log="$dir/checks/$name.log"
+  table="$dir/checks.md"
+  if [ "$on_device" = 1 ]; then
+    find_adb
+    serial="$(find_lease "$project" "$slug")"
+    [ -n "$serial" ] && lease_live "$serial" || \
+      die 15 "no live device is leased for slug '$slug' in $project. Run device-acquire first."
+  fi
+  start="$(now)"
+  if [ "$on_device" = 1 ]; then
+    say "adt: running check $name on $serial: $*"
+    ANDROID_SERIAL="$serial" "$@" > "$log" 2>&1 < /dev/null
+    rc=$?
+  else
+    say "adt: running check $name: $*"
+    "$@" > "$log" 2>&1 < /dev/null
+    rc=$?
+  fi
+  secs=$(( $(now) - start ))
+  if [ "$rc" -eq 0 ]; then status=PASS; else status=FAIL; fi
+  row="$(printf '| %s | %s | %s | %s | checks/%s.log | %s |' "$name" "$status" "$rc" "$secs" "$name" "$(printf '%s ' "$@" | cell)")"
+  tmp="$table.tmp.$$"
+  {
+    printf '# Checks: %s\n\n' "$slug"
+    printf 'Section 0 commands run beside the flows. A FAIL is a blocking finding for the Tester to report.\n\n'
+    printf '| Check | Result | Exit | Seconds | Log | Command |\n'
+    printf '|---|---|---|---|---|---|\n'
+    [ -f "$table" ] && grep '^| ' "$table" | grep -v '^| Check |' | awk -v n="$name" -F'|' '{ c = $2; gsub(/^ +| +$/, "", c) } c != n'
+    printf '%s\n' "$row"
+  } > "$tmp" && mv -f "$tmp" "$table"
+  say "adt: check $name: $status (exit $rc). Log: $log"
+  printf 'CHECK name=%s status=%s exit=%s log=%s\n' "$name" "$status" "$rc" "$log"
+  [ "$rc" -eq 0 ]
+}
+
 # ---------- the run ledger ----------
 # pipeline_artifacts/.ledger/<slug> holds what a build command must not
 # forget: its command, phase, paths and budgets, one "key=value" per line.
@@ -2109,6 +2171,7 @@ case "$command" in
   run)            cmd_run "$@" ;;
   select)         cmd_select "$@" ;;
   promote)        cmd_promote "$@" ;;
+  check)          cmd_check "$@" ;;
   state)          cmd_state "$@" ;;
   device-release) cmd_device_release "$@" ;;
   device-list)    cmd_device_list ;;

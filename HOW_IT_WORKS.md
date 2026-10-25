@@ -285,6 +285,20 @@ The build gate runs the project's unit-test task, but that only executes tests
 that exist — it can never fail for one that was never written. That is why the
 requirement lives in the plan and is checked by a reviewer instead.
 
+**Instrumented tests.** A case that needs a real Android runtime is marked
+`(instrumented)` and lives in `src/androidTest/`. JVM tests stay the default,
+because they run in the build gate on every review; instrumented ones run on
+the run's device as the device tests.
+
+**Data that outlives an update.** A change to a Room schema needs its
+migration, the exported schema JSON, and an instrumented migration test with
+`MigrationTestHelper` that creates the old version, migrates it, and checks the
+rows survive. `fallbackToDestructiveMigration` on user data is a blocker unless
+the request asks for it. The same rule covers other stored formats the app
+reads after an update, such as a renamed DataStore key. A missing migration
+test is a blocker for both reviewers, since data loss is the one defect a user
+cannot undo.
+
 ### Device tests: cases, flows and results
 
 Every device test is written once, by one agent, at the moment it can be
@@ -824,13 +838,16 @@ line of its implementation.
 
 ### Verification commands
 
-Three named commands are the only Gradle the pipeline runs.
+Five named commands are the only Gradle the pipeline runs. The last two are
+optional: the plan writes `none — <reason>` when they do not apply.
 
 | Name | What it is | Who runs it |
 |---|---|---|
 | Build gate | The full end-of-work check | The Coder in a sequential run, before declaring done. Also the code reviewer, as part of every review |
 | Cross-section check | The build gate minus the assemble task | The orchestrator, after every parallel coder group |
 | Install command | Puts the build on the device | The orchestrator, through `adt.sh install`, right before every test and re-test, on the run's own device only. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
+| Release check | Builds the release variant with R8, when the release build is minified | The orchestrator, through `adt.sh check`, in every test. A failure is a blocking finding: a missing keep rule or a release-only compile error is found before you ship, not after |
+| Device tests | The plan's instrumented tests (`src/androidTest/`), filtered to its test classes | The orchestrator, through `adt.sh check --device`, on the run's device, before the install of every test. A failure is a blocking finding. The build gate then also assembles the instrumented test APK, so the tests compile in every review |
 
 The cross-section check still catches compile errors, because its unit-test leg
 compiles the main sources.
@@ -850,7 +867,16 @@ them in this order and uses the first that applies:
    build gate:          ./gradlew assembleDebug lint detekt testDebugUnitTest
    cross-section check: ./gradlew lint detekt testDebugUnitTest
    install command:     ./gradlew installDebug
+   release check:       none
+   device tests:        none
    ```
+
+Section 0 also records the **device API**, the app's `targetSdk`, which picks
+the emulator the run boots.
+
+The checks write `pipeline_artifacts/<slug>/checks.md`, one row per check, and
+their logs to `checks/`. The Tester reads that file and reports each failed
+check with the first error from its log.
 
 Those defaults are a starting point, not a contract. `detekt` does not exist in a
 project that never applied the plugin, and a multi-module project may need

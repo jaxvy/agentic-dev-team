@@ -102,6 +102,14 @@ it must not be.
    that in Section 1's Test Stack — the three clauses are required either way,
    only the punctuation follows the project.
 
+   **Instrumented and migration tests.** Prefer a JVM test: it runs in the
+   build gate on every review. Mark a case `(instrumented)`, with its file
+   under `src/androidTest/`, only when it needs a real Android runtime. A
+   section that changes a Room schema, or another stored format the app reads
+   after an update, follows Part A, "Data that outlives an update": the
+   migration, the exported schema in **Files**, and an instrumented migration
+   test with `MigrationTestHelper`.
+
    Do not specify fluff. A test asserting that a data class returns what was
    just passed to it, that a DI graph constructs, that a delegate forwards a
    call verbatim, or that a mock was called with the argument the test itself
@@ -230,7 +238,8 @@ must not touch):
   boilerplate (per the tiered policy in Operating Principle 1).
 - Section 0 records the project's real, verified build gate, cross-section
   check, and install command — each one confirmed to exist in this project, not
-  copied from the pipeline doc's defaults on faith.
+  copied from the pipeline doc's defaults on faith — plus the release check and
+  the device tests (each a command or `none — <reason>`) and the device API.
 - The Parallelization Decision is made (YES/NO) with rationale, and Execution
   Groups list files, complexity, public interfaces, and required tests per
   section.
@@ -398,6 +407,24 @@ Coder can re-invoke the same ones.
      convention plugin that sets it. The run boots an emulator on that API when
      one exists, so the feature is tested on the platform behavior the app
      targets (runtime permissions, edge-to-edge, background limits).
+   - **Record the release check.** When the application module's release
+     build type sets `isMinifyEnabled = true`, record the task that runs R8 on
+     it: its assemble task (`:app:assembleRelease`, or the real variant's, such
+     as `:app:assembleProdRelease`), or, when that task needs a signing key
+     this machine does not have, the R8 task alone
+     (`:app:minifyReleaseWithR8`). Otherwise write
+     `none — release build is not minified`. A feature that adds a class read
+     by reflection (a serialized model, a Retrofit interface, a class named in
+     XML) also adds the keep rules it needs to Section 2.3, in the module's
+     `proguard-rules.pro`, unless the library ships its own.
+   - **Record the device tests.** When any section's **Tests required** has an
+     `(instrumented)` case, record the connected test task of its module,
+     filtered to those test classes:
+     `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=<fully qualified classes, comma-separated>`,
+     and add the instrumented test APK's assemble task
+     (`:app:assembleDebugAndroidTest`) to the build gate, so the tests compile
+     in every review. Otherwise write `none — no instrumented test in this
+     plan`.
 
 4. **Write `pipeline_artifacts/{slug}/design-doc.md`** — unless
    `DESIGN_DOC: off` or `DESIGN_DOC: from-design-doc`, in which case skip to
@@ -531,6 +558,8 @@ Coder can re-invoke the same ones.
    build gate:          ./gradlew :app:assembleDebug :app:lintDebug detekt :app:testDebugUnitTest
    cross-section check: ./gradlew :app:lintDebug detekt :app:testDebugUnitTest
    install command:     ./gradlew :app:installDebug
+   release check:       ./gradlew :app:assembleRelease
+   device tests:        none — no instrumented test in this plan
    device API:          35
    ```
 

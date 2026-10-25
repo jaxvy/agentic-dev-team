@@ -104,7 +104,7 @@ declining it.
 Feedback that lives only in the chat transcript is lost the moment the run ends,
 and a design doc that silently absorbs every request is how scope creep enters.
 
-## The Three Named Commands
+## The Named Commands
 
 These are the only Gradle verification commands the pipeline runs. Refer to
 them by name everywhere else — agent prompts and commands must not restate the
@@ -136,6 +136,28 @@ commands themselves.
   install succeeded — so a stale build is never tested by mistake, even when
   the Tester is invoked outside a build command.
 
+- **The release check** (optional) — builds the release variant with R8 on, so
+  a missing keep rule or a release-only compile error shows up before the
+  developer ships, not in the first release build. It is `none — <reason>`
+  when the release build is not minified. The orchestrator runs it in every
+  test, through `adt.sh check` (Part B, "The Test Phase"); a failure is a
+  blocking finding the Tester reports, and it goes to the Coder through the fix
+  loop like any other. A Coder fixing that finding runs the release check
+  itself after the build gate.
+
+- **The device tests** (optional) — the instrumented tests the plan requires
+  (`src/androidTest/`, for example a Room migration test), run on the run's
+  device: the module's connected test task, filtered to the plan's test
+  classes. It is `none — <reason>` when the plan requires no instrumented
+  test. The orchestrator runs it in every test, before the install, because a
+  connected test run uninstalls the app when it ends; a failure is a blocking
+  finding the Tester reports. When it is not `none`, the build gate also
+  assembles the instrumented test APK (for example
+  `:app:assembleDebugAndroidTest`), so those tests compile in every review.
+
+Section 0 also records the **device API**: the app's `targetSdk`, the API
+level of the emulator the run boots (Part B, "Before the Run").
+
 ### Resolving Them
 
 The commands are **project-specific and resolved per run** — never assumed.
@@ -156,6 +178,8 @@ Every agent resolves them in this order and uses the first that applies:
    build gate:          ./gradlew assembleDebug lint detekt testDebugUnitTest
    cross-section check: ./gradlew lint detekt testDebugUnitTest
    install command:     ./gradlew installDebug
+   release check:       none — no plan, so nothing says the release build is minified
+   device tests:        none — no plan, so no instrumented test is required
    ```
 
 The defaults are a starting point, not a contract: `detekt` does not exist in a
@@ -445,6 +469,40 @@ The build gate's unit-test leg runs whatever tests exist in the tree — it
 cannot fail for a test that was never written. That is precisely why the
 requirement is carried in the plan and checked by a reviewer, rather than left
 to the gate.
+
+### Instrumented tests
+
+A JVM test is the default: it runs in the build gate, in seconds, on every
+review. A case that needs a real Android runtime is marked `(instrumented)`
+in **Tests required**, with its file under `src/androidTest/`, and it runs as
+the **device tests** (above) on the run's device. Use it only where a JVM test
+(with Robolectric, when the project has it) cannot prove the behaviour. The
+same rules apply: the plan names it, the Coder writes it (and cannot run it,
+since the Coder has no device; the build gate compiles it), and the reviewers
+check it.
+
+### Data that outlives an update
+
+A user's data survives an app update, so a change to how it is stored must be
+proven against the old format. **When a section changes a Room schema** (a new
+or changed entity, column, index or table, or a new database version), the
+plan must:
+
+- add the migration (a `Migration`, or an `@AutoMigration` with its spec), and
+  never `fallbackToDestructiveMigration` for user data unless the feature
+  request asks for it;
+- keep `exportSchema = true` with a schema location (add `room.schemaLocation`
+  in Section 2.3 when the project has none), and list the new schema JSON in
+  that section's **Files**;
+- name an instrumented migration test with Room's `MigrationTestHelper`: create
+  the old version, insert rows, run the migration, and check the rows and the
+  new schema. Its dependency (`androidx.room:room-testing`) is in Section 2 when
+  the project lacks it.
+
+The same holds for other stored formats the app reads after an update, such as
+a renamed DataStore key or a changed serialized model: name a test that reads
+data in the old format. A schema change without its migration test is a
+blocker for both reviewers.
 
 ## Verdict and DONE Markers
 

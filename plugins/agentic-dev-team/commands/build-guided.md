@@ -156,8 +156,10 @@ Phase 4 — Tester (after approval):
   Run the test phase exactly as ORCHESTRATION_DOC, "The Test Phase",
   defines it:
     1. lease this run's device with `adt.sh device-acquire` (DEVICE);
-    2. install the build on it with `adt.sh install` (BUILD_INSTALLED;
-       release and STOP if it fails);
+    2. run the plan's Section 0 checks with `adt.sh check` (the release check,
+       then the device tests; a failed check continues, for the Tester), then
+       install the build with `adt.sh install` (BUILD_INSTALLED; release and
+       STOP if it fails);
     3. delegate to the `adt-android-test-writer` subagent, which writes one
        flow per test case from the plan and the code, without a device (you
        may run step 2 while it writes), and wait for ✅ TEST WRITER DONE;
@@ -169,7 +171,8 @@ Phase 4 — Tester (after approval):
        re-run the ones it fixed with `adt.sh run --only`;
     6. delegate to the `adt-android-tester` subagent.
   Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
-  `BUILD_INSTALLED: <timestamp>` and `RUN_RESULTS: <path>`. On a first run you
+  `BUILD_INSTALLED: <timestamp>`, `RUN_RESULTS: <path>`, and `CHECKS: <path>`
+  when a check ran. On a first run you
   have no credentials to pass — the Tester asks for one only if it hits a
   gate, at Phase 4B below.
   Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on exactly
@@ -207,7 +210,7 @@ Phase 4 — Tester (after approval):
     those flows and the Tester's notes as FIX), and `adt.sh run` re-runs every
     flow. Pass
     `adt-android-tester` PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE`, the new
-    `BUILD_INSTALLED` and `RUN_RESULTS` lines, the previous `test-results.md`
+    `BUILD_INSTALLED`, `RUN_RESULTS` and `CHECKS` lines, the previous `test-results.md`
     and the same `TEST CREDENTIALS` block if a resume supplied one,
     instructing it to judge every flow result again and to drive by hand only
     the cases without a flow that failed before or that the fix plausibly
@@ -235,7 +238,7 @@ Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes
     - ⛔ TESTER BLOCKED → back to the top of this phase.
 
   A resume re-invokes only the Tester, on the same device, with the same
-  DEVICE, BUILD_INSTALLED and RUN_RESULTS: the build did not change, so the
+  DEVICE, BUILD_INSTALLED, RUN_RESULTS and CHECKS: the build did not change, so the
   flows do not run again.
 
   On `stop`, or after the 2nd resume still comes back blocked, STOP and report
