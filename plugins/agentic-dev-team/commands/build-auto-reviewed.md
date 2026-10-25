@@ -55,6 +55,8 @@ the feature request without guessing. Instead the Tester asks for what it needs
 when it needs it, at the Phase 3B gate, and the user's reply carries the value.
 See the pipeline doc's Part A, "Test Credentials". Whatever they supply there
 goes to the `adt-android-tester` subagent and nowhere else.
+Flows never ask: they type the project's declared test secrets by name, and
+the script supplies the values (Part A, "Test secrets for flows").
 
 **Reviewer-loop protocol (applies to every gate below):**
 - After the producing agent finishes, delegate to its reviewer.
@@ -71,9 +73,9 @@ Input — before Phase 1, look at the feature request (`$ARGUMENTS` with the
   - **An existing `implementation-plan.md`** (from `/plan-design`, say): set
     PLAN_PATH to it, and DOC_PATH to the `design-doc.md` beside it when one
     exists (DESIGN_DOC on), else DESIGN_DOC off; a `doc:` token changes
-    nothing here. Skip Phase 1: the plan is already written. Start at Phase 1R: the
-    plan is reviewed like one this run wrote, and a CHANGES REQUESTED
-    re-runs the Architect on it as a revision run.
+    nothing here. Skip Phase 1: the plan is already written. Start at
+    Phase 1R: the plan is reviewed like one this run wrote, and a CHANGES
+    REQUESTED re-runs the Architect on it as a revision run.
   - **An existing `design-doc.md`** with no plan beside it: in Phase 1, pass
     the Architect `DESIGN_DOC: from-design-doc` and that path instead of a
     feature request. DOC_PATH is that path.

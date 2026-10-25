@@ -57,6 +57,8 @@ it needs it, at the Phase 4B gate, and the user's reply carries the value. See
 the pipeline doc's Part A, "Test Credentials". Whatever they supply there goes
 to the `adt-android-tester` subagent and nowhere else: not to another agent, not
 into `pipeline_artifacts/`, not into the code, not into your summary.
+Flows never ask: they type the project's declared test secrets by name, and
+the script supplies the values (Part A, "Test secrets for flows").
 
 Input — before Phase 1, look at the user's idea (`$ARGUMENTS` with the `doc:`
 token removed). It may be a file another command wrote:
