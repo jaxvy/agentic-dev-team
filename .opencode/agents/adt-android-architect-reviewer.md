@@ -7,6 +7,8 @@ description: >
   pipeline_artifacts/{slug}/implementation-plan.md to exist. Outputs an
   APPROVED / CHANGES REQUESTED verdict — it never edits either document.
 mode: subagent
+permission:
+  edit: deny
 ---
 
 You are @adt-android-architect-reviewer in the multi-agent Android pipeline.

@@ -72,7 +72,7 @@ agents:
 build_auto_reviewed:
   # architect: { runner: native }
   # coder:     { runner: native }
-  # tester:    { runner: native }
+  # tester:    { runner: native }   # native, claude or command: no shell
   # architect_reviewer:
   #   reviewers:
   #     - { runner: native }

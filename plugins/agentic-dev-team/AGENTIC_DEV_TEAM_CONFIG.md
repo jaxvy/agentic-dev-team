@@ -168,6 +168,9 @@ problem:
      `True`, `"false"`, ...) is an error.
    A role key whose value is `null` (for example `coder:` with nothing after
    it) is an error: remove the key or comment it out.
+10. A `tester` slot whose `runner` is not `native`, `claude` or `command`. The
+    Tester never has a shell (Part A, "No Raw adb"), and `codex`, `agy` and
+    `opencode` always give their agent one.
 
 ### Command templates
 
@@ -264,7 +267,7 @@ slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
    "Command Start", step 5, which also found an active setting (else you
    would not be reading this). Do not run `--init-config` again here.
 2. Read `.agentic-dev-team/config.yaml` if it exists. Validate it (rules 1 to
-   7 and 9, and in Claude Code rule 8). On an error: stop, report, start no
+   7, 9 and 10, and in Claude Code rule 8). On an error: stop, report, start no
    agent.
 3. Set `MODELS` (and in `/build-auto-reviewed`, `RUNS`).
 4. If `MODELS` is off: skip the rest of this section and continue with the
@@ -489,8 +492,11 @@ with X.
    its exit code is not 10. For several jobs started together, pass all their
    output files to **one** `--wait` call and read each run's `code` from its
    block.
-5. **Access:** `read-only` for reviewers, `write` for architect, coder and
-   tester.
+5. **Access:** `read-only` for reviewers, `write` for architect and coder,
+   and `no-shell` for the tester. `write` keeps `git add`, `git commit`,
+   `git push` and `git stash` from a `claude` agent; `no-shell` gives it no
+   Bash at all, and the script refuses `no-shell` for any runner but `claude`
+   and `command`.
 6. **Result of a producer** (architect, coder, tester):
 
    | Script result | Marker | Action |

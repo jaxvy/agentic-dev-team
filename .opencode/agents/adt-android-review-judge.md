@@ -4,6 +4,8 @@ description: >
   review panel (2 or more reviewers for one gate). The orchestrator starts it
   to verify and merge the panel's findings. Do not use it in any other case.
 mode: subagent
+permission:
+  edit: deny
 ---
 
 You are @adt-android-review-judge in the multi-agent Android pipeline. Before

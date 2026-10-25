@@ -14,7 +14,7 @@
 #   bash adt-run-agent.sh --check <claude|codex|agy|opencode>
 #   bash adt-run-agent.sh --check command --check-program <program>
 #                         --command-file <path> [--model <model>]
-#   bash adt-run-agent.sh --runner <runner> --access <read-only|write>
+#   bash adt-run-agent.sh --runner <runner> --access <read-only|write|no-shell>
 #                         --project-root <path>
 #                         --prompt-file <path> --output-file <path>
 #                         [--model <model>] [--timeout-minutes <n>]
@@ -795,7 +795,15 @@ case "$RUNNER" in
 esac
 case "$ACCESS" in
   read-only|write) ;;
-  *) adt_usage "--access needs read-only or write, got: $ACCESS" ;;
+  no-shell)
+    # The Tester: it writes test-results.md and drives the device through its
+    # driver's MCP tools, and never has a shell. Only claude can run without
+    # one; a command template is the developer's own responsibility.
+    case "$RUNNER" in
+      claude|command) ;;
+      *) adt_usage "--access no-shell needs the claude or command runner: $RUNNER always gives its agent a shell" ;;
+    esac ;;
+  *) adt_usage "--access needs read-only, write or no-shell, got: $ACCESS" ;;
 esac
 adt_need_abs --project-root "$PROJECT_ROOT"
 adt_need_abs --prompt-file "$PROMPT_FILE"
@@ -906,10 +914,16 @@ case "$RUNNER" in
            --permission-mode dontAsk
            --allowedTools "Read,Glob,Grep,Skill,Bash(git status:*),Bash(git diff:*),Bash(git ls-files:*),Bash(git log:*),Bash(git show:*)"
            --disallowedTools "Bash(*--output*)")
+    elif [ "$ACCESS" = no-shell ]; then
+      CMD=(env -u CLAUDECODE claude -p "$V_INSTRUCTION" --output-format text
+           --permission-mode acceptEdits
+           --allowedTools "Read,Write,Edit,Glob,Grep,mcp__auto-mobile,mcp__maestro"
+           --disallowedTools "Bash")
     else
       CMD=(env -u CLAUDECODE claude -p "$V_INSTRUCTION" --output-format text
            --permission-mode acceptEdits
-           --allowedTools "Read,Write,Edit,Glob,Grep,Skill,Bash,mcp__auto-mobile,mcp__maestro")
+           --allowedTools "Read,Write,Edit,Glob,Grep,Skill,Bash,mcp__auto-mobile,mcp__maestro"
+           --disallowedTools "Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git stash:*)")
     fi
     [ "$HAVE_MODEL" = 1 ] && CMD+=(--model "$MODEL")
     for d in "${DIRS[@]}"; do CMD+=(--add-dir "$d"); done

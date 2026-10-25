@@ -7,6 +7,8 @@ description: >
   and pipeline_artifacts/{slug}/implementation-plan.md. Outputs an APPROVED /
   CHANGES REQUESTED verdict — it never edits code.
 mode: subagent
+permission:
+  edit: deny
 ---
 
 You are @adt-android-code-reviewer in the multi-agent Android pipeline. Before

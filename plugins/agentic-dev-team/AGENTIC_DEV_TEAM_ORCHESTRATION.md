@@ -494,11 +494,12 @@ say what to do; report them verbatim.
 **The Tester and the Test Writer have no shell.** Their tool lists hold file
 tools and the two drivers' MCP tools, so they cannot reach for `adb` — every
 device action goes through the tools the adapter names, and a case that needs
-anything else is reported `INCONCLUSIVE`. Claude Code enforces the tool list.
-In Antigravity the one setting that grants a shell, `enable_write_tools`, is
-also what lets the Tester write `test-results.md` and the Test Writer write
-flows, so their mappings keep it; there, and in OpenCode, the no-shell rule is
-enforced by their prompts only.
+anything else is reported `INCONCLUSIVE`. Claude Code enforces the tool list,
+and OpenCode enforces the `permission: bash: deny` in their agent files (the
+read-only agents there have `edit: deny`). In Antigravity the one setting that
+grants a shell, `enable_write_tools`, is also what lets the Tester write
+`test-results.md` and the Test Writer write flows, so their mappings keep it;
+there, the no-shell rule is enforced by their prompts only.
 
 ## The Blocked Path
 
