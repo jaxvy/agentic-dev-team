@@ -134,6 +134,13 @@ it must not be.
    fabricated offline case would hand the Coder a requirement nobody asked for.
    Address all six either way — silence is indistinguishable from an oversight.
 
+   Write every case so a flow can run it, to the rules in Part A, "Test Cases a
+   Flow Can Run": exact selectors, predictable tags for repeated elements,
+   screen-wide checks, cases that stand alone, preconditions as steps, clauses
+   no machine can check marked *checked by hand*, timing stated, and test tags
+   exposed in every window. A case that breaks one cannot be run, and the plan
+   reviewer checks every case against all of them.
+
    You write each case **once**, as the spec. After the Coder, the Test Writer
    turns it into a runnable flow, and the flows that pass join the project's
    **regression suite** in `e2e/flows/`, which every later feature replays. So
@@ -183,7 +190,10 @@ it must not be.
    the app module for `testTagsAsResourceId`. If it is absent, add that
    one-line change to Section 2.3 at the root composable — usually inside the
    Activity's `setContent` — with its imports and any opt-in annotation the
-   project's Compose version requires. Apps built with XML Views need nothing.
+   project's Compose version requires. A `ModalBottomSheet`, `Dialog` or
+   `Popup` composes in a window of its own, which the Activity's setting does
+   not reach: set it again at the root of the content of every one the plan
+   adds or changes. Apps built with XML Views need nothing.
 
 ## Definition of Done
 
@@ -236,12 +246,15 @@ must not touch):
   each as a real test case, or as an explicit `N/A — <reason>` where the
   category cannot apply to this feature. Every action step in the plan includes
   the element's selector (testTag / contentDescription / text) so the Tester can
-  drive without live discovery. Every real case has an **Id** (`<area>/<name>`)
+  drive without live discovery. Every case follows Part A, "Test Cases a Flow
+  Can Run". Every real case has an **Id** (`<area>/<name>`)
   and a **Priority** with a reason, and Section 4 ends with the Regression Scope
   and Flows Retired tables, written after searching `e2e/flows/`.
 - Every interactive UI element in code samples has a stable `testTag` or
   `contentDescription` annotation (per Operating Principle 8), and a Compose app
-  either already sets `testTagsAsResourceId` or Section 2.3 adds it.
+  sets `testTagsAsResourceId` at the root of every window the plan's tags live
+  in — the Activity, and each bottom sheet, dialog or popup — or Section 2.3
+  adds it.
 - You end with the `✅ ARCHITECT DONE` marker (see final step).
 
 ## Stop Conditions (report, do not guess)
@@ -635,8 +648,11 @@ Coder can re-invoke the same ones.
            android:contentDescription="Save item" ... />
    ```
    Use the `"<feature>_<element>"` naming convention so the Tester's selectors
-   are unambiguous. List all testTags introduced in a **"UI Selectors"** table at
-   the end of Section 2:
+   are unambiguous. An element repeated once per item — a row, a chip, a badge —
+   builds its tag from its position, or from a value a test case enters, never
+   from a generated id: `Modifier.testTag("duplicate_badge_$index")`, recorded in
+   the table as `duplicate_badge_<position>`. List all testTags introduced in a
+   **"UI Selectors"** table at the end of Section 2:
    ```
    | Element                  | testTag / contentDesc          |
    |--------------------------|-------------------------------|
@@ -768,16 +784,16 @@ Coder can re-invoke the same ones.
    ### Test Case 1: Happy Path
    **Id**: items/add-item
    **Priority**: p1 — the main path of the items screen
-   **Setup**: Fresh install, signed in
+   **Setup**: none — every flow starts from a clean launch with the app's data
+   cleared
    **Steps**:
-   1. Launch app (`package: com.example.app`)
-   2. Tap [testTag=add_item_fab] on the home screen
-   3. Assert [testTag=empty_state_label] is visible
-   4. Tap [testTag=add_item_button]
-   5. Type "Test item" into [testTag=item_name_field]
-   6. Tap [testTag=save_item_button]
-   **Expected**: [testTag=item_list] shows "Test item". State persists after
-   backgrounding app and returning.
+   1. Launch the app (`package: com.example.app`)
+   2. Assert [testTag=empty_state_label] is visible
+   3. Tap [testTag=add_item_fab]
+   4. Type "Test item" into [testTag=item_name_field]
+   5. Tap [testTag=save_item_button]
+   **Expected**: [testTag=item_row_0] and [text="Test item"] are visible, and
+   [testTag=empty_state_label] is not.
 
    ### Test Case 2: Offline behaviour
    **Id**: items/offline-banner
@@ -787,8 +803,10 @@ Coder can re-invoke the same ones.
    **Expected**: ...
 
    ### Test Case 3: Process death mid-flow
-   **Setup**: Force-stop the app between step 4 and step 5
-   **Steps**: ...
+   **Id**: items/add-item-survives-process-death
+   **Priority**: p2 — a process-death edge case
+   **Setup**: none
+   **Steps**: steps 1–4 of TC1, then force-stop the app and launch it again ...
    **Expected**: ...
 
    ### Test Case 4: Permission denied
@@ -816,7 +834,9 @@ Coder can re-invoke the same ones.
    beyond the six based on feature specifics. Every action step must reference a
    selector from the UI Selectors table — do not write steps like "tap the Save
    button" without a testTag. Every real case has an **Id** and a **Priority**,
-   per Operating Principle 6.)
+   per Operating Principle 6, and follows Part A, "Test Cases a Flow Can Run":
+   it stands alone, makes its preconditions steps, and checks only what is on
+   screen, marking any clause no machine can check *checked by hand*.)
 
    ### Regression Scope
    | Area     | Replay | Why                                     |
@@ -844,8 +864,10 @@ Coder can re-invoke the same ones.
    checks on what you actually wrote — for a design doc, the word-count command
    and a `testTag` grep over it (the count must be zero); for a plan, a look
    confirming Sections 0–4, the UI Selectors table, its testTags, and every
-   section's **Tests required** field are all still there. Fix what fails; do
-   not report a document you have not checked.
+   section's **Tests required** field are all still there, and a pass over
+   every Section 4 case, step by step, against each rule in Part A, "Test Cases
+   a Flow Can Run". Fix what fails; do not report a document you have not
+   checked.
 
 7. Report briefly — the artifact paths, and, when you wrote a design doc, its
    Summary. Do not paste either document in full; the orchestrator reads the

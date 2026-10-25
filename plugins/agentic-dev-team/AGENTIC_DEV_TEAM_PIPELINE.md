@@ -228,6 +228,56 @@ to fix how they reach the app, and the script re-runs just those. Then
   finding. But a `READY TO MERGE` with cases nobody could verify says so in
   the summary the user reads.
 
+## Test Cases a Flow Can Run
+
+The Test Writer turns each of Section 4's cases into a flow, and a flow can do
+only what both test drivers can: find one element by an exact value, act on it,
+and check whether an exact element or text is on screen. A case that asks for
+more cannot be run. So the Architect writes every case to these rules, and the
+plan reviewer checks every case against all of them:
+
+1. **Exact selectors.** Every step that acts, and every Expected, names its
+   element by an exact test tag, content description or visible text, in the
+   plan's notation: `[testTag=save_item_button]`, `[text="Save"]`. Never a
+   pattern or wildcard (`duplicate_badge_*`), a position in a list ("the first
+   row", "index 0"), or one element found inside another ("the Delete button
+   in Copy three's row"). Never a driver's own syntax; the Test Writer
+   translates the plan's notation.
+2. **Predictable tags for repeated elements.** An element that appears once per
+   item — a row, a chip, a badge — gets a tag the case can know in advance:
+   from its position on screen (`duplicate_badge_0` for the topmost) or from a
+   value the case itself enters, such as a title it types. Never from an id
+   generated at run time: a UUID, a database id, a timestamp. The code sample
+   builds the tag, and the UI Selectors table records the scheme.
+3. **Screen-wide checks.** A check says whether something is on screen, not
+   where it is. When an Expected depends on where — "the sheet lists the other
+   two copies, not this one" — give the elements inside that container their
+   own tags (`duplicate_sheet_row_0`) and check those, state the claim for the
+   whole screen, or mark that clause *checked by hand*.
+4. **Each case stands alone.** Every flow starts from a clean launch with the
+   app's data cleared, and runs on its own, in any order. A case creates
+   everything it needs in its own steps. It never continues from another case
+   ("continue from TC1") or relies on data another case left behind. Steps
+   several cases share can be written once as a named **Shared setup** — itself
+   a list of steps with selectors — and each case starts by naming it.
+5. **Preconditions are steps or device state.** "Three bookmarks exist" is the
+   steps that create them. Device state — offline, dark mode, a permission, a
+   rotation — goes in **Setup**. "Signed in" needs a credential, which a flow
+   never holds: say so, and the case is driven by hand.
+6. **What no machine can check is marked.** A clause only a person can judge
+   ("the layout looks right in dark mode"), or one the drivers cannot check
+   (which field has focus), is marked *checked by hand*. The Test Writer leaves
+   it out of the flow and marks the flow partial, and the Tester checks that
+   clause.
+7. **Timing is stated.** A step that must happen within a short window, such as
+   tapping Undo before a snackbar disappears, says how long the window is.
+8. **Every window exposes its test tags.** In a Compose app, a `testTag` is a
+   resource id, which is what the drivers find, only under
+   `Modifier.semantics { testTagsAsResourceId = true }`. That must be set at the
+   root of each window's content: the Activity's `setContent`, and every
+   `ModalBottomSheet`, `Dialog` and `Popup`, which compose in a window of their
+   own.
+
 ## The Regression Suite
 
 The flows one feature writes protect the next. After a run ends in

@@ -84,9 +84,9 @@ You work in one of two modes, set by your prompt:
    judgment a machine cannot check ("the layout looks right in dark mode").
    Both are recorded with the reason, and the Tester drives them by hand.
    When the driver can check **part** of an Expected but not all of it — the
-   screen opens, but not that a field is focused — write the flow for the part
-   it can check and mark it `partial` in `INDEX.md`, naming what it leaves
-   out. The Tester then checks only that part by hand. A partial flow is never
+   screen opens, but not that a field is focused — or the plan marks a clause
+   *checked by hand*, write the flow for the part it can check and mark it
+   `partial` in `INDEX.md`, naming what it leaves out. The Tester then checks only that part by hand. A partial flow is never
    counted as the whole case.
 8. **When fixing, use only your device.** Bind to `DEVICE` exactly as the
    adapter says, and never start, stop or switch devices.
