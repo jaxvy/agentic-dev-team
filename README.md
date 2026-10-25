@@ -115,8 +115,10 @@ flowchart LR
 * The PM runs only in `/build-guided` and `/plan-research`. The reviewers run
   only in `/build-auto-reviewed`. In `/build-guided`, you approve each step
   yourself.
-* Each loop has a limit. When work is still rejected after the last round, the
-  run stops and tells you why. It does not report a success.
+* Each loop has a limit, counted by a script. When work is still rejected
+  after the last round, the run stops and tells you why. It does not report a
+  success. A run whose session died continues with
+  `/build-auto resume <slug>` (or the command it started with).
 
 ### Testing on a device
 
@@ -152,6 +154,13 @@ flowchart LR
 * **It asks when it is blocked.** On a locked screen or a sign-in, the Tester
   stops and asks you for the one thing it needs, for example the device PIN.
   It never writes the value down.
+* **Flows can sign in.** Name your test account's secrets in `AGENTS.md` and
+  put the values in the git-ignored `.agentic-dev-team/secrets.env`. The script
+  fills them in when a flow runs and removes them from every log
+  ([Test secrets and test hooks](HOW_IT_WORKS.md#test-secrets-and-test-hooks)).
+* **The suite runs in CI too.** `adt.sh suite` replays `e2e/flows/` with no
+  model; [`examples/ci/android-e2e.yml`](examples/ci/android-e2e.yml) runs it
+  on every pull request.
 
 ## Pick a command
 
@@ -255,7 +264,9 @@ Each review has one reviewer unless you configure a panel of 2 to 5. See
 
 `/plan-research` runs only the PM. `/plan-design` runs only the Architect. Use
 them to think a feature through, or to estimate the work, before you build it.
-Their output goes directly into a `build-*` command later.
+Their output goes directly into a `build-*` command later: pass the file's path
+(`/build-auto pipeline_artifacts/<slug>/implementation-plan.md`), and the build
+command skips the phases that file already covers.
 
 `/plan-design` finds out what you gave it. From a spec or an idea, it writes the
 plan and the design doc. From an existing plan, it writes only the design doc.
@@ -293,7 +304,8 @@ your-android-project/
         ├── flows/                  # one flow per test case, and INDEX.md
         ├── run-results.md          # each flow's result and time
         ├── run-logs/               # the test driver's output for each flow
-        └── test-results.md         # per-case results, verdict, observations
+        ├── test-results.md         # per-case results, verdict, observations
+        └── run-summary.json        # the run's record, for tracking and evals
 ```
 
 Nothing is committed for you. Review the diff, stage what you want, and commit
@@ -314,6 +326,8 @@ when you are ready.
 
 ## Requirements
 
+* macOS or Linux. The scripts are bash and use Unix process tools, so Windows
+  is not supported.
 * `git`
 * [Claude Code](https://claude.com/claude-code),
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)

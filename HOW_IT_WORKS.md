@@ -1148,7 +1148,7 @@ In Claude Code the value is a model alias: `opus`, `sonnet`, `haiku` or
 | Your main session | Config | The agent runs |
 |---|---|---|
 | Same family (for example Opus, config `opus`) | `opus` | Exactly your main session's model, including a 1M-context variant |
-| Other family (for example Sonnet, config `opus`) | `opus` | The version the alias maps to (Opus 5.5 on the Anthropic API today), or the model in `ANTHROPIC_DEFAULT_OPUS_MODEL` when you set it |
+| Other family (for example Sonnet, config `opus`) | `opus` | The version the alias maps to (the newest Opus on the Anthropic API), or the model in `ANTHROPIC_DEFAULT_OPUS_MODEL` when you set it |
 
 You cannot pin an exact version for an agent that runs inside your tool. To
 pin one, use `runner: claude` with a full model ID in `/build-auto-reviewed`
@@ -1190,7 +1190,9 @@ Other keys: `model` (passed to the CLI's `--model`), `timeout_minutes`
 (default 30 for a reviewer, 120 for the others), and `required` (reviewers
 only; `false` lets the run continue without that reviewer). Each CLI must be
 installed and logged in; the run checks this before it starts. The Test Writer
-and the device steps of the test phase always run in your current tool.
+and the device steps of the test phase always run in your current tool. The
+Tester never has a shell, so its `runner` is `native`, `claude` or `command`
+only: `codex`, `agy` and `opencode` always give their agent one.
 
 An external role runs through `scripts/adt-run-agent.sh`, which writes a
 prompt file, starts the CLI detached in its own process group, enforces the
