@@ -16,8 +16,8 @@
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
 #   adt.sh check          --slug <slug> --name <name> [--device] -- <command...>
 #   adt.sh promote        --slug <slug> [--remove <id>]...
-#   adt.sh state          --slug <slug> set <key> <value> | get <key>
-#                         | bump <key> --max <n> | show
+#   adt.sh state          --slug <slug> start <command> | set <key> <value>
+#                         | get <key> | bump <key> --max <n> | show
 #   adt.sh summary        --slug <slug>
 #   adt.sh device-release --slug <slug> | --serial <serial>
 #   adt.sh device-list
@@ -755,7 +755,9 @@ secret_value() {
 
 # The names of the secrets a flow uses: every ${NAME} in it.
 flow_secret_names() {
-  grep -o '[$][{][A-Z][A-Z0-9_]*[}]' "$1" 2>/dev/null | sed 's/^[$][{]//; s/[}]$//' | LC_ALL=C sort -u
+  # MAESTRO_* are Maestro's own variables, not secrets.
+  grep -o '[$][{][A-Z][A-Z0-9_]*[}]' "$1" 2>/dev/null | sed 's/^[$][{]//; s/[}]$//' | \
+    grep -v '^MAESTRO_' | LC_ALL=C sort -u
 }
 
 # Prints the first secret a flow uses that secrets.env does not set, if any.
@@ -1829,6 +1831,16 @@ cmd_state() {
       ;;
   esac
   case "$action" in
+    start)
+      # A new run of this slug: a fresh ledger, so no count of an earlier run
+      # carries over. A resume never runs this.
+      [ $# -eq 1 ] || usage
+      case "$1" in ''|*[!a-z-]*) die 2 "start takes the command's name, such as build-auto: '$1'" ;; esac
+      mkdir -p "$(dirname "$file")"
+      [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
+      [ -f "$file" ] && mv -f "$file" "$file.previous"
+      printf 'command=%s\nstarted=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$file"
+      ;;
     set)
       [ $# -eq 2 ] || usage
       value="$2"

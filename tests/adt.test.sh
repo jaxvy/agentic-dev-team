@@ -542,10 +542,10 @@ row_has "  (its row names the missing secret)" "$SANDBOX/proj1" s auth/pin "| FA
 expect_eq "  (and it never reaches the device)" "0" "$(grep -c 'name=other' "$FAKE_ADT_STATE/automobile.calls")"
 rm -f "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/pin.yaml"
 
-printf '# adt:driver: maestro\n# fake: echo-env\nappId: com.example.app\n---\n- inputText: ${TEST_PASSWORD}\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+printf '# adt:driver: maestro\n# fake: echo-env\nappId: com.example.app\n---\n- inputText: ${TEST_PASSWORD}\n- takeScreenshot: ${MAESTRO_FILENAME}\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
 adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
 expect_code "under Maestro, a flow with a secret runs" 0 $?
-expect_eq "Maestro gets only the secrets the flows use, as -e" "TEST_PASSWORD=s3cr3t-Pa\$\$" "$(cat "$FAKE_ADT_STATE/maestro.env")"
+expect_eq "Maestro gets only the secrets the flows use, as -e (not its own MAESTRO_ variables)" "TEST_PASSWORD=s3cr3t-Pa\$\$" "$(cat "$FAKE_ADT_STATE/maestro.env")"
 expect_eq "  (and no log keeps the value)" "" "$(grep -rlF 's3cr3t-Pa$$' "$SANDBOX/proj1/pipeline_artifacts/s" 2>/dev/null)"
 
 printf 'not a setting\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
@@ -833,6 +833,13 @@ $(adt "$SANDBOX/proj1" state --slug a show 2>/dev/null)
 EOF
 adt "$SANDBOX/proj2" state --slug a show >/dev/null 2>&1
 expect_code "a ledger belongs to its project" 2 $?
+adt "$SANDBOX/proj1" state --slug a start build-auto >/dev/null 2>&1
+expect_code "start begins a new run's ledger" 0 $?
+expect_eq "  (no count of the earlier run carries over)" "1" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
+expect_eq "  (it records the command)" "build-auto" "$(adt "$SANDBOX/proj1" state --slug a get command 2>/dev/null)"
+expect_true "  (and keeps the earlier ledger beside it)" grep -q '^fix_iterations=2$' "$ledger.previous"
+adt "$SANDBOX/proj1" state --slug a start "build auto" >/dev/null 2>&1
+expect_code "start with a name that is not a command is refused" 2 $?
 
 # ---------- crashes ----------
 

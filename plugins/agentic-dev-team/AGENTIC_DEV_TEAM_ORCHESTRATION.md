@@ -135,13 +135,16 @@ re-run that the budget does not allow.
 marker, or from an existing plan the command was given):
 
 ```
-bash <ADT_SH> state --slug S set command <build-auto | build-auto-reviewed | build-guided>
+bash <ADT_SH> state --slug S start <build-auto | build-auto-reviewed | build-guided>
 bash <ADT_SH> state --slug S set plan <PLAN_PATH>
 bash <ADT_SH> state --slug S set design_doc <DOC_PATH, or none>
 bash <ADT_SH> state --slug S set driver <the test driver>
 ```
 
-Then `set phase <name>` at the start of every phase, with the command's own
+`start` begins a fresh ledger for this run (an earlier run's ledger of the
+same slug is kept as `<slug>.previous`), so no count carries over from it. A
+resumed run never runs `start`. Then `set phase <name>` at the start of every
+phase, with the command's own
 phase names (`2R` for Phase 2R). In a parallel Coder phase, also
 `set group <n>` at the start of each Execution Group. After every Tester
 verdict, `set verdict <READY TO MERGE | NEEDS FIXES | BLOCKED>`.
