@@ -12,8 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: shellcheck -S warning install.sh plugins/agentic-dev-team/scripts/*.sh tests/*.sh tests/shims/*
-      - name: Versions and links
-        run: bash tests/release.test.sh
+      - name: Wiring and links
+        run: bash tests/wiring.test.sh
 
   test:
     strategy:
