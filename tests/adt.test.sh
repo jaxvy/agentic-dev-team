@@ -206,34 +206,6 @@ adt "$SANDBOX/proj1" device-acquire --slug a >/dev/null 2>&1
 expect_code "no AVD but a phone attached: the phone is not used without ADT_DEVICE_MODE=reuse" 10 $?
 expect_eq "  (it gets no lease)" "" "$(lease_file R58M123 slug)"
 
-echo "choosing the AVD by API level"
-setup
-printf 'target=android-33\n' > "$ANDROID_AVD_HOME/Pixel_A.ini"
-printf 'target=android-35\n' > "$ANDROID_AVD_HOME/Pixel_B.ini"
-out="$(adt "$SANDBOX/proj1" device-acquire --slug a --api 35 2>/dev/null | tail -n 1)"
-expect_eq "--api picks the AVD on that API" "Pixel_B" "$(lease_file "$out" avd)"
-expect_eq "  (and the lease records it)" "35" "$(lease_file "$out" api)"
-out="$(adt "$SANDBOX/proj1" device-acquire --slug b --api 33 2>/dev/null | tail -n 1)"
-expect_eq "  (another level, another AVD)" "Pixel_A" "$(lease_file "$out" avd)"
-setup
-printf 'target=android-33\n' > "$ANDROID_AVD_HOME/Pixel_A.ini"
-mkdir -p "$SANDBOX/avd/Pixel_B.avd"
-printf 'path=%s\n' "$SANDBOX/avd/Pixel_B.avd" > "$ANDROID_AVD_HOME/Pixel_B.ini"
-printf 'image.sysdir.1=system-images/android-34/google_apis/arm64-v8a/\n' > "$SANDBOX/avd/Pixel_B.avd/config.ini"
-err="$(adt "$SANDBOX/proj1" device-acquire --slug a --api 36 2>&1 >/dev/null)"
-out="$(lease_file emulator-15554 avd)"
-expect_eq "with no AVD on that API, the highest API is used (read from config.ini too)" "Pixel_B" "$out"
-expect_true "  (with a warning)" grep -q 'no free AVD runs API 36.*using Pixel_B (API 34)' <<EOF
-$err
-EOF
-adt "$SANDBOX/proj1" device-acquire --slug b --api thirty >/dev/null 2>&1
-expect_code "--api that is not a number is refused" 2 $?
-export ADT_AVD=Pixel_A
-out="$(adt "$SANDBOX/proj1" device-acquire --slug c --api 34 2>"$SANDBOX/err" | tail -n 1)"
-expect_eq "ADT_AVD still wins over --api" "Pixel_A" "$(lease_file "$out" avd)"
-expect_true "  (with a warning)" grep -q 'ADT_AVD=Pixel_A runs API 33, but the plan.s device API is 34' "$SANDBOX/err"
-unset ADT_AVD
-
 echo "reuse mode"
 setup
 export ADT_DEVICE_MODE=reuse

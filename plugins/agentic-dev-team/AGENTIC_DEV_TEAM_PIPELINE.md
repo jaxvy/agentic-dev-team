@@ -155,9 +155,6 @@ commands themselves.
   assembles the instrumented test APK (for example
   `:app:assembleDebugAndroidTest`), so those tests compile in every review.
 
-Section 0 also records the **device API**: the app's `targetSdk`, the API
-level of the emulator the run boots (Part B, "Before the Run").
-
 ### Resolving Them
 
 The commands are **project-specific and resolved per run** — never assumed.

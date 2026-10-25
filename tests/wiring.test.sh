@@ -50,7 +50,6 @@ done
 
 # ---------- files that must parse ----------
 
-check "examples/ci/android-e2e.yml is valid YAML" python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$REPO_DIR/examples/ci/android-e2e.yml"
 check ".github/workflows/ci.yml is valid YAML" python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$REPO_DIR/.github/workflows/ci.yml"
 
 echo

@@ -118,9 +118,8 @@ Phase 1R — Architect review gate (max 2 re-runs, counter `plan_review_reruns`)
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
   Early boot — first, once PLAN_PATH gives the slug S: run
-  `bash <ADT_SH> device-acquire --slug S --api <A> --background`, with `A` the
-  `device API` line of PLAN_PATH's Section 0. It returns at once and boots this
-  run's emulator while the Coder works; the test phase's own
+  `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
+  boots this run's emulator while the Coder works; the test phase's own
   `device-acquire` waits for it. From here on, every exit releases the device
   (see "Release the device" below).
 

@@ -158,9 +158,10 @@ flowchart LR
   put the values in the git-ignored `.agentic-dev-team/secrets.env`. The script
   fills them in when a flow runs and removes them from every log
   ([Test secrets and test hooks](HOW_IT_WORKS.md#test-secrets-and-test-hooks)).
-* **The suite runs in CI too.** `adt.sh suite` replays `e2e/flows/` with no
-  model; [`examples/ci/android-e2e.yml`](examples/ci/android-e2e.yml) runs it
-  on every pull request.
+* **The suite runs without the agents too.** `adt.sh suite` replays
+  `e2e/flows/` on a device that is already running, with no model, and writes
+  a JUnit report, so a CI machine with an emulator can run it on every pull
+  request.
 
 ## Pick a command
 

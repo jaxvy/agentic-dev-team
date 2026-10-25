@@ -4,7 +4,7 @@
 #
 # Usage:
 #   adt.sh preflight      --driver auto-mobile|maestro
-#   adt.sh device-acquire --slug <slug> [--api <level>] [--background]
+#   adt.sh device-acquire --slug <slug> [--background]
 #   adt.sh install        --slug <slug> -- <install command...>   (prints BUILD_INSTALLED)
 #   adt.sh run            --slug <slug> --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
@@ -66,8 +66,7 @@
 # pipeline_artifacts/; or else the git top level.
 #
 # Environment:
-#   ADT_AVD              AVD to boot (default: the first one not open in normal mode,
-#                        on the --api level when one is free)
+#   ADT_AVD              AVD to boot (default: the first one not open in normal mode)
 #   ADT_DEVICE_MODE      "reuse" = use an attached device, boot nothing
 #   ADT_HEADLESS         "0" = show the emulator window (default: headless)
 #   ADT_BOOT_TIMEOUT_S   seconds to wait for boot (default 240)
@@ -356,63 +355,25 @@ avds_in_normal_mode() {
   done | sort -u
 }
 
-# The API level of <avd>: from its .ini (target=android-34), or else from its
-# config.ini (image.sysdir.1=system-images/android-34/...). Empty if unknown.
-avd_api() {
-  local ini path api
-  ini="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$1.ini"
-  api="$(tr -d '\r' < "$ini" 2>/dev/null | sed -n 's/^target=android-\([0-9][0-9]*\)$/\1/p' | head -n 1)"
-  if [ -z "$api" ]; then
-    path="$(tr -d '\r' < "$ini" 2>/dev/null | sed -n 's/^path=//p' | head -n 1)"
-    api="$(tr -d '\r' < "$path/config.ini" 2>/dev/null | \
-      sed -n 's#^image[.]sysdir[.]1=.*android-\([0-9][0-9]*\)/.*#\1#p' | head -n 1)"
-  fi
-  printf '%s\n' "$api"
-}
-
-# Prints the first usable AVD not in the skip list (newline-separated). With
-# <api>, the plan's device API (the app's targetSdk), an AVD on that API comes
-# first; if none is free, the one with the highest API, with a warning.
+# Prints the first usable AVD not in the skip list (newline-separated).
 choose_avd() {
-  local skip="$1" want="${2:-}" busy avd api best="" best_api=-1
+  local skip="$1" busy avd
   busy="$(avds_in_normal_mode)"
   if [ -n "${ADT_AVD:-}" ]; then
     is_avd_name "$ADT_AVD" || \
       die 10 "ADT_AVD=$ADT_AVD is not an AVD on this machine. Known AVDs: $(list_avds | tr '\n' ' ')"
     printf '%s\n' "$busy" | grep -Fxq "$ADT_AVD" && \
       die 10 "ADT_AVD=$ADT_AVD is open in normal mode, and a read-only copy cannot start beside it. Close it, or unset ADT_AVD."
-    if [ -n "$want" ]; then
-      api="$(avd_api "$ADT_AVD")"
-      [ "$api" = "$want" ] || say "adt: ADT_AVD=$ADT_AVD runs API ${api:-unknown}, but the plan's device API is $want"
-    fi
     printf '%s\n' "$ADT_AVD"
     return 0
   fi
   for avd in $(list_avds); do
     printf '%s\n' "$busy" | grep -Fxq "$avd" && continue
     printf '%s\n' "$skip" | grep -Fxq "$avd" && continue
-    if [ -z "$want" ]; then
-      printf '%s\n' "$avd"
-      return 0
-    fi
-    api="$(avd_api "$avd")"
-    if [ "$api" = "$want" ]; then
-      printf '%s\n' "$avd"
-      return 0
-    fi
-    case "$api" in ''|*[!0-9]*) api=-1 ;; esac
-    if [ -z "$best" ] || [ "$api" -gt "$best_api" ]; then
-      best="$avd"
-      best_api="$api"
-    fi
+    printf '%s\n' "$avd"
+    return 0
   done
-  [ -n "$best" ] || return 1
-  if [ "$best_api" -ge 0 ]; then
-    say "adt: no free AVD runs API $want, the plan's device API; using $best (API $best_api). Create an AVD on API $want to test on it."
-  else
-    say "adt: no free AVD runs API $want, the plan's device API; using $best (API unknown)."
-  fi
-  printf '%s\n' "$best"
+  return 1
 }
 
 # Claims the first free even port pair after <after>; prints the serial.
@@ -542,7 +503,6 @@ boot_avd() {
   lease="$(lease_path "$serial")"
   log="$lease/emulator.log"
   lease_set "$serial" avd "$avd"
-  lease_set "$serial" api "$(avd_api "$avd")"
   launch_emulator "$serial" "$avd" && return 0
 
   stop_emulator "$serial" > /dev/null 2>&1
@@ -1073,17 +1033,15 @@ cancel_second() {
 # ---------- subcommands ----------
 
 cmd_device_acquire() {
-  local slug="" background=0 project serial avd rc skip="" after=0 retried=0 log api=""
+  local slug="" background=0 project serial avd rc skip="" after=0 retried=0 log
   while [ $# -gt 0 ]; do
     case "$1" in
       --slug) slug="${2:-}"; shift 2 ;;
-      --api) api="${2:-}"; shift 2 ;;
       --background) background=1; shift ;;
       *) usage ;;
     esac
   done
   [ -n "$slug" ] || usage
-  case "$api" in *[!0-9]*) die 2 "--api takes an API level, such as 35: $api" ;; esac
   find_adb
   project="$(project_dir)"
 
@@ -1091,7 +1049,7 @@ cmd_device_acquire() {
     local child lock waited=0
     mkdir -p "$ADT_HOME"
     log="$ADT_HOME/acquire-$(lock_key "$project" "$slug").log"
-    child="$(start_detached "$log" /bin/bash "${BASH_SOURCE[0]}" device-acquire --slug "$slug" --api "$api")"
+    child="$(start_detached "$log" /bin/bash "${BASH_SOURCE[0]}" device-acquire --slug "$slug")"
     # Return once the boot holds this run's lock (a few milliseconds), so a
     # device-release that follows at once waits for the boot, not misses it.
     lock="$LEASE_ROOT/.lock-$(lock_key "$project" "$slug")"
@@ -1138,11 +1096,11 @@ cmd_device_acquire() {
   fi
 
   if [ -n "${ADT_AVD:-}" ]; then
-    avd="$(choose_avd "" "$api")" || exit $?
+    avd="$(choose_avd "")" || exit $?
   fi
 
   while :; do
-    if ! avd="$(choose_avd "$skip" "$api")"; then
+    if ! avd="$(choose_avd "$skip")"; then
       if [ -z "$(list_avds)" ]; then
         die 10 "no AVD exists. Create one in Android Studio's Device Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
       fi
@@ -2028,11 +1986,6 @@ preflight_devices() {
   fi
   pf_ok "emulator: $EMULATOR"
   avds="$(list_avds)"
-  if [ -n "$avds" ]; then
-    local list="" one
-    for one in $avds; do list="$list, $one (API $(avd_api "$one" | sed 's/^$/unknown/'))"; done
-    pf_ok "AVDs: ${list#, }. A run boots one on the app's targetSdk when it can."
-  fi
   busy="$(avds_in_normal_mode)"
   if [ -n "${ADT_AVD:-}" ]; then
     if ! printf '%s\n' "$avds" | grep -Fxq "$ADT_AVD"; then

@@ -43,8 +43,7 @@ against the actual codebase. Judge it on:
    fails every downstream phase, and the failure will look like broken code
    rather than a bad plan. Section 0 restating the pipeline doc's defaults
    verbatim, with no Source line and no evidence of discovery, is itself worth
-   a flag. The `device API` line must be the app's real `targetSdk`; a wrong
-   one tests the feature on the wrong platform version, which is a blocker.
+   a flag.
    The release check is a real R8 task when the release build is minified,
    and `none` only when it is not. The device tests are a filtered connected
    test task when any case is `(instrumented)`, with the instrumented test

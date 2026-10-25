@@ -420,11 +420,11 @@ The results are in `pipeline_artifacts/manual/run-results.md`. Use
 per-project install, the script is in the plugin's directory, under
 `scripts/adt.sh`.
 
-#### Running the suite in CI
+#### Running the suite on its own, or in CI
 
-The suite should guard every pull request, not only the runs of the pipeline.
-`adt.sh suite` replays `e2e/flows/` on a device it is given, with no lease, no
-slug and no model:
+`adt.sh suite` replays `e2e/flows/` on a device that is already running (your
+emulator, or the one your CI machine has), with no lease, no slug and no
+model. It boots nothing:
 
 ```bash
 bash adt.sh suite --driver maestro                # P0 flows, on the one online device
@@ -435,11 +435,9 @@ bash adt.sh suite --driver maestro --serial emulator-5554 --area checkout:p1 --o
 It writes `run-results.md`, the logs and a JUnit report (`junit.xml`) into
 `--out` (default `pipeline_artifacts/suite/`), fills in test secrets from
 `.agentic-dev-team/secrets.env` as a pipeline run does, and exits 1 when a flow
-failed. [`examples/ci/android-e2e.yml`](examples/ci/android-e2e.yml) is a
-GitHub Actions workflow to copy: P0 on your minSdk and targetSdk, the whole
-suite on your targetSdk, test secrets from GitHub secrets. In CI, run the
-preflight with `ADT_DEVICE_MODE=reuse`, because the CI emulator is the attached
-device.
+failed. Install the build on the device first (your plan's install command).
+Run the preflight with `ADT_DEVICE_MODE=reuse`, because the device it tests on
+is one you attached.
 
 ### Test drivers
 
@@ -606,11 +604,6 @@ flowchart TD
   normally), the preflight fails and says how to fix it; the run never falls
   back to your phone or your open emulator. The script never stops a device it
   did not start.
-* **The app's own API level.** The plan's Section 0 records the app's
-  `targetSdk` as its `device API`, and the run boots an AVD on that API when
-  one is free. If none is, it takes the AVD with the highest API and warns, so
-  create one AVD per API level you ship for. The preflight lists every AVD with
-  its API. `ADT_AVD` still wins when you set it.
 
 * **Two emulators when there is memory.** If a second emulator would still
   leave a quarter of the machine's memory free, the run boots one beside its
@@ -634,7 +627,7 @@ All optional. Set them in your shell profile, or for Claude Code in
 
 | Variable | What it does |
 |---|---|
-| `ADT_AVD` | The AVD to boot, whatever the plan's device API. Without it, a run picks an AVD on the app's `targetSdk` |
+| `ADT_AVD` | The AVD to boot. Recommended, so every run uses the one you prepared |
 | `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one. Flows clear the app's data on it, so only use a device whose app data you can lose |
 | `ADT_HEADLESS=0` | Show the emulator window, to watch a test run |
 | `ADT_PARALLEL=1` | Never boot a second emulator for a run (default: one when there is memory) |
@@ -948,9 +941,6 @@ them in this order and uses the first that applies:
    release check:       none
    device tests:        none
    ```
-
-Section 0 also records the **device API**, the app's `targetSdk`, which picks
-the emulator the run boots.
 
 The checks write `pipeline_artifacts/<slug>/checks.md`, one row per check, and
 their logs to `checks/`. The Tester reads that file and reports each failed

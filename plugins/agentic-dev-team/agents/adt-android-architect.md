@@ -250,7 +250,7 @@ must not touch):
 - Section 0 records the project's real, verified build gate, cross-section
   check, and install command — each one confirmed to exist in this project, not
   copied from the pipeline doc's defaults on faith — plus the release check and
-  the device tests (each a command or `none — <reason>`) and the device API.
+  the device tests (each a command or `none — <reason>`).
 - The Parallelization Decision is made (YES/NO) with rationale, and Execution
   Groups list files, complexity, public interfaces, and required tests per
   section.
@@ -416,11 +416,6 @@ Coder can re-invoke the same ones.
      `./gradlew tasks --all` you read once. A resolved command naming a
      non-existent task is a plan defect that fails every downstream phase, and
      the failure will look like broken code rather than a bad plan.
-   - **Record the device API**: the app's `targetSdk`, read from the
-     application module's `build.gradle.kts`, its version catalog entry, or the
-     convention plugin that sets it. The run boots an emulator on that API when
-     one exists, so the feature is tested on the platform behavior the app
-     targets (runtime permissions, edge-to-edge, background limits).
    - **Record the release check.** When the application module's release
      build type sets `isMinifyEnabled = true`, record the task that runs R8 on
      it: its assemble task (`:app:assembleRelease`, or the real variant's, such
@@ -574,7 +569,6 @@ Coder can re-invoke the same ones.
    install command:     ./gradlew :app:installDebug
    release check:       ./gradlew :app:assembleRelease
    device tests:        none — no instrumented test in this plan
-   device API:          35
    ```
 
    **Source**: <`AGENTS.md` declares them | derived from settings.gradle.kts +
