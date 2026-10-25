@@ -29,8 +29,9 @@ Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
 command, paths and driver once the slug is known, the phase at the start of
 every phase below, and each Tester verdict. Before each re-run that a budget
 below limits, bump the counter the budget names; exit 17 is that budget's
-STOP. If `$ARGUMENTS` is exactly `resume <slug>`, follow "Resume" in that
-section instead of starting at the first phase.
+STOP. At every exit, after the device release, write the run summary as that
+section's "At the end" says. If `$ARGUMENTS` is exactly `resume <slug>`,
+follow "Resume" in that section instead of starting at the first phase.
 
 Configured runs: when RUNS is on, follow CONFIG_DOC, "Configured Runs
 (/build-auto-reviewed only)", for every phase below: it says where each role

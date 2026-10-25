@@ -163,11 +163,18 @@ the command says for that budget. Bump first, then re-run; never the other way
 round. When you are not sure of a count, run `bash <ADT_SH> state --slug S
 show`: the ledger is the record, not your memory.
 
+**At the end.** On every exit once the slug is known (the end of the run, a
+STOP, or `stop`), after the device release, run
+`bash <ADT_SH> state --slug S set phase done` and then
+`bash <ADT_SH> summary --slug S`. It writes `run-summary.json` beside the plan:
+the run's record of its verdict, coverage, budgets used, flows and checks. Name
+that file in the final summary.
+
 **Resume.** When a build command's `$ARGUMENTS` is exactly `resume <slug>`:
 
 1. Do "Command Start" as usual.
 2. Run `bash <ADT_SH> state --slug <slug> show`. Exit 2: STOP, there is no run
-   to resume. A `command` that is not this command: STOP and tell the user to
+   to resume. A `phase` of `done`: STOP, that run has ended; start a new one. A `command` that is not this command: STOP and tell the user to
    run `/<that command> resume <slug>`. A `driver` that is not the one Command
    Start found: STOP and say so.
 3. Restore PLAN_PATH from `plan`, and DOC_PATH from `design_doc` (`none` means
