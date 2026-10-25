@@ -22,6 +22,9 @@
 #     drivers' MCP tools) to the project's .claude/settings.local.json, so
 #     Claude Code does not stop to ask mid-run. --no-allow skips this, and
 #     --uninstall removes exactly the rules it added.
+#   - Creates the optional pipeline config .agentic-dev-team/config.yaml
+#     (every setting commented out, git-ignored by .agentic-dev-team/.gitignore)
+#     when it does not exist yet. See HOW_IT_WORKS.md, "Configuration".
 #
 # Safety:
 #   - Never overwrites a developer's own files. Real files at our install
@@ -29,6 +32,8 @@
 #   - Only modifies content inside the marker-fenced blocks in .gitignore
 #     and .agents/agents.md; content outside markers is left alone.
 #   - --uninstall removes only what this script created.
+#   - Never edits or deletes anything in .agentic-dev-team/, also not on
+#     --uninstall: that is your configuration.
 
 set -euo pipefail
 
@@ -371,11 +376,19 @@ do_install() {
     bash "$REPO_DIR/.claude/adt/scripts/adt.sh" allow --project "$PROJECT_DIR" 2>&1 | sed 's/^adt: /  /'
   fi
 
+  # Create the optional config once. It never overwrites an existing file,
+  # and a failure (exit 1) never stops the install.
+  local init_out
+  init_out="$(bash "$REPO_DIR/plugins/agentic-dev-team/scripts/adt-run-agent.sh" --init-config "$PROJECT_DIR" 2>&1 || true)"
+  if [ -n "$init_out" ]; then
+    printf '%s\n' "$init_out" | sed 's/^/  /'
+  fi
 
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
   echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code, Antigravity, or opencode."
+  echo "Optional config: .agentic-dev-team/config.yaml (see HOW_IT_WORKS.md, \"Configuration\")."
 }
 
 # ---------- uninstall mode ----------
@@ -424,6 +437,10 @@ do_uninstall() {
   # Remove agents.md block.
   rewrite_agents_block ""
   echo "  cleaned: .agents/agents.md marker block"
+
+  if [ -d "$PROJECT_DIR/.agentic-dev-team" ]; then
+    echo "  kept .agentic-dev-team/ (your configuration; delete it yourself if you do not need it)"
+  fi
 
   echo ""
   echo "Uninstalled: $removed symlink(s) removed."

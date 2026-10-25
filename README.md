@@ -70,6 +70,7 @@ separate mandates, and puts a reviewer between them.
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of required changes |
 | `adt-android-test-writer` | Test engineer | One runnable *flow* file for each test case the Architect wrote, and no tests of its own |
 | `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
+| `adt-android-review-judge` | Panel judge, read-only. Only runs when you configure a review panel (see [Configuration](#configuration)) | The verified, merged findings of the panel, and the gate's verdict |
 
 Each agent reads your project's `AGENTS.md` (or `CLAUDE.md`) for stack,
 architecture, and conventions, so the output matches your codebase rather than a
@@ -153,6 +154,10 @@ every new untracked file, not just what shows up in `git diff`.
 When a reviewer requests changes, the producing agent re-runs with that feedback,
 at most twice per gate. If the reviewer is still unsatisfied after the second
 re-run, the pipeline stops and reports instead of shipping rejected work.
+
+Each gate has one reviewer unless you set more in the
+[config file](#configuration): 2 to 5 reviewers, on different models or
+tools, review as a panel.
 
 The code reviewer reviews the way a colleague would: a real bug is a blocker
 whether or not the plan anticipated it, and the Coder is allowed to fix what it
@@ -248,8 +253,10 @@ The fastest path if you only use Claude Code. From inside the CLI:
 /plugin install agentic-dev-team@adt-pipeline
 ```
 
-This installs all seven agents and all five commands with no per-project setup. It
-does not wire up Antigravity or OpenCode.
+This installs all eight agents and all five commands with no per-project setup.
+It does not wire up Antigravity or OpenCode. The first command you run in a
+project creates the optional config file (see [Configuration](#configuration));
+Claude Code asks your permission for that one command.
 
 ### Install per project with install.sh
 
@@ -269,10 +276,11 @@ cd /path/to/your-android-project
 ~/code/agentic-dev-team/install.sh
 ```
 
-It links the agents and commands into the project's `.claude/`,
-`.agents/workflows/`, and `.opencode/`. Your existing content in those
-directories is never touched, modified, or migrated, with one deliberate
-exception: it adds the pipeline's three permission rules to
+It links the agents, commands, and scripts into the project's `.claude/`,
+`.agents/workflows/`, and `.opencode/`, and creates the optional config file
+`.agentic-dev-team/config.yaml` (see [Configuration](#configuration)). Your
+existing content in those directories is never touched, modified, or migrated,
+with one deliberate exception: it adds the pipeline's three permission rules to
 `.claude/settings.local.json`, keeping every setting already there, so a run
 does not stop to ask (see
 [Permissions](HOW_IT_WORKS.md#before-a-run-preflight-and-permissions)). Pass
@@ -299,6 +307,42 @@ an append.
 This removes only what it created: its own symlinks, its marker-fenced blocks
 in `.gitignore` and `.agents/agents.md`, and the permission rules it added to
 `.claude/settings.local.json`. Your files and the clone are left alone.
+It keeps `.agentic-dev-team/`, because that is your configuration; delete it
+yourself if you do not need it. Uninstalling the Claude Code plugin does not
+touch your project, so delete that folder by hand there too.
+
+## Configuration
+
+Every setting is optional: until you edit `.agentic-dev-team/config.yaml`,
+every command works exactly as it does without it. `install.sh`, or with the
+plugin install the first command you run in a project, creates the file with
+every setting commented out and keeps it out of git.
+
+It has two parts:
+
+- **`agents:`** sets the model of each agent, in every command. Only Claude
+  Code applies it; Antigravity and OpenCode run every agent on the model you
+  select in the tool.
+- **`build_auto_reviewed:`** applies to `/build-auto-reviewed` only. An agent
+  can run through another CLI you are logged in to (`claude`, `codex`, `agy`,
+  `opencode`, or your own command), and a review gate with 2 to 5 reviewers
+  becomes a panel: the reviewers check the same work in parallel, and when
+  any of them asks for changes, a judge agent checks each finding against the
+  code.
+
+```yaml
+agents:
+  coder: { model: opus }
+build_auto_reviewed:
+  code_reviewer:
+    reviewers:
+      - { runner: native }
+      - { runner: codex, required: false }
+```
+
+Each panel round costs one agent run per reviewer, plus one for the judge.
+Every setting, the runners, how a panel runs, and what to know before you use
+another CLI are in [HOW_IT_WORKS.md](HOW_IT_WORKS.md#configuration).
 
 ## Further reading
 
