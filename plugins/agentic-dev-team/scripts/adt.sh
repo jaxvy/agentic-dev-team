@@ -93,6 +93,11 @@
 
 set -u
 
+# Name checks list the letters. A range such as [a-z] follows the locale, and
+# under en_US.UTF-8 (the macOS default) it also matches capitals.
+LOWER=abcdefghijklmnopqrstuvwxyz
+UPPER=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+
 ADT_HOME="${ADT_HOME:-$HOME/.adt}"
 LEASE_ROOT="$ADT_HOME/leases"
 BOOT_TIMEOUT="${ADT_BOOT_TIMEOUT_S:-240}"
@@ -700,7 +705,7 @@ load_secrets() {
     git -C "$project" check-ignore -q "$f" 2>/dev/null || \
       die 2 "$f is not git-ignored, so a commit could publish it. Keep .agentic-dev-team/.gitignore, or ignore the file in .gitignore."
   fi
-  bad="$(tr -d '\r' < "$f" | awk '!/^[[:space:]]*(#|$)/ && !/^[A-Z][A-Z0-9_]*=/ { print NR; exit }')"
+  bad="$(tr -d '\r' < "$f" | LC_ALL=C awk '!/^[[:space:]]*(#|$)/ && !/^[A-Z][A-Z0-9_]*=/ { print NR; exit }')"
   [ -z "$bad" ] || die 2 "line $bad of $f is not NAME=value (NAME in capitals, digits and '_')."
   SECRETS_FILE="$f"
 }
@@ -713,7 +718,7 @@ secret_value() {
 # The names of the secrets a flow uses: every ${NAME} in it.
 flow_secret_names() {
   # MAESTRO_* are Maestro's own variables, not secrets.
-  grep -o '[$][{][A-Z][A-Z0-9_]*[}]' "$1" 2>/dev/null | sed 's/^[$][{]//; s/[}]$//' | \
+  LC_ALL=C grep -o '[$][{][A-Z][A-Z0-9_]*[}]' "$1" 2>/dev/null | sed 's/^[$][{]//; s/[}]$//' | \
     grep -v '^MAESTRO_' | LC_ALL=C sort -u
 }
 
@@ -731,6 +736,7 @@ missing_secret() {
 # The secrets as awk arrays name[1..n] and val[1..n], loaded in BEGIN from
 # the file in the variable sf. (Not "NR == FNR": with a file that defines no
 # secret, that test would also match the lines of the file being processed.)
+# Run it with LC_ALL=C, so that [A-Z] is the capitals only.
 SECRETS_AWK='BEGIN {
   while ((getline l < sf) > 0) {
     sub(/\r$/, "", l)
@@ -745,7 +751,7 @@ flow_with_secrets() {
     cat "$1"
     return
   fi
-  awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
+  LC_ALL=C awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
     {
       line = $0
       for (k = 1; k <= n; k++) {
@@ -764,7 +770,7 @@ scrub_secrets() {
   for f in "$@"; do
     [ -f "$f" ] || continue
     tmp="$f.scrub.$$"
-    awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
+    LC_ALL=C awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
       {
         line = $0
         for (k = 1; k <= n; k++) {
@@ -1700,7 +1706,7 @@ cmd_check() {
     esac
   done
   [ -n "$slug" ] && [ -n "$name" ] && [ $# -gt 0 ] || usage
-  case "$name" in *[!a-z0-9-]*) die 2 "a check name is lowercase letters, digits and '-': $name" ;; esac
+  case "$name" in *[!"$LOWER"0123456789-]*) die 2 "a check name is lowercase letters, digits and '-': $name" ;; esac
   project="$(project_dir)"
   dir="$project/pipeline_artifacts/$slug"
   mkdir -p "$dir/checks"
@@ -1775,14 +1781,14 @@ cmd_state() {
     esac
   done
   [ -n "$slug" ] && [ $# -gt 0 ] || usage
-  case "$slug" in .*|*[!A-Za-z0-9._~-]*) die 2 "a slug is letters, digits, '.', '_', '~' and '-' only: $slug" ;; esac
+  case "$slug" in .*|*[!"$UPPER$LOWER"0123456789._~-]*) die 2 "a slug is letters, digits, '.', '_', '~' and '-' only: $slug" ;; esac
   action="$1"; shift
   project="$(project_dir)"
   file="$(ledger_file "$project" "$slug")"
   case "$action" in
     set|bump|get)
       key="${1:-}"
-      case "$key" in ''|[!a-z]*|*[!a-z0-9_]*) die 2 "a ledger key is lowercase letters, digits and '_': '$key'" ;; esac
+      case "$key" in ''|[!"$LOWER"]*|*[!"$LOWER"0123456789_]*) die 2 "a ledger key is lowercase letters, digits and '_': '$key'" ;; esac
       ;;
   esac
   case "$action" in
@@ -1790,7 +1796,7 @@ cmd_state() {
       # A new run of this slug: a fresh ledger, so no count of an earlier run
       # carries over. A resume never runs this.
       [ $# -eq 1 ] || usage
-      case "$1" in ''|*[!a-z-]*) die 2 "start takes the command's name, such as build-auto: '$1'" ;; esac
+      case "$1" in ''|*[!"$LOWER"-]*) die 2 "start takes the command's name, such as build-auto: '$1'" ;; esac
       mkdir -p "$(dirname "$file")"
       [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
       [ -f "$file" ] && mv -f "$file" "$file.previous"
