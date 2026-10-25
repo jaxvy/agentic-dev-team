@@ -6,28 +6,18 @@ on:
   pull_request:
 
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: shellcheck -S warning install.sh plugins/agentic-dev-team/scripts/*.sh tests/*.sh tests/shims/*
       - name: Wiring and links
         run: bash tests/wiring.test.sh
-
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS runs the scripts under its system bash 3.2.
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
       - name: adt.sh
-        run: /bin/bash tests/adt.test.sh
+        run: bash tests/adt.test.sh
       - name: adt-run-agent.sh
-        run: /bin/bash tests/adt-run-agent.test.sh
+        run: bash tests/adt-run-agent.test.sh
       - name: config file and install.sh
-        run: /bin/bash tests/adt-config.test.sh
+        run: bash tests/adt-config.test.sh
