@@ -267,16 +267,21 @@ plan reviewer checks every case against all of them:
 1. **Exact selectors.** Every step that acts, and every Expected, names its
    element by an exact test tag, content description or visible text, in the
    plan's notation: `[testTag=save_item_button]`, `[text="Save"]`. Never a
-   pattern or wildcard (`duplicate_badge_*`), a position in a list ("the first
-   row", "index 0"), or one element found inside another ("the Delete button
-   in Copy three's row"). Never a driver's own syntax; the Test Writer
-   translates the plan's notation.
+   pattern or wildcard (`duplicate_badge_*`), a position given as a selector
+   ("the first row", "index 0", "the third match"), or one element found
+   inside another ("the Delete button in Copy three's row"). A position built
+   into the tag itself is fine (rule 2). Never a driver's own syntax; the Test
+   Writer translates the plan's notation.
 2. **Predictable tags for repeated elements.** An element that appears once per
    item — a row, a chip, a badge — gets a tag the case can know in advance:
-   from its position on screen (`duplicate_badge_0` for the topmost) or from a
-   value the case itself enters, such as a title it types. Never from an id
-   generated at run time: a UUID, a database id, a timestamp. The code sample
-   builds the tag, and the UI Selectors table records the scheme.
+   from its index in the list it belongs to (`duplicate_badge_0` for the first
+   item, built from the list's index) or from a value the case itself enters,
+   such as a title it types. Never from an id generated at run time: a UUID, a
+   database id, a timestamp. The code sample builds the tag, and the UI
+   Selectors table records the scheme. A lazy list (`LazyColumn`,
+   `RecyclerView`) has only the rows on screen, so a case that checks a row
+   below the first screen scrolls to it first:
+   `Scroll [testTag=duplicate_list] until [testTag=duplicate_badge_7] is visible`.
 3. **Screen-wide checks.** A check says whether something is on screen, not
    where it is. When an Expected depends on where — "the sheet lists the other
    two copies, not this one" — give the elements inside that container their

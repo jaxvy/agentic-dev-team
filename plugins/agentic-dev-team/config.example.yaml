@@ -18,8 +18,8 @@ version: 1
 # Claude Code: use a model alias: opus, sonnet, haiku, fable.
 #   If your main session already runs a model of that family, the agent runs
 #   on exactly your main session's model. Otherwise the alias gives the
-#   version Claude Code maps it to (for example "opus" is Opus 5.5 on the
-#   Anthropic API today), or the model in ANTHROPIC_DEFAULT_OPUS_MODEL
+#   version Claude Code maps it to (the newest version of that family on
+#   the Anthropic API), or the model in ANTHROPIC_DEFAULT_OPUS_MODEL
 #   (or _SONNET_, _HAIKU_, _FABLE_) when you set it. You cannot pin an exact
 #   version here; see HOW_IT_WORKS.md, "Configuration".
 # Antigravity and opencode: ignored. These tools run every subagent on the

@@ -225,8 +225,8 @@ subagent):
    suffix.
 2. Otherwise it runs the version the alias points to: the value of
    `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` when that variable is set, else Claude
-   Code's current mapping (for example `opus` is Opus 5.5 on the Anthropic API
-   today; other providers can map it to another version).
+   Code's current mapping (on the Anthropic API, the newest version of that
+   family; other providers can map it to another version).
 3. On a provider other than the Anthropic API, when Claude Code cannot tell
    the main model's family, `opus` also resolves to the main model, unless
    `ANTHROPIC_DEFAULT_OPUS_MODEL` is set.

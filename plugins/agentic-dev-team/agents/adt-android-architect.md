@@ -698,9 +698,9 @@ Coder can re-invoke the same ones.
    ```
    Use the `"<feature>_<element>"` naming convention so the Tester's selectors
    are unambiguous. An element repeated once per item — a row, a chip, a badge —
-   builds its tag from its position, or from a value a test case enters, never
-   from a generated id: `Modifier.testTag("duplicate_badge_$index")`, recorded in
-   the table as `duplicate_badge_<position>`. List all testTags introduced in a
+   builds its tag from its index in its list, or from a value a test case
+   enters, never from a generated id: `Modifier.testTag("duplicate_badge_$index")`,
+   recorded in the table as `duplicate_badge_<index>`. List all testTags introduced in a
    **"UI Selectors"** table at the end of Section 2:
    ```
    | Element                  | testTag / contentDesc          |
@@ -828,7 +828,9 @@ Coder can re-invoke the same ones.
    element selector** (testTag, contentDescription, or visible text) from the
    UI Selectors table so both can drive the app without live screen
    discovery. Use the format: `Tap [testTag=<value>]` or
-   `Tap [text="<label>"]` or `Type "…" into [testTag=<value>]`.
+   `Tap [text="<label>"]` or `Type "…" into [testTag=<value>]`, and, where a
+   case needs them, `Scroll [testTag=<list>] until [testTag=<value>] is visible`
+   and `Open link "<a declared test hook>"`.
 
    ### Test Case 1: Happy Path
    **Id**: items/add-item
