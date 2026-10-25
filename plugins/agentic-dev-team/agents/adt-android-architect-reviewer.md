@@ -81,6 +81,14 @@ against the actual codebase. Judge it on:
    only two. On a re-review, check all of Section 4 again, not only the cases
    you flagged: a fix can break another rule.
 
+   A credential value in a case (a password, a PIN, an email of a real
+   account) is a blocker: it would land in a flow file. So is a `${NAME}` the
+   project's `Test secrets:` does not declare, and a test hook its
+   `Test hooks:` does not list. A case that starts from a clean launch without
+   the "First launch" Shared setup, in an app whose code shows onboarding or a
+   permission prompt on first launch, is a blocker: its flow would stop at the
+   first screen.
+
    Every real case needs an **Id** (`<area>/<name>`) and a **Priority** with a
    reason; either missing is a blocker, because the case's flow cannot be named
    or kept. A `p0` must be on the app's critical path — launch, sign-in, the

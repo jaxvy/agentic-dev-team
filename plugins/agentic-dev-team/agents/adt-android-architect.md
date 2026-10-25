@@ -149,6 +149,17 @@ it must not be.
    exposed in every window. A case that breaks one cannot be run, and the plan
    reviewer checks every case against all of them.
 
+   Read the project's `Test secrets:` and `Test hooks:` in `AGENTS.md` before
+   you write a case. A case that needs a signed-in user starts with a Shared
+   setup that types the declared secrets by name (`${TEST_EMAIL}`), never a
+   value; a case that needs data uses a declared hook (`Open link "<url>"`) or
+   the steps that create it. Never invent a hook: a hook the feature would
+   need, and the project does not have, is an Open Question. When the project
+   declares a fake backend build, Section 0's install command installs it.
+   Write the "First launch" Shared setup from the app's code: the onboarding
+   screens and permission prompts that appear after the app's data is
+   cleared.
+
    You write each case **once**, as the spec. After the Coder, the Test Writer
    turns it into a runnable flow, and the flows that pass join the project's
    **regression suite** in `e2e/flows/`, which every later feature replays. So

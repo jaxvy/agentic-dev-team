@@ -116,7 +116,15 @@ Airplane mode off, portrait, dark mode off. Maestro cannot change the font
 scale, so no Maestro flow changes it either. Then the case's Setup, when it is
 device state — `setAirplaneMode: enabled` for an offline case, say — so the app
 starts in it. Then `launchApp` with `clearState: true`; the app id in the
-header is the installed one.
+header is the installed one. `launchApp` grants every runtime permission by
+default, so no permission prompt appears after it; a case that tests a denied
+permission sets `permissions: {all: deny}` (or the one permission) on its
+`launchApp`. Then the plan's "First launch" Shared setup: the app's onboarding
+screens, as steps.
+
+**Test secrets.** A step that types a test secret uses its name,
+`- inputText: ${TEST_PASSWORD}`, exactly as the plan writes it. The script
+passes the value with `-e` when it runs the flow.
 
 **Steps.** Use the commands from section 4. A Compose test tag is `id:`.
 
@@ -140,4 +148,7 @@ maestro --device <DEVICE> test --format junit --output <junit.xml> \
 ```
 
 It reads each flow's result, time and failure message from the JUnit report.
-`ADT_MAESTRO` overrides the command.
+For each test secret the flows use, it adds `-e NAME=value` (from
+`.agentic-dev-team/secrets.env`), and it scrubs the values from Maestro's log,
+its report and its output folder afterwards. `ADT_MAESTRO` overrides the
+command.

@@ -13,6 +13,7 @@
 #   # fake: fail-then-crash  fails the first time; on the retry it passes,
 #                            but the app crashes
 #   # fake: slow    passes after a second, so a second device has time to join
+#   # fake: echo-plan  passes, printing the plan it received to stderr
 # Every call is recorded in $FAKE_ADT_STATE/automobile.calls.
 state="${FAKE_ADT_STATE:?}"
 device="" plan=""
@@ -74,6 +75,10 @@ case "$plan" in
     fi ;;
 esac
 echo "executePlan device=$device name=$name" >> "$state/automobile.calls"
+# The plan exactly as it arrived, for the test-secret tests.
+printf '%s\n' "$plan" > "$state/plan.$name"
+# fake: echo-plan  prints the plan to stderr, as a log that quotes its input.
+case "$plan" in *"# fake: echo-plan"*) printf 'received: %s\n' "$plan" >&2 ;; esac
 case "$plan" in *"# fake: slow"*) sleep 1 ;; esac
 outcome=pass
 case "$plan" in

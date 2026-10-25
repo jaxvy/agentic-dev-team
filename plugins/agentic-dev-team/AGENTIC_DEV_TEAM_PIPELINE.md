@@ -244,7 +244,8 @@ to fix how they reach the app, and the script re-runs just those. Then
   or the flow is wrong. An app defect is a finding like any other. A flow
   defect is listed under "Flow Defects" in `test-results.md`, never sent to the
   Coder, and rewritten by the Test Writer before the next re-test.
-- **Cases with no flow** — one that needs a credential, or whose Expected is a
+- **Cases with no flow** — one that needs a credential the project has not
+  declared as a test secret ("Test Credentials" below), or whose Expected is a
   judgment a machine cannot check — are driven by hand by the Tester. A case
   the driver can check only in part gets a **partial** flow, marked in
   `flows/INDEX.md` with what it leaves out; the Tester checks just that part by
@@ -287,10 +288,33 @@ plan reviewer checks every case against all of them:
    ("continue from TC1") or relies on data another case left behind. Steps
    several cases share can be written once as a named **Shared setup** — itself
    a list of steps with selectors — and each case starts by naming it.
+   Clearing the app's data also resets its runtime permissions and brings back
+   its first-run screens: onboarding, a consent dialog, the notification
+   permission prompt on Android 13 and later. Write those once, as a Shared
+   setup named "First launch", from the app's code, and start every case with
+   it. Whether the driver grants permissions at launch is in its adapter.
 5. **Preconditions are steps or device state.** "Three bookmarks exist" is the
-   steps that create them. Device state — offline, dark mode, a permission, a
-   rotation — goes in **Setup**. "Signed in" needs a credential, which a flow
-   never holds: say so, and the case is driven by hand.
+   steps that create them, or a **test hook** the project declares (below).
+   Device state — offline, dark mode, a permission, a rotation — goes in
+   **Setup**. "Signed in" is a Shared setup that types the project's **test
+   secrets** by name, `Type "${TEST_EMAIL}" into [testTag=email_field]`, never a
+   value ("Test Credentials" below). With no declared secret for it, say so,
+   and the case is driven by hand.
+
+   A project declares both in its `AGENTS.md` (or `CLAUDE.md`):
+
+   ```
+   Test secrets: TEST_EMAIL, TEST_PASSWORD
+   Test hooks:
+   - myapp://debug/seed?bookmarks=3: adds 3 bookmarks (debug builds only)
+   - Fake backend: the `fake` flavor answers every request from local data
+   ```
+
+   A test hook is used as a step, `Open link "myapp://debug/seed?bookmarks=3"`,
+   and never invented: a hook the project does not declare is an Open Question
+   in the plan, not a step. When the project declares a fake backend, the
+   plan's install command installs that build, so the flows do not depend on a
+   live server and never change shared test data.
 6. **What no machine can check is marked.** A clause only a person can judge
    ("the layout looks right in dark mode"), or one the drivers cannot check
    (which field has focus), is marked *checked by hand*. The Test Writer leaves
@@ -698,6 +722,34 @@ Tester hits a keyguard  →  ⛔ TESTER BLOCKED, "I need the device PIN"
 
 **Invariant**: every credential the Tester types was handed to it by a human
 for this run, and none of them survives the run in a file.
+
+These values stay in the conversation, and the tool you run keeps the
+conversation's transcript (Claude Code stores it on disk). Use test accounts and
+a device PIN you can lose, never a real one.
+
+### Test secrets for flows
+
+A flow runs with no model in the loop, so it cannot ask. For the cases that
+sign in, a project declares **test secrets** instead: their names in
+`AGENTS.md` (`Test secrets: TEST_EMAIL, TEST_PASSWORD`), and their values in
+`.agentic-dev-team/secrets.env`, one `NAME=value` per line, on the developer's
+machine only.
+
+- **Agents use names, never values.** The Architect writes `${TEST_EMAIL}` in a
+  step, the Test Writer copies it into the flow, and neither reads
+  `secrets.env`. No agent ever opens that file, the Tester included: it is not
+  a credential handed to the run.
+- **The script fills them in.** `adt.sh run` gives auto-mobile the flow with
+  each `${NAME}` replaced by its value, and gives Maestro `-e NAME=value`. A
+  flow that uses a name the file does not set fails before it runs, with that
+  name.
+- **Nothing keeps a value.** The script scrubs every value from the run's logs
+  and from `run-results.md`, and refuses to run when `secrets.env` is tracked by
+  git or not git-ignored. The flow files, and the suite in `e2e/flows/`, hold
+  only names.
+- **Test accounts only**, as above. The values are visible to other processes
+  of the same user while a flow runs (they are command-line arguments), so a
+  secret is never a real person's password.
 
 ## Review-Driven Fixes Are In Scope
 

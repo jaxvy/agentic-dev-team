@@ -768,6 +768,59 @@ Four rules keep that narrow:
 - Test accounts only. A gate wanting a real person's account or production
   access is a `BLOCKED`, however it was supplied.
 
+"The value stays in the conversation" means your tool's transcript holds it,
+and Claude Code stores transcripts on disk. So use a test PIN and test
+accounts you can lose.
+
+### Test secrets and test hooks
+
+Most real features sit behind a sign-in, and a flow runs with no model in the
+loop, so it cannot ask for a password. Declare the test account once instead,
+and the flows sign in themselves:
+
+1. In `AGENTS.md`, name the secrets, never their values:
+
+   ```
+   Test secrets: TEST_EMAIL, TEST_PASSWORD
+   ```
+
+2. Put the values in `.agentic-dev-team/secrets.env`, on your machine only:
+
+   ```
+   TEST_EMAIL=qa+pipeline@example.com
+   TEST_PASSWORD=a-test-only-password
+   ```
+
+The Architect writes the sign-in as a Shared setup that types
+`${TEST_EMAIL}` and `${TEST_PASSWORD}`, the Test Writer copies the names into
+the flows, and `adt.sh run` fills in the values when it runs them: in the
+flow's content for auto-mobile, as `-e NAME=value` for Maestro. It scrubs the
+values from every log afterwards, and it refuses to run while `secrets.env` is
+tracked by git or not ignored (the folder's `.gitignore` covers it). No agent
+reads the file. The regression suite in `e2e/flows/` keeps only the names, so
+a teammate runs it with their own `secrets.env`, and CI with its own secrets.
+
+**Test hooks** make preconditions fast and repeatable. List the debug-only
+entry points your app has, and the Architect uses them as steps instead of
+tapping through screens:
+
+```
+Test hooks:
+- myapp://debug/seed?bookmarks=3: adds 3 bookmarks (debug builds only)
+- Fake backend: the `fake` flavor answers every request from local data
+```
+
+A hook is a step, `Open link "myapp://debug/seed?bookmarks=3"`. The Architect
+never invents one: a hook the feature would need is an Open Question in the
+plan. With a fake backend declared, the plan installs that build, so flows do
+not depend on a live server and never change shared test data.
+
+**First launch.** Every flow starts with the app's data cleared, which also
+resets its runtime permissions and brings back onboarding. The plan writes
+those screens once, as a "First launch" Shared setup, and every case starts
+with it. Maestro grants permissions at launch by default; under auto-mobile,
+the setup taps the prompt.
+
 ### Retry budgets
 
 Nothing retries forever. Each budget is separate, and exhausting one stops the

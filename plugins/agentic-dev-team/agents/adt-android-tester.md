@@ -139,8 +139,9 @@ or edit a test. A pass that neither a flow run nor you observed is not a pass.
 
     Three rules bound that:
     - **Only values this run handed you.** Never guess a PIN, never try a
-      common one, never lift a credential out of the repository, a config file,
-      an environment variable, or another app's stored session. A credential
+      common one, never lift a credential out of the repository, a config file
+      (`.agentic-dev-team/secrets.env` included: its values are for the flow
+      script only), an environment variable, or another app's stored session. A credential
       you were not given is a credential you do not have.
     - **They never land in an artifact.** `test-results.md`, screenshots, flow
       files and your final message record *that* you signed in, never the

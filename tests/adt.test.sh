@@ -516,6 +516,59 @@ row_has "FLAKY when it passes on the retry" "$SANDBOX/my project" m 03-flaky "| 
 row_has "an auto-mobile flow is SKIPPED in a Maestro run" "$SANDBOX/my project" m 04-automobile "| SKIPPED | written for auto-mobile |"
 unset ADT_AUTOMOBILE ADT_MAESTRO
 
+echo "test secrets"
+setup
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile" ADT_MAESTRO="$SHIMS/maestro"
+git -C "$SANDBOX/proj1" config user.email t@example.com
+git -C "$SANDBOX/proj1" config user.name t
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug s 2>/dev/null | tail -n 1)"
+mkdir -p "$SANDBOX/proj1/.agentic-dev-team"
+printf '*\n' > "$SANDBOX/proj1/.agentic-dev-team/.gitignore"
+printf '# test account\nTEST_EMAIL=qa@example.com\nTEST_PASSWORD=s3cr3t-Pa$$\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+f="$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+mkdir -p "$(dirname "$f")"
+printf '# adt:driver: auto-mobile\n# adt:priority: p0\n# fake: echo-plan\nname: sign-in\nsteps:\n  - tool: launchApp\n    appId: com.example.app\n  - tool: sendKeys\n    text: "${TEST_EMAIL}"\n  - tool: sendKeys\n    text: "${TEST_PASSWORD}"\n' > "$f"
+adt "$SANDBOX/proj1" run --slug s --driver auto-mobile >/dev/null 2>&1
+expect_code "a flow that uses declared secrets runs" 0 $?
+expect_true "auto-mobile gets the values in place of the names" grep -qF 'text: "s3cr3t-Pa$$"' "$FAKE_ADT_STATE/plan.sign-in"
+expect_true "  (both of them)" grep -qF 'text: "qa@example.com"' "$FAKE_ADT_STATE/plan.sign-in"
+expect_true "the flow file keeps the names, never the values" grep -qF '${TEST_PASSWORD}' "$f"
+expect_eq "no log of the run holds a value" "" "$(grep -rlF 's3cr3t-Pa$$' "$SANDBOX/proj1/pipeline_artifacts/s" 2>/dev/null)"
+expect_true "  (they hold *** instead)" grep -rqF 'text: "***"' "$SANDBOX/proj1/pipeline_artifacts/s/run-logs"
+printf '# adt:driver: auto-mobile\nname: other\nsteps:\n  - tool: sendKeys\n    text: "${TEST_PIN}"\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/pin.yaml"
+adt "$SANDBOX/proj1" run --slug s --driver auto-mobile >/dev/null 2>&1
+expect_code "a flow that uses a secret the file does not set fails the run" 1 $?
+row_has "  (its row names the missing secret)" "$SANDBOX/proj1" s auth/pin "| FAIL | needs the test secret TEST_PIN, which .agentic-dev-team/secrets.env does not set |"
+expect_eq "  (and it never reaches the device)" "0" "$(grep -c 'name=other' "$FAKE_ADT_STATE/automobile.calls")"
+rm -f "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/pin.yaml"
+
+printf '# adt:driver: maestro\n# fake: echo-env\nappId: com.example.app\n---\n- inputText: ${TEST_PASSWORD}\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "under Maestro, a flow with a secret runs" 0 $?
+expect_eq "Maestro gets only the secrets the flows use, as -e" "TEST_PASSWORD=s3cr3t-Pa\$\$" "$(cat "$FAKE_ADT_STATE/maestro.env")"
+expect_eq "  (and no log keeps the value)" "" "$(grep -rlF 's3cr3t-Pa$$' "$SANDBOX/proj1/pipeline_artifacts/s" 2>/dev/null)"
+
+printf 'not a setting\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "a malformed secrets file stops the run" 2 $?
+printf 'TEST_PASSWORD=x1\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+rm "$SANDBOX/proj1/.agentic-dev-team/.gitignore"
+err="$(adt "$SANDBOX/proj1" run --slug s --driver maestro 2>&1 >/dev/null)"; rc=$?
+expect_code "a secrets file git does not ignore stops the run" 2 $rc
+expect_true "  (and says why)" grep -q 'is not git-ignored' <<EOF
+$err
+EOF
+git -C "$SANDBOX/proj1" add -f .agentic-dev-team/secrets.env
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "a tracked secrets file stops the run" 2 $?
+git -C "$SANDBOX/proj1" rm -q --cached .agentic-dev-team/secrets.env
+rm -f "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+printf '# adt:driver: maestro\nappId: com.example.app\n---\n- launchApp\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "with no secrets file, flows without secrets run as before" 0 $?
+expect_eq "  (and Maestro gets no -e)" "" "$(cat "$FAKE_ADT_STATE/maestro.env")"
+unset ADT_AUTOMOBILE ADT_MAESTRO
+
 echo "where the project is"
 setup
 export ADT_AUTOMOBILE="$SHIMS/auto-mobile"

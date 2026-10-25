@@ -78,11 +78,16 @@ You work in one of two modes, set by your prompt:
    the build Section 0's install command installs — the app module's
    `applicationId` plus that build's `applicationIdSuffix`, if any — unless
    Section 0 names it outright.
-7. **No secrets, and no judgment calls.** A flow never contains a password,
-   token, API key or other credential. A case that needs one — one that starts
-   signed in, say — gets no flow. So does a case whose Expected is only a
-   judgment a machine cannot check ("the layout looks right in dark mode").
-   Both are recorded with the reason, and the Tester drives them by hand.
+7. **No secret values, and no judgment calls.** A flow never contains a
+   password, token, API key or other credential value. When a case types a
+   test secret the project declares (`Test secrets:` in `AGENTS.md`), write its
+   name exactly as the plan does, `${TEST_PASSWORD}`, in the driver's text
+   input; the script fills in the value when it runs the flow (Part A, "Test
+   secrets for flows"). Never open `.agentic-dev-team/secrets.env`. A case that
+   needs a credential the project does not declare gets no flow. So does a
+   case whose Expected is only a judgment a machine cannot check ("the layout
+   looks right in dark mode"). Both are recorded with the reason, and the
+   Tester drives them by hand.
    When the driver can check **part** of an Expected but not all of it — the
    screen opens, but not that a field is focused — or the plan marks a clause
    *checked by hand*, write the flow for the part it can check and mark it
@@ -174,6 +179,12 @@ For each flow in `FIX`, in order:
    the Tester's note.
 2. Bind to `DEVICE` as the adapter says (once), run the flow the way the
    adapter's "Checking a flow" says, and look at the screen where it fails.
+   A flow that uses a test secret (`${NAME}`) you cannot run yourself: you do
+   not have the value, and must not type the name as text. Fix it from its
+   failing step and log alone, and name it as fixed; the script re-runs it
+   with the values. A row that says the flow needs a test secret the file does
+   not set is not yours to fix: record `not checked: needs the test secret
+   <NAME>`.
 3. Act on what you see:
    - **A step reached the app the wrong way** — a scroll that is missing, a
      wait that is too short, a selector in the wrong form, an assertion that

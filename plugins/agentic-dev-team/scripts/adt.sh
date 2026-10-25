@@ -713,6 +713,114 @@ save_crash_log() {
   } >> "$2"
 }
 
+# ---------- test secrets ----------
+# A flow never holds a credential. It names a test secret as ${NAME}, and the
+# value comes from .agentic-dev-team/secrets.env (NAME=value lines), which
+# must be git-ignored and untracked. auto-mobile gets the flow with the values
+# filled in; Maestro gets them as -e NAME=value. Every log the run keeps is
+# scrubbed of the values. No agent reads the file.
+
+SECRETS_FILE=""
+
+# Finds and checks the project's secrets file and sets SECRETS_FILE (empty
+# when there is none). Stops when the file could reach git, or is malformed.
+load_secrets() {
+  local project="$1" f bad
+  f="$project/.agentic-dev-team/secrets.env"
+  SECRETS_FILE=""
+  [ -f "$f" ] || return 0
+  if git -C "$project" rev-parse --git-dir > /dev/null 2>&1; then
+    if git -C "$project" ls-files --error-unmatch "$f" > /dev/null 2>&1; then
+      die 2 "$f is tracked by git. Remove it from git (git rm --cached), then change every secret in it."
+    fi
+    git -C "$project" check-ignore -q "$f" 2>/dev/null || \
+      die 2 "$f is not git-ignored, so a commit could publish it. Keep .agentic-dev-team/.gitignore, or ignore the file in .gitignore."
+  fi
+  bad="$(tr -d '\r' < "$f" | awk '!/^[[:space:]]*(#|$)/ && !/^[A-Z][A-Z0-9_]*=/ { print NR; exit }')"
+  [ -z "$bad" ] || die 2 "line $bad of $f is not NAME=value (NAME in capitals, digits and '_')."
+  SECRETS_FILE="$f"
+}
+
+# The value of secret <name>.
+secret_value() {
+  tr -d '\r' < "$SECRETS_FILE" | awk -v n="$1" 'index($0, n "=") == 1 { v = substr($0, length(n) + 2) } END { printf "%s", v }'
+}
+
+# The names of the secrets a flow uses: every ${NAME} in it.
+flow_secret_names() {
+  grep -o '[$][{][A-Z][A-Z0-9_]*[}]' "$1" 2>/dev/null | sed 's/^[$][{]//; s/[}]$//' | LC_ALL=C sort -u
+}
+
+# Prints the first secret a flow uses that secrets.env does not set, if any.
+missing_secret() {
+  local n
+  for n in $(flow_secret_names "$1"); do
+    [ -n "$SECRETS_FILE" ] && tr -d '\r' < "$SECRETS_FILE" | grep -q "^$n=" && continue
+    printf '%s\n' "$n"
+    return 0
+  done
+  return 1
+}
+
+# The secrets as awk arrays name[1..n] and val[1..n], loaded in BEGIN from
+# the file in the variable sf. (Not "NR == FNR": with a file that defines no
+# secret, that test would also match the lines of the file being processed.)
+SECRETS_AWK='BEGIN {
+  while ((getline l < sf) > 0) {
+    sub(/\r$/, "", l)
+    if (l ~ /^[A-Z][A-Z0-9_]*=/) { i = index(l, "="); name[++n] = substr(l, 1, i - 1); val[n] = substr(l, i + 1) }
+  }
+  close(sf)
+}'
+
+# The flow's text, with each ${NAME} of a secret replaced by its value.
+flow_with_secrets() {
+  if [ -z "$SECRETS_FILE" ]; then
+    cat "$1"
+    return
+  fi
+  awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
+    {
+      line = $0
+      for (k = 1; k <= n; k++) {
+        tok = "${" name[k] "}"; out = ""
+        while ((p = index(line, tok)) > 0) { out = out substr(line, 1, p - 1) val[k]; line = substr(line, p + length(tok)) }
+        line = out line
+      }
+      print line
+    }' "$1"
+}
+
+# Replaces every secret value in the given files with ***.
+scrub_secrets() {
+  [ -n "$SECRETS_FILE" ] || return 0
+  local f tmp
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    tmp="$f.scrub.$$"
+    awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
+      {
+        line = $0
+        for (k = 1; k <= n; k++) {
+          if (val[k] == "") continue
+          out = ""
+          while ((p = index(line, val[k])) > 0) { out = out substr(line, 1, p - 1) "***"; line = substr(line, p + length(val[k])) }
+          line = out line
+        }
+        print line
+      }' "$f" > "$tmp" && mv -f "$tmp" "$f"
+  done
+}
+
+# Scrubs every text file under <dir> (screenshots and videos are left as they
+# are: a password field shows dots).
+scrub_dir() {
+  [ -n "$SECRETS_FILE" ] && [ -d "$1" ] || return 0
+  local f
+  find "$1" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' ! -name '*.webp' ! -name '*.mp4' ! -name '*.gif' | \
+    while IFS= read -r f; do scrub_secrets "$f"; done
+}
+
 # auto-mobile: one --cli executePlan call per flow. Sets FLOW_RESULT (PASS or
 # FAIL), FLOW_STEP (the failing step and its error) and FLOW_SECONDS.
 run_automobile_flow() {
@@ -721,8 +829,9 @@ run_automobile_flow() {
   since="$(device_time "$serial")"
   start="$(now)"
   run_bounded "$FLOW_TIMEOUT" "$@" --cli executePlan --platform android \
-    --deviceId "$serial" --planContent "$(cat "$flow")" > "$log.out" 2> "$log"
+    --deviceId "$serial" --planContent "$(flow_with_secrets "$flow")" > "$log.out" 2> "$log"
   rc=$?
+  scrub_secrets "$log" "$log.out"
   FLOW_SECONDS=$(( $(now) - start ))
   FLOW_STEP=""
   # A result over 64 KB is written to a file, and stdout only points at it.
@@ -732,6 +841,7 @@ run_automobile_flow() {
     sed -n 's/^[[:space:]]*"path":[[:space:]]*"\([^"]*\)".*/\1/p' "$log.out" | head -n 1)"
   if [ -n "$artifact" ] && [ -f "$artifact" ]; then
     cp "$artifact" "$log.out"
+    scrub_secrets "$log.out"
   fi
   if crash="$(app_crash_since "$serial" "$(flow_app_id "$flow")" "$since")"; then
     save_crash_log "$serial" "$log" "$since"
@@ -763,12 +873,22 @@ run_automobile_flow() {
 # Maestro: one `maestro test` call for a list of flows. Prints one line per
 # flow: <file> TAB <PASS|FAIL> TAB <seconds> TAB <failure message>.
 run_maestro_flows() {
-  local serial="$1" out="$2" count
+  local serial="$1" out="$2" count n f
+  local -a envs
   shift 2
   count=$#
-  set -- ${ADT_MAESTRO:-maestro} --device "$serial" test --format junit \
+  envs=()
+  if [ -n "$SECRETS_FILE" ]; then
+    for n in $(for f in "$@"; do flow_secret_names "$f"; done | LC_ALL=C sort -u); do
+      envs+=(-e "$n=$(secret_value "$n")")
+    done
+  fi
+  set -- ${ADT_MAESTRO:-maestro} --device "$serial" test ${envs[@]+"${envs[@]}"} --format junit \
     --output "$out/junit.xml" --test-output-dir "$out/artifacts" "$@"
   run_bounded $(( FLOW_TIMEOUT * count )) "$@" > "$out/maestro.log" 2>&1
+  # Not "$out" as a whole: the caller is writing results.tsv there now.
+  scrub_secrets "$out/maestro.log" "$out/junit.xml"
+  scrub_dir "$out/artifacts"
   [ -f "$out/junit.xml" ] || return 0
   tr '\n\r' '  ' < "$out/junit.xml" | awk '
     function unxml(v) {
@@ -1316,6 +1436,7 @@ ${2:-}"; shift 2 ;;
   fi
   command -v "$1" > /dev/null 2>&1 || die 14 "the $driver command '$1' was not found. See HOW_IT_WORKS, 'Setting up device testing'."
 
+  load_secrets "$project"
   flows_dir="$project/pipeline_artifacts/$slug/flows"
   results="$project/pipeline_artifacts/$slug/run-results.md"
   logs="$project/pipeline_artifacts/$slug/run-logs"
@@ -1353,7 +1474,7 @@ ${2:-}"; shift 2 ;;
   # Driver mismatch: a flow written for the other driver is skipped, not run.
   local runnable="$logs/.runnable"
   : > "$runnable"
-  local kind base header tier
+  local kind base header tier secret
   while IFS="$(printf '\t')" read -r kind base flow; do
     rel="${flow#"$base"/}"
     id="${rel%.yaml}"
@@ -1361,6 +1482,12 @@ ${2:-}"; shift 2 ;;
     if [ -n "$header" ] && [ "$header" != "$driver" ]; then
       tier="$(flow_tier "$flow")"
       printf '%s\t%s\t%s\tSKIPPED\twritten for %s\t0\t-\n' "$id" "$kind" "${tier:--}" "$header" >> "$logs/.rows"
+      continue
+    fi
+    if secret="$(missing_secret "$flow")"; then
+      tier="$(flow_tier "$flow")"
+      printf '%s\t%s\t%s\tFAIL\tneeds the test secret %s, which .agentic-dev-team/secrets.env does not set\t0\t-\n' \
+        "$id" "$kind" "${tier:--}" "$secret" >> "$logs/.rows"
       continue
     fi
     printf '%s\t%s\t%s\n' "$kind" "$id" "$flow" >> "$runnable"
@@ -1437,6 +1564,8 @@ ${2:-}"; shift 2 ;;
   else
     cp "$logs/.rows" "$logs/rows.tsv"
   fi
+
+  scrub_dir "$logs"
 
   # Write run-results.md.
   local devices="Device: $serial"
