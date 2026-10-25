@@ -666,6 +666,30 @@ app still in the foreground?
 **Invariant**: no agent that judges or tests the app runs a shell command
 against the device.
 
+## Agents in Codex
+
+Your role prompt names Claude Code's tools. In Codex, use these:
+
+| Your prompt says | In Codex |
+|---|---|
+| Read, Glob, Grep | Read-only shell commands: `cat`, `sed -n`, `head`, `ls`, `find`, `rg`, `git status`, `git diff`, `git ls-files` |
+| Write, Edit | `apply_patch` |
+| Skill | The skill's `SKILL.md`, from your skills list: read it and follow it |
+| Bash | The shell, for what your prompt allows |
+| `mcp__auto-mobile__…`, `mcp__maestro__…` | The same tools, under the same names |
+
+Codex gives every agent a shell and lets every agent change files, so it
+enforces neither "no shell" nor "read-only". You do:
+
+- **No shell** (the PM, the Test Writer, the Tester): use the shell only for
+  the read-only commands in the table. Never run `adb`, `emulator`, Gradle,
+  `adt.sh` or any other program through it, and never change a file, git or a
+  device with it. Write only with `apply_patch`, and only the files your
+  prompt names.
+- **Read-only** (both reviewers and the review judge): never use
+  `apply_patch`, and never change a file. Use the shell to inspect, and to run
+  only what your prompt tells you to run (the code reviewer's build gate).
+
 ## Test Credentials
 
 The pipeline drives development builds on development devices, so the gates
@@ -717,8 +741,8 @@ Tester hits a keyguard  →  ⛔ TESTER BLOCKED, "I need the device PIN"
 for this run, and none of them survives the run in a file.
 
 These values stay in the conversation, and the tool you run keeps the
-conversation's transcript (Claude Code stores it on disk). Use test accounts and
-a device PIN you can lose, never a real one.
+conversation's transcript (Claude Code and Codex store it on disk). Use test
+accounts and a device PIN you can lose, never a real one.
 
 ### Test secrets for flows
 

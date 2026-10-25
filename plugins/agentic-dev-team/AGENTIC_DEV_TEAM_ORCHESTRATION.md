@@ -68,7 +68,8 @@ The command file says which steps it does.
       file-read tool, only its first line (for example a line limit of 1).
       Never use a file-search tool: search tools skip git-ignored files, and
       both the script link in an `install.sh` project and the config file are
-      git-ignored. Never use a shell command for these checks.
+      git-ignored. Never use a shell command for these checks (in Codex,
+      which has no file-read tool, see "Orchestration Workflow (Codex)").
    4. Read PROJECT_ROOT/.agentic-dev-team/config.yaml the same way. There are
       exactly three outcomes:
       (a) The read succeeds (an empty file counts as success): the file
@@ -352,17 +353,20 @@ point on, every exit releases the device.
 `.claude/settings.local.json`: `Bash(bash .claude/adt/scripts/adt.sh *)`,
 `mcp__auto-mobile__*` and `mcp__maestro__*`. The build commands also list them
 under `allowed-tools`. So Claude Code does not stop a run to ask about the
-script or the driver's tools. An agent never adds permission rules itself;
-only a person runs `install.sh` or `adt.sh allow`.
+script or the driver's tools. For Codex it writes
+`.codex/rules/agentic-dev-team.rules`, which lets Codex run the script outside
+its sandbox without asking. An agent never adds permission rules itself; only
+a person runs `install.sh` or `adt.sh allow`.
 
 **Long-running calls.** `device-acquire`, `check`, `install` and `run` can
 each take several minutes — a cold boot, instrumented tests, a Gradle install,
 a long suite — and so can
 `device-release` while an early boot is still in progress, since it waits for
 that boot to finish. Give them a long timeout (in Claude Code, the Bash tool's
-maximum, ten minutes), or run them in the background and wait for them to
-finish. Each is safe to repeat: if one is cut off by the tool's timeout, run it
-again in the background and wait for it.
+maximum, ten minutes; in Codex, see "Orchestration Workflow (Codex)"), or run
+them in the background and wait for them to finish. Each is safe to repeat:
+if one is cut off by the tool's timeout, run it again in the background and
+wait for it.
 
 ## The Test Phase
 
@@ -509,7 +513,9 @@ and OpenCode enforces the `permission: bash: deny` in their agent files (the
 read-only agents there have `edit: deny`). In Antigravity the one setting that
 grants a shell, `enable_write_tools`, is also what lets the Tester write
 `test-results.md` and the Test Writer write flows, so their mappings keep it;
-there, the no-shell rule is enforced by their prompts only.
+there, the no-shell rule is enforced by their prompts only. Codex gives every
+agent a shell, because it reads files through it, so there too the rule is
+enforced by the prompts only (Part A, "Agents in Codex").
 
 ## The Blocked Path
 
@@ -641,3 +647,65 @@ up by the same install.sh run:
    (and commands also `.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md`) and the
    project's `AGENTS.md`/`CLAUDE.md` by path (all present in the project tree),
    so opencode reads the same sources of truth as the other tools.
+
+## Orchestration Workflow (Codex)
+
+Codex runs the five commands as skills: `$build-auto`, `$build-auto-reviewed`,
+`$build-guided`, `$plan-research` and `$plan-design` (with the Codex plugin,
+`$agentic-dev-team:build-auto` and so on). Each skill sends you to the same
+command file as the other tools, so everything in this file applies. Only
+these points differ:
+
+1. **Files.** An `install.sh` project has the skills in `.agents/skills/`, the
+   custom agents in `.codex/agents/`, and the docs and scripts in `.claude/`,
+   as for the other tools. With the Codex plugin, the skill gave you
+   PLUGIN_ROOT, the plugin's own directory: wherever a command or a doc says
+   `${CLAUDE_PLUGIN_ROOT}`, use PLUGIN_ROOT. A command named `/plan-design` is
+   the skill `$plan-design`.
+2. **Reading files.** Codex reads files only through its shell. Where a step
+   says to use your file-read tool, or forbids a shell command for a check
+   ("Command Start", step 5), read the first line with
+   `sed -n 1p "<path>"`. Its output, or its error for a missing file, decides
+   the case as the step says.
+3. **Starting an agent.** Codex starts a subagent only when it is told to, and
+   the command file tells you at every phase. To start `adt-android-<role>`,
+   use Codex's spawn tool (`spawn_agent`):
+   - **No forked context:** `fork_turns: "none"` or `fork_context: false`,
+     whichever your spawn tool takes. A fork gives the agent this whole
+     conversation, and with it any credential the user typed (Part A, "Test
+     Credentials"). In the other tools, a subagent starts with only its task.
+   - **`agent_type: "adt-android-<role>"`** when your spawn tool takes
+     `agent_type` and Codex lists that custom agent (an `install.sh`
+     project). Otherwise leave it out, and Codex starts its default agent.
+   - **The message:** first the line "You are adt-android-<role> in the
+     agentic-dev-team pipeline. Read `<ADT_ROOT>/agents/adt-android-<role>.md`
+     in full and follow it: it is your complete role prompt. Skip its YAML
+     frontmatter." ADT_ROOT is the one "Command Start", step 5, found: the
+     project's `.claude` in an `install.sh` project, PLUGIN_ROOT with the
+     plugin. Then the task text that the command gives that agent, with
+     PIPELINE_DOC.
+   - **`model`:** only as CONFIG_DOC, "Agent Configuration", says.
+   - Wait for the agent to finish, and take its final message as its answer,
+     with its marker. For parallel coders, start all of them, then wait for
+     all. Close each agent when you have its answer, so a long run stays below
+     Codex's limit of open agent threads.
+4. **Long-running calls** ("Before the Run"). Give each one a shell timeout of
+   ten minutes (`timeout_ms: 600000`), or the most your shell tool allows. If
+   the call comes back while the command still runs, wait for it to end.
+   Never start the same call again while it runs.
+5. **The sandbox.** In Codex's default sandbox, a command has no network and
+   cannot write outside the project, so adb, the emulator and Gradle fail
+   there. `install.sh`, or `adt.sh allow`, adds a Codex rule that runs
+   `adt.sh` outside the sandbox without asking, and the preflight fails, with
+   the fix, when the script still runs inside it. The Coder's Gradle and the
+   CLIs of external runners also need the network: if Codex asks to run them
+   outside the sandbox, that is expected (HOW_IT_WORKS, "Codex").
+6. **No shell and read-only.** Codex gives every agent a shell and write
+   access, and cannot take them from one agent. Part A, "Agents in Codex",
+   tells each agent what it must not use. In a review panel, the tree
+   snapshot ("Configured Runs" in CONFIG_DOC) still checks that the reviewers
+   changed nothing.
+7. **The test driver.** Its MCP server is registered with Codex under the name
+   `auto-mobile` or `maestro` (HOW_IT_WORKS, "Setting up device testing").
+   Subagents get the same MCP servers as you, and the tools keep their names:
+   `mcp__auto-mobile__…` and `mcp__maestro__…`.

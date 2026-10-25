@@ -9,7 +9,7 @@ that keep it honest. Read it to understand the product.
 of each agent, other CLIs, and review panels.
 
 **[Distribution](#distribution)** covers how one repo delivers the same agents to
-three different tools, what `install.sh` creates, and how to extend it. Read it
+four different tools, what `install.sh` creates, and how to extend it. Read it
 to understand the plumbing.
 
 ## The pipeline
@@ -416,8 +416,8 @@ bash .claude/adt/scripts/adt.sh device-release --slug manual
 ```
 
 The results are in `pipeline_artifacts/manual/run-results.md`. Use
-`--driver maestro` in a Maestro project. With the Claude Code plugin and no
-per-project install, the script is in the plugin's directory, under
+`--driver maestro` in a Maestro project. With a plugin (Claude Code or Codex)
+and no per-project install, the script is in the plugin's directory, under
 `scripts/adt.sh`.
 
 #### Running the suite on its own, or in CI
@@ -504,6 +504,23 @@ claude mcp add maestro -- maestro mcp
 `claude mcp remove auto-mobile` first if one exists. It registers the server
 for one project; add `-s user` to register it for all of them.
 
+*Codex*: for auto-mobile,
+
+```bash
+codex mcp add auto-mobile --env AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan -- bunx @kaeawc/auto-mobile@0.0.84
+```
+
+and for Maestro,
+
+```bash
+codex mcp add maestro -- maestro mcp
+```
+
+This writes the server to `~/.codex/config.toml`, for every project. Codex
+may ask you to approve a device tool the first time a run uses it; to let the
+run go on without asking, add `default_tools_approval_mode = "approve"` under
+that server's `[mcp_servers.<name>]` table in that file.
+
 *OpenCode*: add the server to `opencode.json` under `mcp`. Maestro is a local
 server, `{"type": "local", "command": ["maestro", "mcp"]}`. auto-mobile is
 reached over HTTP, `{"type": "remote", "url": "<auto-mobile's URL>"}`, with
@@ -547,8 +564,8 @@ with the fix if something is wrong; you can run it yourself at any time:
 bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile
 ```
 
-With the Claude Code plugin and no per-project install, the script is in the
-plugin's directory, under `scripts/adt.sh`.
+With a plugin (Claude Code or Codex) and no per-project install, the script is
+in the plugin's directory, under `scripts/adt.sh`.
 
 ### Devices
 
@@ -623,7 +640,8 @@ flowchart TD
 ### Settings
 
 All optional. Set them in your shell profile, or for Claude Code in
-`.claude/settings.json` under `env`.
+`.claude/settings.json` under `env`, or for Codex in `~/.codex/config.toml`
+under `[shell_environment_policy.set]`.
 
 | Variable | What it does |
 |---|---|
@@ -648,12 +666,60 @@ checks its own tool list for the driver's MCP tools.
 So that a run is not stopped to ask permission, `install.sh` adds three rules
 to the project's `.claude/settings.local.json` — the device script and the two
 drivers' MCP tools — and the build commands list the same rules under
-`allowed-tools`. Only a person grants these, by running `install.sh` or
+`allowed-tools`. For Codex it writes `.codex/rules/agentic-dev-team.rules`,
+which lets Codex run the device script outside its sandbox without asking
+([Codex](#codex)). Only a person grants these, by running `install.sh` or
 `adt.sh allow`; no agent changes its own permissions. `install.sh --no-allow`
-skips this, and uninstalling removes exactly the rules it added. With the
+skips this, and uninstalling removes exactly the rules it added. With a
 plugin and no per-project install, the preflight notices the missing rules and
 prints the one command that adds them. You can run the preflight yourself at
 any time: `bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile`.
+
+### Codex
+
+Codex runs the pipeline as five skills: type `$build-auto`, `$build-guided`
+and so on (with the Codex plugin, `$agentic-dev-team:build-auto`; `$` opens a
+picker). Each skill reads the same command file as the other tools, so a run
+in Codex has the same phases, gates, budgets and safeguards. These things are
+different:
+
+* **Trust the project.** Codex reads a project's `.codex/` folder (the named
+  agents and the rules file) only when you trust the project. Codex asks the
+  first time you open it.
+* **The sandbox.** In Codex's default sandbox, a command has no network and
+  cannot write outside the project. adb, the emulator and Gradle need both.
+  There are two ways to give them what they need:
+  * Approve the device script once. `install.sh` does it, or run the
+    `adt.sh allow` command that the preflight prints. It writes
+    `.codex/rules/agentic-dev-team.rules`, a rule that lets Codex run
+    `adt.sh` outside its sandbox without asking. Start a new Codex session
+    after it. The Coder's build gate (Gradle) still runs in the sandbox, so
+    Codex asks you to approve it, which pauses an unattended run. To stop
+    that, also allow Gradle in your own rules, for example
+    `prefix_rule(pattern = ["./gradlew"], decision = "allow")` in
+    `~/.codex/rules/default.rules`.
+  * Or give Codex full access for the run: `codex --sandbox danger-full-access`,
+    or full access in `/permissions`. Then nothing is sandboxed, as in Claude
+    Code.
+
+  When the device script runs inside the sandbox, the preflight fails and
+  gives these two fixes.
+* **Agents.** Codex starts each agent as a subagent that gets only its task,
+  not the main conversation. With `install.sh`, each role is a named Codex
+  agent in `.codex/agents/` (`adt-android-coder` and the others). A Codex
+  plugin cannot carry agent files, so with the plugin each role runs as
+  Codex's default agent, given its role prompt. The work is the same.
+* **No shell, read-only.** Codex reads files through its shell, so every
+  agent has one, and Codex cannot make one agent read-only. As in
+  Antigravity, the prompts tell the Tester, the Test Writer and the PM to use
+  the shell only to read files, and the reviewers never to change one. A
+  review panel's tree check still stops a run whose reviewers changed the
+  tree.
+* **Models.** `agents:` in the config file takes Codex model names, and Codex
+  starts each agent on the one you set ([Models: `agents:`](#models-agents)).
+  Without one, every agent runs on your session's model.
+* **Device tools.** Register auto-mobile or Maestro with `codex mcp add`
+  ([Setting up device testing](#setting-up-device-testing)).
 
 ### Blocking findings and observations
 
@@ -1008,10 +1074,13 @@ Claude Code honours those per agent, and the `agents:` part of
 `.agentic-dev-team/config.yaml` overrides them per role, in every command (see
 [Models: `agents:`](#models-agents)). The orchestrator passes the configured
 alias in the Agent tool's `model` parameter. With no configured value it
-passes nothing, so the agent file applies. Antigravity and OpenCode do not
-support per-subagent model selection, so every subagent inherits your globally
-selected model, and they ignore `agents:`. Select the strongest model
-available before a full pipeline run in those tools, or, in
+passes nothing, so the agent file applies. Codex also takes a model per agent,
+but only from `agents:`, with Codex model names: the agent files' `opus` and
+`sonnet` mean nothing to it, so without a config value every agent runs on
+your session's model. Antigravity and OpenCode do not support per-subagent
+model selection, so every subagent inherits your globally selected model, and
+they ignore `agents:`. Select the strongest model available before a full
+pipeline run in those tools, or, in
 `/build-auto-reviewed`, run a role through an external CLI (see
 [Other CLIs and review panels](#other-clis-and-review-panels-build_auto_reviewed)).
 
@@ -1077,7 +1146,10 @@ spawning anyone, then verifies the result again after every group. See [Parallel
 yours already sits at one of those paths, it refuses and names the path. The
 one file it edits, `.claude/settings.local.json`, gets only the pipeline's
 three permission rules added; every other setting stays as it was, a file that
-is not valid JSON is left alone, and uninstalling removes only those rules. See [Refusal behavior](#refusal-behavior).
+is not valid JSON is left alone, and uninstalling removes only those rules.
+The one file it writes for Codex, `.codex/rules/agentic-dev-team.rules`, is
+its own, and a file of that name that is not its own is left alone. See
+[Refusal behavior](#refusal-behavior).
 
 ## Configuration
 
@@ -1141,6 +1213,11 @@ pin one, use `runner: claude` with a full model ID in `/build-auto-reviewed`
 main model. When `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is set, Claude Code ignores
 these settings, and the run summary says so. When `CLAUDE_CODE_SUBAGENT_MODEL`
 is set, model settings need Claude Code v2.1.251 or later.
+
+In Codex the value is a Codex model name, as in its `/model` list, and Codex
+starts the agent on it. Codex ignores a Claude alias (the agent then runs on
+your session's model), and Claude Code stops at a Codex model name, so use
+the names of the tool you run. The run summary says what was not applied.
 
 Antigravity and OpenCode run every subagent on the model you selected in the
 tool, so they ignore `agents:`. The run summary says so.
@@ -1221,6 +1298,10 @@ the same for a panel: a panel round counts as one review.
 * **Codex as Coder or Tester.** Codex's sandbox blocks network access and
   writes outside the project by default, so Gradle and `adb` can fail. Use
   another runner for those roles, or allow them in your Codex configuration.
+* **Codex as your main tool.** External runners start through
+  `adt-run-agent.sh`, and their CLIs need the network, which Codex's sandbox
+  does not have. Approve that script when Codex asks, or give Codex full
+  access for the run ([Codex](#codex)).
 * **An external Tester** needs the test driver's MCP server (auto-mobile or
   Maestro) in that CLI's own config. It never receives a device PIN: after you
   answer a blocked Tester with anything other than `resume` or `stop`, the
@@ -1236,15 +1317,18 @@ the same for a panel: a panel round counts as one review.
 
 ## Distribution
 
-### How the three tools find the files
+### How the four tools find the files
 
 This repo is a shared configuration package rather than a library you import.
 Each Android project that wants the pipeline links this repo's files into its own
-`.claude/`, `.agents/`, and `.opencode/`. Six mechanics make that work.
+`.claude/`, `.agents/`, `.codex/` and `.opencode/`. Seven mechanics make that
+work.
 
-1. **Per-file symlinks, never per-directory.** Your `.claude/`, `.agents/`, and
-   `.opencode/` stay real directories. You can keep adding your own commands and
-   agents alongside ours, and they coexist freely.
+1. **Per-file symlinks, never per-directory.** Your `.claude/`, `.agents/`,
+   `.codex/` and `.opencode/` stay real directories. You can keep adding your
+   own commands, skills and agents alongside ours, and they coexist freely. The
+   one exception is a Codex skill, which is a folder: each of ours is one link
+   in your `.agents/skills/`.
 2. **Claude Code discovery.** Claude Code scans `.claude/commands/` and
    `.claude/agents/` by filename. Our symlinks sit at those canonical paths, so
    all five commands and all eight `@adt-*` agents are available automatically.
@@ -1260,11 +1344,21 @@ Each Android project that wants the pipeline links this repo's files into its ow
    the orchestrator can delegate to `@adt-android-architect` and the rest with an
    identical persona. No `agents.md` inlining is needed, because the per-file
    definitions are the discovery mechanism.
-5. **One source of truth across all three.** Every tool ends up reading the same
+5. **Codex discovery.** Codex scans `.agents/skills/` for skills and
+   `.codex/agents/` for custom agents, in a project you trust. Each skill
+   (`$build-auto` and the others) only says where its command file is and how
+   its words map to Codex; it then follows the same command file as the other
+   tools. Another tool that also reads `.agents/skills/` finds the same
+   skills, and each one tells it to use the slash command instead. Each agent file is a stub whose instructions read the canonical
+   prompt from `.claude/agents/adt-*.md`, like OpenCode's. The Codex plugin
+   carries the same skills, in `plugins/agentic-dev-team/codex/skills/`, but
+   no agents, because a Codex plugin cannot carry them; there the
+   orchestrator starts Codex's default agent with each role's prompt.
+6. **One source of truth across all four.** Every tool ends up reading the same
    agent prompts and the same pipeline docs (`AGENTIC_DEV_TEAM_*.md`). Edit those in the
    clone and every consuming project picks the change up on the next file read,
    with no re-install required for in-place edits.
-6. **A managed `.gitignore` block.** Symlink targets are per-developer absolute
+7. **A managed `.gitignore` block.** Symlink targets are per-developer absolute
    paths such as `~/code/agentic-dev-team/...`, which would not resolve on a
    teammate's machine, so `install.sh` maintains a small block listing them.
 
@@ -1313,18 +1407,33 @@ path inside your project.
 | `.opencode/agents/adt-android-test-writer.md` | `<clone>/.opencode/agents/adt-android-test-writer.md` |
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 | `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` |
+| `.agents/skills/build-guided/` | `<clone>/.agents/skills/build-guided/` |
+| `.agents/skills/build-auto/` | `<clone>/.agents/skills/build-auto/` |
+| `.agents/skills/build-auto-reviewed/` | `<clone>/.agents/skills/build-auto-reviewed/` |
+| `.agents/skills/plan-research/` | `<clone>/.agents/skills/plan-research/` |
+| `.agents/skills/plan-design/` | `<clone>/.agents/skills/plan-design/` |
+| `.codex/agents/adt-android-pm.toml` | `<clone>/.codex/agents/adt-android-pm.toml` |
+| `.codex/agents/adt-android-architect.toml` | `<clone>/.codex/agents/adt-android-architect.toml` |
+| `.codex/agents/adt-android-architect-reviewer.toml` | `<clone>/.codex/agents/adt-android-architect-reviewer.toml` |
+| `.codex/agents/adt-android-coder.toml` | `<clone>/.codex/agents/adt-android-coder.toml` |
+| `.codex/agents/adt-android-code-reviewer.toml` | `<clone>/.codex/agents/adt-android-code-reviewer.toml` |
+| `.codex/agents/adt-android-test-writer.toml` | `<clone>/.codex/agents/adt-android-test-writer.toml` |
+| `.codex/agents/adt-android-tester.toml` | `<clone>/.codex/agents/adt-android-tester.toml` |
+| `.codex/agents/adt-android-review-judge.toml` | `<clone>/.codex/agents/adt-android-review-judge.toml` |
 
 The canonical pipeline docs (`AGENTIC_DEV_TEAM_PIPELINE.md`,
 `AGENTIC_DEV_TEAM_ORCHESTRATION.md` and `AGENTIC_DEV_TEAM_CONFIG.md`),
 `scripts/` and `drivers/` live in `plugins/agentic-dev-team/` so the Claude
 Code plugin can package them; the clone's `.claude/adt/scripts` and
 `.claude/adt/drivers` are symlinks to those directories, and the clone's
-`.claude/AGENTIC_DEV_TEAM_*.md` are symlinks to the docs. A project installed
-before a doc was added gets its link at the next `install.sh` run; until then,
-the commands stop and say so.
+`.claude/AGENTIC_DEV_TEAM_*.md` are symlinks to the docs. The Codex skills live
+in `plugins/agentic-dev-team/codex/skills/` for the same reason (the Codex
+plugin packages them), and the clone's `.agents/skills` is a symlink to that
+directory. A project installed before a doc was added gets its link at the
+next `install.sh` run; until then, the commands stop and say so.
 
-Three further changes happen outside symlinks: two marker-fenced managed
-blocks, and three permission rules.
+Four further changes happen outside symlinks: two marker-fenced managed
+blocks, three permission rules, and a Codex rules file.
 
 **`.gitignore`** gains a block listing the symlink paths above, plus
 `/pipeline_artifacts/`. This block only exists on the `install.sh` path. See
@@ -1341,6 +1450,15 @@ stays as it was, a file that is not valid JSON is left alone, and a rule you
 already had is not counted as ours. If the file is new, it is kept out of git
 through `.git/info/exclude`, not your `.gitignore`. `install.sh --uninstall`
 removes exactly the rules it added; `install.sh --no-allow` skips this step.
+
+**`.codex/rules/agentic-dev-team.rules`** is written whole, with a first line
+that marks it as ours. Its one rule,
+`prefix_rule(pattern = ["bash", ".claude/adt/scripts/adt.sh"], decision = "allow")`,
+lets Codex run the device script outside its sandbox without asking (with the
+Codex plugin, `adt.sh allow` adds the script's own absolute path too). A file
+of that name that is not ours is left alone. It is kept out of git through
+`.git/info/exclude`. `install.sh --uninstall` deletes it; `--no-allow` skips
+it.
 
 **`.agentic-dev-team/`** gets `config.yaml` (a copy of
 `plugins/agentic-dev-team/config.example.yaml`) and a `.gitignore` with `*`,
@@ -1368,13 +1486,17 @@ This section is for maintainers and contributors.
 stub to `.agents/AGENTIC_DEV_TEAM.md` using the `@adt-<name>` handle and
 referencing the new prompt, for Antigravity. Create
 `.opencode/agents/adt-<name>.md` as a `mode: subagent` stub whose body reads the
-canonical prompt, for OpenCode. On the next `install.sh` run in each project,
-`@adt-<name>` becomes invocable in all three tools and the `agents.md` block
-updates itself.
+canonical prompt, for OpenCode, and `.codex/agents/adt-<name>.toml` with the
+same `description` and a `developer_instructions` stub that does the same, for
+Codex. On the next `install.sh` run in each project, `@adt-<name>` becomes
+invocable in all four tools and the `agents.md` block updates itself.
 
 **Adding a command.** Create `.claude/commands/<name>.md` with the orchestration
 prompt, then create `.agents/workflows/<name>.md` and
 `.opencode/commands/<name>.md` as symlinks to `../../.claude/commands/<name>.md`.
+For Codex, add the skill folder `plugins/agentic-dev-team/codex/skills/<name>/`:
+a `SKILL.md` like the other five, which points at the command file, and
+`agents/openai.yaml`, which keeps it from running unless the user types it.
 `/build-auto-reviewed` was built exactly this way. Its workflow symlinks point at
 the command, which orchestrates the two reviewers between the existing phases.
 
@@ -1422,7 +1544,23 @@ Pick one as canonical and keep them in sync, or delete one.
 MCP server is not registered with your tool, or not under the expected name.
 auto-mobile must be registered as `auto-mobile` and Maestro as `maestro`; the
 [Setting up device testing](#setting-up-device-testing)
-has the commands. In OpenCode both belong in `opencode.json` under the `mcp` key.
+has the commands. In OpenCode both belong in `opencode.json` under the `mcp` key,
+and in Codex in `~/.codex/config.toml` (`codex mcp add` writes them there).
+
+**Codex does not list the skills or the `adt-*` agents.** Codex reads a
+project's `.agents/skills/` and `.codex/agents/` only when you trust the
+project, and finds new ones when a session starts. Trust the project, and
+start a new session. With the plugin, start a new session after you install
+it, and type `$` to find `agentic-dev-team:build-auto` and the others.
+
+**The preflight fails: "Codex runs this script in its sandbox".** Codex ran
+the device script in its sandbox, where adb and the emulator cannot work. Run
+the `adt.sh allow` command it prints, then start a new Codex session, or give
+Codex full access for the run ([Codex](#codex)).
+
+**Codex stops a run to ask before Gradle runs.** The Coder's build gate runs
+in Codex's sandbox, which has no network. Approve it, give Codex full access
+for the run, or allow `./gradlew` in your own Codex rules ([Codex](#codex)).
 
 **The run stopped at the start, naming the test driver.** Your `AGENTS.md` or
 `CLAUDE.md` has a `Test driver:` line with a value other than `auto-mobile` or
@@ -1465,8 +1603,8 @@ bash .claude/adt/scripts/adt.sh device-list
 bash .claude/adt/scripts/adt.sh device-release --serial emulator-5556
 ```
 
-With the Claude Code plugin and no per-project install, the script is in the
-plugin's directory instead, under `scripts/adt.sh`.
+With a plugin (Claude Code or Codex) and no per-project install, the script is
+in the plugin's directory instead, under `scripts/adt.sh`.
 
 **A flow fails, but the Tester says the case passes by hand.** The flow
 expressed a step or a wait wrongly, not the app. The Tester lists it under

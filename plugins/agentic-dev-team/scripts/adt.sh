@@ -51,8 +51,9 @@
 # e2e/flows/ on a device it is given, with no lease (for CI), and writes a
 # JUnit report beside run-results.md. device-release
 # stops the run's devices when it ends. allow adds the pipeline's permission
-# rules to the project's .claude/settings.local.json (or, with --remove, takes
-# them out again).
+# rules to the project's .claude/settings.local.json, and a Codex rule that
+# runs this script outside Codex's sandbox to .codex/rules/ (or, with
+# --remove, takes them out again).
 #
 # The regression suite is e2e/flows/<area>/<name>.yaml in the project. A run
 # replays every P0 flow, plus the tiers each --area names (for example
@@ -2094,13 +2095,26 @@ script_path() {
   printf '%s/%s\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" "$(basename "${BASH_SOURCE[0]}")"
 }
 
-# Claude Code only: are the pipeline's own commands pre-approved anywhere it
-# reads permission rules from? It reads the project's rules from the directory
-# it runs in, which is where the build commands run this. If not, say how to
-# approve them once.
+# Are the pipeline's own commands pre-approved where the tool that runs this
+# script reads permission rules from? Claude Code reads the project's rules
+# from the directory it runs in, which is where the build commands run this.
+# Codex (it sets CODEX_THREAD_ID for its commands) reads .rules files, and
+# runs a command that no rule allows in its sandbox, where adb, the emulator
+# and Gradle cannot work. If not, say how to approve them once.
 preflight_permissions() {
   local here file
   here="$(pwd -P)"
+  if [ "${CODEX_SANDBOX_NETWORK_DISABLED:-}" = 1 ] || [ -n "${CODEX_SANDBOX:-}" ]; then
+    pf_fail "Codex runs this script in its sandbox, where adb, the emulator and Gradle cannot work. Approve the script once with: bash $(script_path) allow --project $here, then start a new Codex session. Or give Codex full access (codex --sandbox danger-full-access)."
+    return 0
+  fi
+  if [ -n "${CODEX_THREAD_ID:-}" ]; then
+    for file in "$here/$CODEX_RULES_FILE" "${CODEX_HOME:-$HOME/.codex}"/rules/*.rules; do
+      [ -f "$file" ] && grep -q 'adt[.]sh' "$file" && return 0
+    done
+    pf_warn "in Codex, the pipeline's own commands are not pre-approved, so unless Codex has full access, a run may stop to ask. Approve them once with: bash $(script_path) allow --project $here, then start a new Codex session"
+    return 0
+  fi
   for file in "$here/.claude/settings.local.json" "$here/.claude/settings.json" \
               "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
     [ -f "$file" ] && grep -q 'mcp__auto-mobile__\*\|mcp__auto-mobile"' "$file" && \
@@ -2152,12 +2166,71 @@ cmd_preflight() {
 # ---------- allow ----------
 # Adds the pipeline's own permission rules to the project's
 # .claude/settings.local.json — the script, and the test drivers' MCP tools —
-# so Claude Code does not stop to ask mid-run. Only a person runs this
-# (install.sh does it for you); an agent never grants itself permissions.
+# so Claude Code does not stop to ask mid-run, and a Codex rules file that
+# runs the script outside Codex's sandbox without asking. Only a person runs
+# this (install.sh does it for you); an agent never grants itself permissions.
 
 ALLOW_RULES_FIXED='Bash(bash .claude/adt/scripts/adt.sh *)
 mcp__auto-mobile__*
 mcp__maestro__*'
+
+# The Codex rules file belongs to this script as a whole: its first line marks
+# it, and --remove deletes it. Codex reads it at the start of a session, in a
+# project it trusts.
+CODEX_RULES_FILE=".codex/rules/agentic-dev-team.rules"
+CODEX_RULES_MARK="# agentic-dev-team: written by adt.sh allow; adt.sh allow --remove deletes it."
+
+# Keeps a file this script created out of git, without touching .gitignore.
+# <file> is relative to <project>.
+keep_out_of_git() {
+  local project="$1" file="$2" exclude prefix
+  [ -f "$project/$file" ] || return 0
+  git -C "$project" rev-parse --git-dir > /dev/null 2>&1 || return 0
+  git -C "$project" check-ignore -q "$project/$file" 2>/dev/null && return 0
+  git -C "$project" ls-files --error-unmatch "$project/$file" > /dev/null 2>&1 && return 0
+  (
+    cd "$project" || exit 0
+    exclude="$(git rev-parse --git-path info/exclude)"
+    # The pattern is relative to the repository's top level, so an app in a
+    # subfolder of its repository names that subfolder.
+    prefix="$(git rev-parse --show-prefix)"
+    mkdir -p "$(dirname "$exclude")"
+    printf '/%s%s\n' "$prefix" "$file" >> "$exclude"
+  )
+}
+
+# The Codex half of allow. Codex runs a command that a rule allows outside its
+# sandbox, where adb, the emulator and Gradle have the network and ~/.android.
+codex_allow() {
+  local mode="$1" project="$2" self="$3" file want
+  file="$project/$CODEX_RULES_FILE"
+  if [ -e "$file" ] && [ "$(head -n 1 "$file" 2>/dev/null)" != "$CODEX_RULES_MARK" ]; then
+    say "adt: $file is not one this script wrote; leaving it alone."
+    return 0
+  fi
+  if [ "$mode" = remove ]; then
+    [ -f "$file" ] || return 0
+    rm -f "$file"
+    rmdir "$project/.codex/rules" 2>/dev/null && rmdir "$project/.codex" 2>/dev/null
+    say "adt: removed $CODEX_RULES_FILE"
+    return 0
+  fi
+  want="$CODEX_RULES_MARK
+# Lets Codex run the pipeline's device script outside its sandbox, without asking.
+prefix_rule(pattern = [\"bash\", \".claude/adt/scripts/adt.sh\"], decision = \"allow\")"
+  # A Codex plugin install runs the script by its absolute path, so allow that too.
+  case "$self" in
+    "$project"/*) ;;
+    */.codex/plugins/*|"${CODEX_HOME:-$HOME/.codex}"/plugins/*)
+      want="$want
+prefix_rule(pattern = [\"bash\", \"$(printf '%s' "$self" | sed 's/[\\"]/\\&/g')\"], decision = \"allow\")" ;;
+  esac
+  [ -f "$file" ] && [ "$(cat "$file")" = "$want" ] && return 0
+  mkdir -p "$(dirname "$file")"
+  printf '%s\n' "$want" > "$file"
+  say "adt: allowed adt.sh in Codex, in $CODEX_RULES_FILE"
+  keep_out_of_git "$project" "$CODEX_RULES_FILE"
+}
 
 cmd_allow() {
   local mode=add project="" settings state self rules py
@@ -2168,7 +2241,7 @@ cmd_allow() {
       *) usage ;;
     esac
   done
-  # Claude Code reads the project's rules from the directory it runs in.
+  # Claude Code and Codex read the project's rules from the directory they run in.
   [ -n "$project" ] || project="."
   project="$(cd "$project" 2>/dev/null && pwd -P)" || die 2 "no such project directory."
   settings="$project/.claude/settings.local.json"
@@ -2181,6 +2254,7 @@ cmd_allow() {
     *) case "$self" in */.claude/plugins/*) rules="$rules
 Bash(bash $self *)" ;; esac ;;
   esac
+  codex_allow "$mode" "$project" "$self"
 
   if command -v python3 > /dev/null 2>&1 && python3 -c 'import json' > /dev/null 2>&1; then
     py=python3
@@ -2256,20 +2330,8 @@ with open(tmp, "w") as f:
     f.write("\n")
 os.replace(tmp, settings)
 PY
-  # Keep a file this script created out of git, without touching .gitignore.
-  if [ "$mode" = add ] && [ -f "$settings" ] && git -C "$project" rev-parse --git-dir > /dev/null 2>&1 && \
-     ! git -C "$project" check-ignore -q "$settings" 2>/dev/null && \
-     ! git -C "$project" ls-files --error-unmatch "$settings" > /dev/null 2>&1; then
-    (
-      cd "$project" || exit 0
-      exclude="$(git rev-parse --git-path info/exclude)"
-      # The pattern is relative to the repository's top level, so an app in a
-      # subfolder of its repository names that subfolder.
-      prefix="$(git rev-parse --show-prefix)"
-      mkdir -p "$(dirname "$exclude")"
-      printf '/%s.claude/settings.local.json\n' "$prefix" >> "$exclude"
-    )
-  fi
+  [ "$mode" = add ] && keep_out_of_git "$project" .claude/settings.local.json
+  return 0
 }
 
 # Stops the device leased for <project> and <slug> (or <serial>, when given),

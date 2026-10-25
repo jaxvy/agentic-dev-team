@@ -9,8 +9,9 @@
 #   <repo-clone>/install.sh --no-allow     # install, but add no permission rules
 #
 # What it does:
-#   - For each agent, command, workflow, pipeline script and driver adapter in this repo,
-#     creates a per-file symlink at the matching path in the consuming project.
+#   - For each agent, command, workflow, pipeline script and driver adapter in
+#     this repo, creates a per-file symlink at the matching path in the
+#     consuming project, and one symlink per Codex skill folder.
 #   - Manages a marker-fenced block in the project's .gitignore listing the
 #     installed paths (so per-developer absolute symlink targets aren't
 #     committed).
@@ -20,8 +21,10 @@
 #     user_rules).
 #   - Adds the pipeline's own permission rules (its script and the test
 #     drivers' MCP tools) to the project's .claude/settings.local.json, so
-#     Claude Code does not stop to ask mid-run. --no-allow skips this, and
-#     --uninstall removes exactly the rules it added.
+#     Claude Code does not stop to ask mid-run, and a Codex rules file,
+#     .codex/rules/agentic-dev-team.rules, that lets Codex run the script
+#     outside its sandbox. --no-allow skips this, and --uninstall removes
+#     exactly the rules it added.
 #   - Creates the optional pipeline config .agentic-dev-team/config.yaml
 #     (every setting commented out, git-ignored by .agentic-dev-team/.gitignore)
 #     when it does not exist yet. See HOW_IT_WORKS.md, "Configuration".
@@ -79,8 +82,13 @@ build_desired_pairs() {
            "$REPO_DIR"/.agents/workflows/*.md \
            "$REPO_DIR"/.opencode/agents/*.md \
            "$REPO_DIR"/.opencode/commands/*.md \
+           "$REPO_DIR"/.agents/skills/*/ \
+           "$REPO_DIR"/.codex/agents/*.toml \
            "$REPO_DIR"/.claude/adt/scripts/*.sh \
            "$REPO_DIR"/.claude/adt/drivers/*.md; do
+    # A Codex skill is a folder, linked whole (Codex follows a linked skill
+    # folder), so the glob above ends in a slash: drop it.
+    f="${f%/}"
     rel="${f#$REPO_DIR/}"
     printf '%s|%s\n' "$f" "$rel"
   done
@@ -371,7 +379,7 @@ do_install() {
     echo "  synced: .agents/agents.md (marker block)"
   fi
 
-  # Pre-approve the pipeline's own commands in Claude Code.
+  # Pre-approve the pipeline's own commands in Claude Code and Codex.
   if [ "$ALLOW" = 1 ] && [ -f "$REPO_DIR/.claude/adt/scripts/adt.sh" ]; then
     bash "$REPO_DIR/.claude/adt/scripts/adt.sh" allow --project "$PROJECT_DIR" 2>&1 | sed 's/^adt: /  /'
   fi
@@ -387,7 +395,8 @@ do_install() {
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
-  echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code, Antigravity, or opencode."
+  echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code, Antigravity, or opencode,"
+  echo "or \$build-auto and the others in Codex."
   echo "Optional config: .agentic-dev-team/config.yaml (see HOW_IT_WORKS.md, \"Configuration\")."
 }
 
