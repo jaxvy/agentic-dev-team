@@ -422,8 +422,8 @@ Each test:
    second emulator, the script splits the flows between the two; nothing else
    changes, and agents only ever use `DEVICE`.
 5. **Fix the flows that failed — the run's first test only.** If any of this
-   run's own flows (kind `feature`) is `FAIL` for a reason other than a crash
-   or an ANR, delegate to `adt-android-test-writer` with PLAN_PATH,
+   run's own flows (kind `feature`) is `FAIL` for a reason other than a crash,
+   an ANR or a test secret that `secrets.env` does not set, delegate to `adt-android-test-writer` with PLAN_PATH,
    PIPELINE_DOC, DRIVER_DOC, `DEVICE`, `BUILD_INSTALLED`,
    `RUN_RESULTS: pipeline_artifacts/S/run-results.md` and `FIX`: those flows'
    ids, each with its failing step. When it names flows as fixed, re-run just
@@ -431,8 +431,9 @@ Each test:
    one `--only` per fixed flow. That updates their rows in `run-results.md`;
    every other row stands. Do this once, and skip it when no flow of this run
    failed, or none was fixed. Flows it could not fix keep their `FAIL` rows for
-   the Tester. A regression-suite failure, a crash and an ANR always go
-   straight to the Tester.
+   the Tester. A regression-suite failure, a crash, an ANR and a missing test
+   secret always go straight to the Tester; name a missing secret in the final
+   summary, so the developer can add it to `secrets.env`.
 6. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
    DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`,
    `RUN_RESULTS: pipeline_artifacts/S/run-results.md`,
