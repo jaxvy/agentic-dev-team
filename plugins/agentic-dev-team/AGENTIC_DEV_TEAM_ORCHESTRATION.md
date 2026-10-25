@@ -144,8 +144,7 @@ bash <ADT_SH> state --slug S set driver <the test driver>
 `start` begins a fresh ledger for this run (an earlier run's ledger of the
 same slug is kept as `<slug>.previous`), so no count carries over from it. A
 resumed run never runs `start`. Then `set phase <name>` at the start of every
-phase, with the command's own
-phase names (`2R` for Phase 2R). In a parallel Coder phase, also
+phase, with the command's own phase names (`2R` for Phase 2R). In a parallel Coder phase, also
 `set group <n>` at the start of each Execution Group. After every Tester
 verdict, `set verdict <READY TO MERGE | NEEDS FIXES | BLOCKED>`.
 
@@ -166,20 +165,29 @@ the command says for that budget. Bump first, then re-run; never the other way
 round. When you are not sure of a count, run `bash <ADT_SH> state --slug S
 show`: the ledger is the record, not your memory.
 
-**At the end.** On every exit once the slug is known (the end of the run, a
-STOP, or `stop`), after the device release, run
-`bash <ADT_SH> state --slug S set phase done` and then
-`bash <ADT_SH> summary --slug S`. It writes `run-summary.json` beside the plan:
-the run's record of its verdict, coverage, budgets used, flows and checks. Name
-that file in the final summary.
+**At the end.** On every exit once the slug is known, after the device
+release, record how the run ended, then write its summary:
+
+- The run finished (its final summary, or the user's `approve` or `stop` at a
+  gate): `bash <ADT_SH> state --slug S set phase done`.
+- A STOP: `bash <ADT_SH> state --slug S set stopped "<the reason, in one
+  line>"`, and keep the phase. The user can fix the cause (a broken install, a
+  device that would not boot) and resume; a STOP on a spent budget stops again
+  at once on a resume, because the counter is still spent.
+
+Then `bash <ADT_SH> summary --slug S`. It writes `run-summary.json` beside the
+plan: the run's record of its verdict, coverage, budgets used, flows and
+checks. Name that file in the final summary.
 
 **Resume.** When a build command's `$ARGUMENTS` is exactly `resume <slug>`:
 
 1. Do "Command Start" as usual.
 2. Run `bash <ADT_SH> state --slug <slug> show`. Exit 2: STOP, there is no run
-   to resume. A `phase` of `done`: STOP, that run has ended; start a new one. A `command` that is not this command: STOP and tell the user to
-   run `/<that command> resume <slug>`. A `driver` that is not the one Command
-   Start found: STOP and say so.
+   to resume. A `phase` of `done`: STOP, that run has ended; start a new one.
+   A `command` that is not this command: STOP and tell the user to run
+   `/<that command> resume <slug>`. A `driver` that is not the one Command
+   Start found: STOP and say so. A `stopped` reason: tell the user what
+   stopped the run before, and continue.
 3. Restore PLAN_PATH from `plan`, and DOC_PATH from `design_doc` (`none` means
    DESIGN_DOC is off). Keep every counter as recorded.
 4. Tell the user which phase the run continues at, then start that phase from
