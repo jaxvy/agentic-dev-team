@@ -21,3 +21,5 @@ jobs:
         run: bash tests/adt-run-agent.test.sh
       - name: config file and install.sh
         run: bash tests/adt-config.test.sh
+      - name: install.sh tools
+        run: bash tests/install.test.sh
