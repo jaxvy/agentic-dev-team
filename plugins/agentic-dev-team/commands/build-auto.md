@@ -25,6 +25,13 @@ Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
 driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
 file (MODELS). Do all of them before any agent runs.
 
+Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
+command, paths and driver once the slug is known, the phase at the start of
+every phase below, and each Tester verdict. Before each re-run that a budget
+below limits, bump the counter the budget names; exit 17 is that budget's
+STOP. If `$ARGUMENTS` is exactly `resume <slug>`, follow "Resume" in that
+section instead of starting at the first phase.
+
 This is the /build-auto flow — assumes the feature is already understood.
 No PM phase. If the request is vague, suggest the user run /build-guided instead.
 
@@ -96,7 +103,7 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
       On failure, follow "When the cross-section check fails" in Part A:
       attribute the failures to the owning sections, re-spawn those coders
       sequentially (one at a time) with the failing output, and re-check —
-      at most 2 rounds, then STOP and report.
+      at most 2 rounds (counter `cross_section_rounds_g<n>`), then STOP and report.
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP rather than continuing.
@@ -124,7 +131,7 @@ Phase 3 — Tester:
   Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on one or
   the other; a blocked run never emits the DONE marker, so do not wait on it.
 
-Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes`):
   A gate stopped the Tester before it could finish — one it had no credential
   for, or a device that would not accept input. Follow "The Blocked Path" in
   ORCHESTRATION_DOC: it defines the whole procedure — what to show the
@@ -153,7 +160,7 @@ Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   report per the Blocked Path, saying plainly that the feature is untested.
   Release the device and run "Close the run" below on the way out.
 
-Phase 3F — Tester fix loop (max 2 iterations):
+Phase 3F — Tester fix loop (max 2 iterations, counter `fix_iterations`):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to "Keep the
   passing flows" below. On NEEDS FIXES, iterate (N = 1, then 2):
     Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test

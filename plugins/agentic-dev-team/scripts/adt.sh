@@ -12,6 +12,8 @@
 #   adt.sh select         --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
 #   adt.sh promote        --slug <slug> [--remove <id>]...
+#   adt.sh state          --slug <slug> set <key> <value> | get <key>
+#                         | bump <key> --max <n> | show
 #   adt.sh device-release --slug <slug> | --serial <serial>
 #   adt.sh device-list
 #   adt.sh allow          [--remove] [--project <dir>]
@@ -37,7 +39,10 @@
 # emulators when it has two, and writes run-results.md. It reads Android's
 # crash log after each flow, so a crash or ANR of the app fails the flow.
 # With --only, it re-runs just the named flows of this run and updates their
-# rows. promote keeps this run's passing flows in e2e/flows/. device-release
+# rows. promote keeps this run's passing flows in e2e/flows/, and only when
+# the Tester's test-results.md says READY TO MERGE. state is the run's
+# ledger: the phase, paths and budgets a build command records as it goes, so
+# a run can be resumed and a spent budget is refused (exit 17). device-release
 # stops the run's devices when it ends. allow adds the pipeline's permission
 # rules to the project's .claude/settings.local.json (or, with --remove, takes
 # them out again).
@@ -73,7 +78,8 @@
 #   0 success, 1 a flow failed (run), 2 usage, 10 no device, 11 the emulator
 #   did not start or boot, 12 install failed, 13 a device could not be
 #   stopped, 14 the driver's command was not found, 15 no live device is
-#   leased for this run, 16 preflight found a problem
+#   leased for this run, 16 preflight found a problem, 17 a budget is spent
+#   (state bump)
 #
 # Runs under bash 3.2 (the macOS system shell): no associative arrays, no
 # mapfile, no ${var,,}.
@@ -1452,6 +1458,126 @@ ${2:-}"; shift 2 ;;
   select_suite "$project" "$driver" "$areas" "$excludes" "" | cut -f3
 }
 
+# ---------- the run ledger ----------
+# pipeline_artifacts/.ledger/<slug> holds what a build command must not
+# forget: its command, phase, paths and budgets, one "key=value" per line.
+# The orchestrator writes it at each phase and before each re-run, so a run
+# whose session died, or whose context was compacted, continues from the file
+# rather than from memory, and a spent budget is refused here. It lives
+# outside pipeline_artifacts/<slug>/, which a review round's tree guard
+# hashes.
+
+ledger_file() { printf '%s/pipeline_artifacts/.ledger/%s\n' "$1" "$2"; }
+
+ledger_get() { # <file> <key>
+  [ -f "$1" ] || return 1
+  awk -v k="$2" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2); found = 1 }
+    END { if (found) print v; exit !found }' "$1"
+}
+
+ledger_put() { # <file> <key> <value>
+  local tmp="$1.tmp.$$"
+  {
+    [ -f "$1" ] && awk -v k="$2" 'index($0, k "=") != 1' "$1"
+    printf '%s=%s\n' "$2" "$3"
+  } > "$tmp" && mv -f "$tmp" "$1"
+}
+
+cmd_state() {
+  local slug="" project file action key value max cur next nl
+  nl='
+'
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slug) slug="${2:-}"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  [ -n "$slug" ] && [ $# -gt 0 ] || usage
+  case "$slug" in .*|*[!A-Za-z0-9._~-]*) die 2 "a slug is letters, digits, '.', '_', '~' and '-' only: $slug" ;; esac
+  action="$1"; shift
+  project="$(project_dir)"
+  file="$(ledger_file "$project" "$slug")"
+  case "$action" in
+    set|bump|get)
+      key="${1:-}"
+      case "$key" in ''|[!a-z]*|*[!a-z0-9_]*) die 2 "a ledger key is lowercase letters, digits and '_': '$key'" ;; esac
+      ;;
+  esac
+  case "$action" in
+    set)
+      [ $# -eq 2 ] || usage
+      value="$2"
+      case "$value" in *"$nl"*) die 2 "a ledger value is one line." ;; esac
+      mkdir -p "$(dirname "$file")"
+      [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
+      ledger_put "$file" "$key" "$value"
+      ;;
+    get)
+      [ $# -eq 1 ] || usage
+      ledger_get "$file" "$key" || { say "adt: the ledger for '$slug' has no $key"; return 1; }
+      ;;
+    bump)
+      [ $# -eq 3 ] && [ "$2" = --max ] || usage
+      max="$3"
+      case "$max" in ''|*[!0-9]*) die 2 "--max takes a whole number: $max" ;; esac
+      cur="$(ledger_get "$file" "$key" 2>/dev/null)"
+      case "$cur" in ''|*[!0-9]*) cur=0 ;; esac
+      next=$((cur + 1))
+      if [ "$next" -gt "$max" ]; then
+        say "adt: budget spent: $key is already $cur, the most this run allows ($max). STOP the run and report it."
+        printf '%s\n' "$cur"
+        exit 17
+      fi
+      mkdir -p "$(dirname "$file")"
+      [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
+      ledger_put "$file" "$key" "$next"
+      printf '%s\n' "$next"
+      ;;
+    show)
+      [ $# -eq 0 ] || usage
+      [ -f "$file" ] || die 2 "no ledger for '$slug' in $project: there is no run to resume."
+      cat "$file"
+      ;;
+    *) usage ;;
+  esac
+}
+
+# The verdict of a test-results.md: the first non-empty line under its
+# "## Verdict" heading, without markdown emphasis.
+tester_verdict() {
+  awk '
+    /^##[[:space:]]+Verdict[[:space:]]*$/ { inv = 1; next }
+    inv && /^#/ { exit }
+    inv && NF { gsub(/[*_`]/, ""); sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }
+  ' "$1" 2>/dev/null
+}
+
+# Succeeds when <test-results.md> gives READY TO MERGE and is not older than
+# <run-results.md>; otherwise says why, and fails. promote checks this itself,
+# so a suite never keeps the flows of a run that was not ready.
+check_ready_to_merge() {
+  local tests="$1" flows="$2" verdict
+  if [ ! -f "$tests" ]; then
+    say "adt: no $tests: the Tester has not given a verdict, so nothing is promoted."
+    return 1
+  fi
+  verdict="$(tester_verdict "$tests")"
+  case "$verdict" in
+    *"NEEDS FIXES"*|*BLOCKED*|"")
+      say "adt: the Tester's verdict is '${verdict:-missing}', not READY TO MERGE, so nothing is promoted."
+      return 1 ;;
+    "READY TO MERGE"*) ;;
+    *)
+      say "adt: the Tester's verdict is '$verdict', not READY TO MERGE, so nothing is promoted."
+      return 1 ;;
+  esac
+  if [ -n "$flows" ] && [ "$flows" -nt "$tests" ]; then
+    say "adt: the flows ran again after the Tester's verdict, so that verdict does not cover them. Nothing is promoted."
+    return 1
+  fi
+}
+
 # Keeps this run's passing flows in the suite. A flow is kept when its last
 # result was PASS (not FLAKY) and its tier is p0, p1 or p2. A suite flow with
 # the same id as one of this run's flows is replaced by it if it is kept, and
@@ -1473,6 +1599,7 @@ ${2:-}"; shift 2 ;;
   flows_dir="$project/pipeline_artifacts/$slug/flows"
   suite="$project/e2e/flows"
   [ -f "$results" ] || die 2 "no $results: run the flows before promoting them."
+  check_ready_to_merge "$project/pipeline_artifacts/$slug/test-results.md" "$results" || exit 2
 
   while IFS="$(printf '\t')" read -r id kind tier result; do
     [ "$kind" = feature ] || continue
@@ -1942,6 +2069,7 @@ case "$command" in
   run)            cmd_run "$@" ;;
   select)         cmd_select "$@" ;;
   promote)        cmd_promote "$@" ;;
+  state)          cmd_state "$@" ;;
   device-release) cmd_device_release "$@" ;;
   device-list)    cmd_device_list ;;
   -h|--help|help) usage ;;

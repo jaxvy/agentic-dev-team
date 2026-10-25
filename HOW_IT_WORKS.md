@@ -766,6 +766,31 @@ pipeline with a report rather than advancing.
 On a gate's second re-run, the producing agent receives all prior feedback from
 both rounds, with previously accepted items marked resolved.
 
+### The run ledger and resume
+
+A build command records its run in a small ledger,
+`pipeline_artifacts/.ledger/<slug>`, through `adt.sh state`: the command, the
+plan and design doc paths, the test driver, the phase it is in, each Tester
+verdict, and a counter for every budget in the table above. The orchestrator
+bumps a counter before each re-run, and the script refuses the bump (exit 17)
+once the budget is spent, so a budget holds even when the orchestrator's
+context was compacted during a long run.
+
+The ledger also makes a run resumable. If a session dies, or you stop it, start
+the same command again with `resume <slug>`:
+
+```
+/build-auto-reviewed resume save-draft-on-background
+```
+
+It continues at the start of the phase it was in, with the counters it had. A
+Coder phase is told that part of its work may already be in the tree; a test
+phase installs the build again; a blocked Tester shows its question again. A
+run that had not finished its plan has nothing to resume; start it again.
+
+`adt.sh promote` reads the Tester's verdict itself: it keeps flows only when
+`test-results.md` says `READY TO MERGE` and is newer than the last flow run.
+
 ### The changed-file manifest
 
 Before reviewing anything, the code reviewer builds a canonical inventory of what

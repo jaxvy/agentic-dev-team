@@ -25,6 +25,13 @@ Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
 driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
 file (MODELS, and RUNS). Do all of them before any agent runs.
 
+Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
+command, paths and driver once the slug is known, the phase at the start of
+every phase below, and each Tester verdict. Before each re-run that a budget
+below limits, bump the counter the budget names; exit 17 is that budget's
+STOP. If `$ARGUMENTS` is exactly `resume <slug>`, follow "Resume" in that
+section instead of starting at the first phase.
+
 Configured runs: when RUNS is on, follow CONFIG_DOC, "Configured Runs
 (/build-auto-reviewed only)", for every phase below: it says where each role
 runs, and how a gate with 2 or more reviewers runs as a review panel with a
@@ -72,7 +79,7 @@ Phase 1 — Architect:
   (on only)
   When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
-Phase 1R — Architect review gate (max 2 re-runs):
+Phase 1R — Architect review gate (max 2 re-runs, counter `plan_review_reruns`):
   Delegate to the `adt-android-architect-reviewer` subagent. Pass PLAN_PATH and,
   when DESIGN_DOC is on, DOC_PATH — the rejected alternatives live in the design
   doc, so a reviewer without it cannot check them.
@@ -129,13 +136,13 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
       On failure, follow "When the cross-section check fails" in Part A:
       attribute the failures to the owning sections, re-spawn those coders
       sequentially (one at a time) with the failing output, and re-check —
-      at most 2 rounds, then STOP and report.
+      at most 2 rounds (counter `cross_section_rounds_g<n>`), then STOP and report.
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP rather than continuing.
   When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
-Phase 2R — Code review gate (max 2 re-runs):
+Phase 2R — Code review gate (max 2 re-runs, counter `code_review_reruns`):
   After ALL coding for the feature is complete, delegate to the
   `adt-android-code-reviewer` subagent. Pass PLAN_PATH (it reviews the
   uncommitted diff against the plan and the project's conventions).
@@ -180,7 +187,7 @@ Phase 3 — Tester:
   the other; a blocked run never emits the DONE marker, so do not wait on it.
   When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
-Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes`):
   A gate stopped the Tester before it could finish — one it had no credential
   for, or a device that would not accept input. Follow "The Blocked Path" in
   ORCHESTRATION_DOC: it defines the whole procedure — what to show the
@@ -210,7 +217,7 @@ Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   Release the device and run "Close the run" below on the way out.
   When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
-Phase 3F — Tester fix loop (max 2 iterations):
+Phase 3F — Tester fix loop (max 2 iterations, counter `fix_iterations`):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to "Keep the
   passing flows" below. On NEEDS FIXES, iterate (N = 1, then 2):
     Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
@@ -232,7 +239,7 @@ Phase 3F — Tester fix loop (max 2 iterations):
       findings are in scope to fix even where the plan specifies no fix, since
       a Coder in the fix loop is otherwise under the stricter "stay in the plan"
       rule that governs Tester findings. This targeted loop allows **at most 1
-      re-run**.
+      re-run** (counter `targeted_reruns_<N>`).
       If the reviewer still requests changes, **STOP** — do not re-test
       unreviewed code and do not spend the remaining Tester iteration on it.
 

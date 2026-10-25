@@ -123,6 +123,75 @@ The command file says which steps it does.
         than the config file support, so .agentic-dev-team/config.yaml was not
         used."
 
+## The Run Ledger
+
+A build command keeps the state of its run in a ledger, not in your memory:
+`bash <ADT_SH> state --slug S …`. A long run can outlive your context (it gets
+compacted) or your session (it dies), and a count that exists only in the
+conversation is then lost. The ledger survives both, and the script refuses a
+re-run that the budget does not allow.
+
+**What to record.** As soon as you know the slug S (from the Architect's DONE
+marker, or from an existing plan the command was given):
+
+```
+bash <ADT_SH> state --slug S set command <build-auto | build-auto-reviewed | build-guided>
+bash <ADT_SH> state --slug S set plan <PLAN_PATH>
+bash <ADT_SH> state --slug S set design_doc <DOC_PATH, or none>
+bash <ADT_SH> state --slug S set driver <the test driver>
+```
+
+Then `set phase <name>` at the start of every phase, with the command's own
+phase names (`2R` for Phase 2R). In a parallel Coder phase, also
+`set group <n>` at the start of each Execution Group. After every Tester
+verdict, `set verdict <READY TO MERGE | NEEDS FIXES | BLOCKED>`.
+
+**Budgets.** Before each re-run that a budget limits, bump its counter:
+
+| Before | Counter | `--max` |
+|---|---|---|
+| an Architect re-run at the plan review gate | `plan_review_reruns` | 2 |
+| a Coder re-run at the code review gate | `code_review_reruns` | 2 |
+| a cross-section fix round after group `<n>` | `cross_section_rounds_g<n>` | 2 |
+| a Tester fix-loop iteration | `fix_iterations` | 2 |
+| a Coder re-run in the targeted re-review of fix iteration `<n>` | `targeted_reruns_<n>` | 1 |
+| a Tester resume after `⛔ TESTER BLOCKED` | `resumes` | 2 |
+
+`bash <ADT_SH> state --slug S bump <counter> --max <n>` prints the new count.
+Exit 17 means the budget is spent: do not start the re-run, and STOP exactly as
+the command says for that budget. Bump first, then re-run; never the other way
+round. When you are not sure of a count, run `bash <ADT_SH> state --slug S
+show`: the ledger is the record, not your memory.
+
+**Resume.** When a build command's `$ARGUMENTS` is exactly `resume <slug>`:
+
+1. Do "Command Start" as usual.
+2. Run `bash <ADT_SH> state --slug <slug> show`. Exit 2: STOP, there is no run
+   to resume. A `command` that is not this command: STOP and tell the user to
+   run `/<that command> resume <slug>`. A `driver` that is not the one Command
+   Start found: STOP and say so.
+3. Restore PLAN_PATH from `plan`, and DOC_PATH from `design_doc` (`none` means
+   DESIGN_DOC is off). Keep every counter as recorded.
+4. Tell the user which phase the run continues at, then start that phase from
+   its beginning:
+   - No `phase` yet, or Phase 1: nothing is worth keeping. STOP, and tell the
+     user to start the command again with the feature request.
+   - From Phase 2 on, first start the early boot again
+     (`device-acquire --background`; it returns at once, and reuses the run's
+     device when it still runs).
+   - A Coder phase: the tree may hold part of the work. Tell every Coder that
+     this is a resumed run: an earlier Coder may have done part of its
+     section, so it reads the files first, finishes what the plan asks, and
+     does nothing twice. In a parallel phase, start at the recorded `group`.
+   - A review gate: run the review again. A review is not a re-run, so bump
+     nothing for it.
+   - A test phase, or a fix-loop iteration: run the test phase again from its
+     first step, install included.
+   - A blocked Tester (Phase 3B or 4B): show the ask from `test-results.md`
+     again and wait for `resume` or `stop`.
+   - In `/build-guided`: show the gate of the recorded phase again and wait
+     for the user.
+
 ## Subagent Tool & Environment Mappings
 
 When defining subagents via the `define_subagent` tool, parse the configuration
@@ -378,7 +447,9 @@ last verdict was `READY TO MERGE`), run
 Flows Retired and per entry in the last `test-results.md`'s "Suite Flows to
 Remove". It copies the flows to keep into `e2e/flows/` and prints what it
 added, replaced and removed. Never promote after `NEEDS FIXES`, `BLOCKED` or a
-STOP. If it fails, report it; the verdict stands.
+STOP. The script checks this too: it refuses (exit 2) unless the
+`test-results.md` beside the plan says `READY TO MERGE` and is newer than the
+last flow run. If it fails, report it; the verdict stands.
 
 Note the time around steps 3, 5 and 6. The final summary names the test
 driver and the device, and reports, for each test, how long the Test Writer,
@@ -402,8 +473,8 @@ case by hand; to use flows instead, run the Test Writer and `adt.sh run` first.
 usable device, 11 the emulator did not start or boot, 12 the install command
 failed, 13 a device could not be stopped, 14 the driver's command line is not
 installed, 15 no device is leased for this run, 16 the preflight found a
-problem. Its messages say what to do;
-report them verbatim.
+problem, 17 a budget is spent (`state bump`, "The Run Ledger"). Its messages
+say what to do; report them verbatim.
 
 **The Tester and the Test Writer have no shell.** Their tool lists hold file
 tools and the two drivers' MCP tools, so they cannot reach for `adb` — every

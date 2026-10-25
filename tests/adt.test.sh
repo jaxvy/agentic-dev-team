@@ -522,6 +522,12 @@ tiered() {
   local f="$1/pipeline_artifacts/$2/flows/$3.yaml"
   { echo "# adt:priority: $5"; cat "$f"; } > "$f.tmp" && mv "$f.tmp" "$f"
 }
+# verdict <project> <slug> <verdict line> — the Tester's test-results.md
+verdict() {
+  mkdir -p "$1/pipeline_artifacts/$2"
+  printf '# Test Results: x\n\n## Summary\nVerified 1 of 1 plan cases; 0 not verified.\n\n## Verdict\n%s\n\n## Recommendations for Coder\n- None\n' "$3" \
+    > "$1/pipeline_artifacts/$2/test-results.md"
+}
 selected() { (cd "$1" && shift && /bin/bash "$SCRIPT" select "$@" 2>/dev/null) | sed "s#^$SANDBOX/proj1/e2e/flows/##"; }
 
 echo "select"
@@ -580,8 +586,23 @@ tiered "$SANDBOX/proj1" f cart/add-item auto-mobile p1 fail
 tiered "$SANDBOX/proj1" f checkout/upper auto-mobile "P2 — an edge case"
 rm -f "$SANDBOX/proj1/e2e/flows/cart/broken.yaml"
 adt "$SANDBOX/proj1" run --slug f --driver auto-mobile --area checkout:p1,p2 --area cart:p1 >/dev/null 2>&1
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote with no Tester verdict is refused" 2 $?
+expect_true "  (and keeps nothing)" [ ! -f "$SANDBOX/proj1/e2e/flows/checkout/receipt.yaml" ]
+verdict "$SANDBOX/proj1" f "NEEDS FIXES"
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote after NEEDS FIXES is refused" 2 $?
+verdict "$SANDBOX/proj1" f "**BLOCKED**"
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote after BLOCKED is refused" 2 $?
+verdict "$SANDBOX/proj1" f "READY TO MERGE"
+touch -t 203001010000 "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote is refused when the flows ran after the verdict" 2 $?
+verdict "$SANDBOX/proj1" f "**READY TO MERGE**"
+touch -t 203001010001 "$SANDBOX/proj1/pipeline_artifacts/f/test-results.md"
 out="$(adt "$SANDBOX/proj1" promote --slug f --remove checkout/offline --remove cart/empty-cart 2>/dev/null)"
-expect_code "promote succeeds" 0 $?
+expect_code "promote succeeds after READY TO MERGE" 0 $?
 expect_true "a new passing flow with a tier is added" [ -f "$SANDBOX/proj1/e2e/flows/checkout/receipt.yaml" ]
 row_has "a priority written 'P2 — …' reads as p2" "$SANDBOX/proj1" f checkout/upper "| feature | p2 | PASS |"
 expect_true "  (and that flow is kept)" [ -f "$SANDBOX/proj1/e2e/flows/checkout/upper.yaml" ]
@@ -600,6 +621,46 @@ expect_true "--remove never deletes a flow this run just replaced" [ -f "$SANDBO
 adt "$SANDBOX/proj2" promote --slug nothing >/dev/null 2>&1
 expect_code "promote with no run results is refused" 2 $?
 unset ADT_AUTOMOBILE
+
+# ---------- the run ledger ----------
+
+echo "state"
+setup
+ledger="$SANDBOX/proj1/pipeline_artifacts/.ledger/a"
+adt "$SANDBOX/proj1" state --slug a show >/dev/null 2>&1
+expect_code "show with no ledger: exit 2, nothing to resume" 2 $?
+adt "$SANDBOX/proj1" state --slug a set phase 2R >/dev/null 2>&1
+expect_code "set records a value" 0 $?
+expect_eq "  (in the ledger, outside the slug's own folder)" "phase=2R" "$(cat "$ledger")"
+expect_true "  (pipeline_artifacts is kept out of git)" grep -qx '[*]' "$SANDBOX/proj1/pipeline_artifacts/.gitignore"
+adt "$SANDBOX/proj1" state --slug a set plan "pipeline_artifacts/a/implementation-plan.md" >/dev/null 2>&1
+adt "$SANDBOX/proj1" state --slug a set phase 3 >/dev/null 2>&1
+expect_eq "set replaces a key and keeps the others" "pipeline_artifacts/a/implementation-plan.md
+3" "$(adt "$SANDBOX/proj1" state --slug a get plan 2>/dev/null; adt "$SANDBOX/proj1" state --slug a get phase 2>/dev/null)"
+adt "$SANDBOX/proj1" state --slug a get nope >/dev/null 2>&1
+expect_code "get of a missing key fails" 1 $?
+expect_eq "bump counts from 1" "1" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
+expect_eq "  (and up to the budget)" "2" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
+err="$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>&1 >/dev/null)"; rc=$?
+expect_code "a bump past the budget is refused: exit 17" 17 $rc
+expect_true "  (and says to stop)" grep -q 'budget spent: fix_iterations is already 2' <<EOF
+$err
+EOF
+expect_eq "  (the count stays at the budget)" "2" "$(adt "$SANDBOX/proj1" state --slug a get fix_iterations 2>/dev/null)"
+adt "$SANDBOX/proj1" state --slug a bump resumes --max 0 >/dev/null 2>&1
+expect_code "a budget of 0 refuses the first bump" 17 $?
+adt "$SANDBOX/proj1" state --slug ../x set phase 1 >/dev/null 2>&1
+expect_code "a slug with a path in it is refused" 2 $?
+adt "$SANDBOX/proj1" state --slug a set Phase 1 >/dev/null 2>&1
+expect_code "a key that is not lowercase is refused" 2 $?
+adt "$SANDBOX/proj1" state --slug a set note "two
+lines" >/dev/null 2>&1
+expect_code "a value on two lines is refused" 2 $?
+expect_true "show prints the whole ledger" grep -q '^fix_iterations=2$' <<EOF
+$(adt "$SANDBOX/proj1" state --slug a show 2>/dev/null)
+EOF
+adt "$SANDBOX/proj2" state --slug a show >/dev/null 2>&1
+expect_code "a ledger belongs to its project" 2 $?
 
 # ---------- crashes ----------
 

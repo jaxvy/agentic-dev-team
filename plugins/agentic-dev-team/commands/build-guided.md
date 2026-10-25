@@ -26,6 +26,13 @@ Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
 driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
 file (MODELS). Do all of them before any agent runs.
 
+Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
+command, paths and driver once the slug is known, the phase at the start of
+every phase below, and each Tester verdict. Before each re-run that a budget
+below limits, bump the counter the budget names; exit 17 is that budget's
+STOP. If `$ARGUMENTS` is exactly `resume <slug>`, follow "Resume" in that
+section instead of starting at the first phase.
+
 This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
 - `approve` — proceed to next phase
@@ -138,7 +145,7 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
         On failure, follow "When the cross-section check fails" in Part A:
         attribute the failures to the owning sections, re-spawn those coders
         sequentially (one at a time) with the failing output, and re-check —
-        at most 2 rounds, then STOP and report to the user.
+        at most 2 rounds (counter `cross_section_rounds_g<n>`), then STOP and report to the user.
 
   When all coders are done, show the user the list of modified files
   (grouped by which coder produced them) and ask:
@@ -186,7 +193,7 @@ Phase 4 — Tester (after approval):
   Then ask the user: `approve` to finish, `revise: <feedback>` to send the
   failures back to the Coder, or `stop`.
 
-  On `revise:`, run the fix loop (max 2 iterations):
+  On `revise:`, run the fix loop (max 2 iterations, counter `fix_iterations`):
     Spawn ONE `adt-android-coder` subagent with PLAN_PATH, the user's
     feedback, and the test report's "Recommendations for Coder" section
     verbatim, instructing it to fix exactly those failures. An Observation
@@ -208,7 +215,7 @@ Phase 4 — Tester (after approval):
     After the 2nd iteration still reports NEEDS FIXES, STOP — do not start a
     3rd iteration.
 
-Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
+Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes`):
   A gate stopped the Tester before it could finish — one it had no credential
   for, or a device that would not accept input. Follow "The Blocked Path" in
   ORCHESTRATION_DOC: it defines the whole procedure — what to show the
