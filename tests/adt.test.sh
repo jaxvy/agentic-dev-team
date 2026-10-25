@@ -69,6 +69,8 @@ setup() {
   ln -s "$SHIMS/emulator" "$ANDROID_HOME/emulator/emulator"
   export PATH="$ANDROID_HOME/platform-tools:$BASE_PATH"
   printf 'Pixel_A\nPixel_B\n' > "$FAKE_ADT_STATE/avds"
+  export ANDROID_AVD_HOME="$SANDBOX/avd"
+  mkdir -p "$ANDROID_AVD_HOME"
   mkdir -p "$SANDBOX/proj1" "$SANDBOX/proj2"
   git -C "$SANDBOX/proj1" init -q
   git -C "$SANDBOX/proj2" init -q
@@ -163,16 +165,19 @@ expect_eq "your own emulator is left alone" "device" "$(device_state emulator-55
 setup
 attach emulator-5554 Pixel_A
 attach emulator-5556 Pixel_B
-err="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>&1 >/dev/null)"
-out="$(lease_file emulator-5554 slug)$(lease_file emulator-5556 slug)"
-expect_eq "with every AVD open in normal mode, an attached device is taken" "a" "$out"
-expect_true "and the script says why" grep -q 'every AVD is open in normal mode' <<EOF
+err="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>&1 >/dev/null)"; rc=$?
+expect_code "with every AVD open in normal mode, nothing is taken: exit 10" 10 $rc
+expect_eq "  (your emulators get no lease)" "" "$(lease_file emulator-5554 slug)$(lease_file emulator-5556 slug)"
+expect_true "  (and the script says how to opt in)" grep -q 'every AVD is open in normal mode.*ADT_DEVICE_MODE=reuse' <<EOF
 $err
 EOF
-taken="$(ls "$ADT_HOME/leases")"
-expect_eq "it is recorded as not started by adt.sh" "no" "$(lease_file "$taken" started)"
+export ADT_DEVICE_MODE=reuse
+out="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
+expect_eq "with ADT_DEVICE_MODE=reuse, an attached device is taken" "a" "$(lease_file "$out" slug)"
+expect_eq "it is recorded as not started by adt.sh" "no" "$(lease_file "$out" started)"
 adt "$SANDBOX/proj1" device-release --slug a >/dev/null 2>&1
-expect_eq "releasing it does not stop it" "device" "$(device_state "$taken")"
+expect_eq "releasing it does not stop it" "device" "$(device_state "$out")"
+unset ADT_DEVICE_MODE
 
 setup
 echo busy > "$FAKE_ADT_STATE/mode.Pixel_A"
@@ -197,8 +202,37 @@ setup
 adt "$SANDBOX/proj1" device-acquire --slug a >/dev/null 2>&1
 expect_code "no AVD and no device: exit 10" 10 $?
 attach R58M123
-out="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
-expect_eq "no AVD but a phone attached: the phone is used" "R58M123" "$out"
+adt "$SANDBOX/proj1" device-acquire --slug a >/dev/null 2>&1
+expect_code "no AVD but a phone attached: the phone is not used without ADT_DEVICE_MODE=reuse" 10 $?
+expect_eq "  (it gets no lease)" "" "$(lease_file R58M123 slug)"
+
+echo "choosing the AVD by API level"
+setup
+printf 'target=android-33\n' > "$ANDROID_AVD_HOME/Pixel_A.ini"
+printf 'target=android-35\n' > "$ANDROID_AVD_HOME/Pixel_B.ini"
+out="$(adt "$SANDBOX/proj1" device-acquire --slug a --api 35 2>/dev/null | tail -n 1)"
+expect_eq "--api picks the AVD on that API" "Pixel_B" "$(lease_file "$out" avd)"
+expect_eq "  (and the lease records it)" "35" "$(lease_file "$out" api)"
+out="$(adt "$SANDBOX/proj1" device-acquire --slug b --api 33 2>/dev/null | tail -n 1)"
+expect_eq "  (another level, another AVD)" "Pixel_A" "$(lease_file "$out" avd)"
+setup
+printf 'target=android-33\n' > "$ANDROID_AVD_HOME/Pixel_A.ini"
+mkdir -p "$SANDBOX/avd/Pixel_B.avd"
+printf 'path=%s\n' "$SANDBOX/avd/Pixel_B.avd" > "$ANDROID_AVD_HOME/Pixel_B.ini"
+printf 'image.sysdir.1=system-images/android-34/google_apis/arm64-v8a/\n' > "$SANDBOX/avd/Pixel_B.avd/config.ini"
+err="$(adt "$SANDBOX/proj1" device-acquire --slug a --api 36 2>&1 >/dev/null)"
+out="$(lease_file emulator-15554 avd)"
+expect_eq "with no AVD on that API, the highest API is used (read from config.ini too)" "Pixel_B" "$out"
+expect_true "  (with a warning)" grep -q 'no free AVD runs API 36.*using Pixel_B (API 34)' <<EOF
+$err
+EOF
+adt "$SANDBOX/proj1" device-acquire --slug b --api thirty >/dev/null 2>&1
+expect_code "--api that is not a number is refused" 2 $?
+export ADT_AVD=Pixel_A
+out="$(adt "$SANDBOX/proj1" device-acquire --slug c --api 34 2>"$SANDBOX/err" | tail -n 1)"
+expect_eq "ADT_AVD still wins over --api" "Pixel_A" "$(lease_file "$out" avd)"
+expect_true "  (with a warning)" grep -q 'ADT_AVD=Pixel_A runs API 33, but the plan.s device API is 34' "$SANDBOX/err"
+unset ADT_AVD
 
 echo "reuse mode"
 setup
@@ -879,8 +913,8 @@ expect_code "an ADT_AVD open in normal mode fails preflight" 16 $?
 unset ADT_AVD
 attach emulator-5556 Pixel_B
 out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
-expect_code "every AVD open, but a device attached: a warning, not a failure" 0 $rc
-expect_true "  (naming the device it would use)" grep -q '^warn  every AVD is open in normal mode, so the run will test on emulator-5554' <<EOF
+expect_code "every AVD open, even with a device attached, fails preflight" 16 $rc
+expect_true "  (naming the device, and how to opt in)" grep -q '^FAIL  every AVD is open in normal mode.*ADT_DEVICE_MODE=reuse to test on an attached device such as emulator-5554' <<EOF
 $out
 EOF
 rm -f "$FAKE_ADT_STATE/dev/emulator-5554" "$FAKE_ADT_STATE/dev/emulator-5556"

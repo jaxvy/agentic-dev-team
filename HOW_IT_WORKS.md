@@ -563,9 +563,16 @@ flowchart TD
   the same serial, and installs again. A device you attached is never cleaned
   or restarted.
 * **Your emulator is never touched.** An attached device is used only when you
-  set `ADT_DEVICE_MODE=reuse`, or when no AVD can be booted (none exists, or
-  every one is open normally). The script says which device it took and why,
-  and never stops a device it did not start.
+  set `ADT_DEVICE_MODE=reuse`, because flows clear the app's data on the device
+  they run on. When no AVD can be booted (none exists, or every one is open
+  normally), the preflight fails and says how to fix it; the run never falls
+  back to your phone or your open emulator. The script never stops a device it
+  did not start.
+* **The app's own API level.** The plan's Section 0 records the app's
+  `targetSdk` as its `device API`, and the run boots an AVD on that API when
+  one is free. If none is, it takes the AVD with the highest API and warns, so
+  create one AVD per API level you ship for. The preflight lists every AVD with
+  its API. `ADT_AVD` still wins when you set it.
 
 * **Two emulators when there is memory.** If a second emulator would still
   leave a quarter of the machine's memory free, the run boots one beside its
@@ -589,8 +596,8 @@ All optional. Set them in your shell profile, or for Claude Code in
 
 | Variable | What it does |
 |---|---|
-| `ADT_AVD` | The AVD to boot. Recommended, so every run uses the one you prepared |
-| `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one |
+| `ADT_AVD` | The AVD to boot, whatever the plan's device API. Without it, a run picks an AVD on the app's `targetSdk` |
+| `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one. Flows clear the app's data on it, so only use a device whose app data you can lose |
 | `ADT_HEADLESS=0` | Show the emulator window, to watch a test run |
 | `ADT_PARALLEL=1` | Never boot a second emulator for a run (default: one when there is memory) |
 | `ADT_BOOT_TIMEOUT_S` | How long to wait for the emulator to start, in seconds (default 240) |

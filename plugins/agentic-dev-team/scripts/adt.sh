@@ -4,7 +4,7 @@
 #
 # Usage:
 #   adt.sh preflight      --driver auto-mobile|maestro
-#   adt.sh device-acquire --slug <slug> [--background]
+#   adt.sh device-acquire --slug <slug> [--api <level>] [--background]
 #   adt.sh install        --slug <slug> -- <install command...>   (prints BUILD_INSTALLED)
 #   adt.sh run            --slug <slug> --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
@@ -58,7 +58,8 @@
 # pipeline_artifacts/; or else the git top level.
 #
 # Environment:
-#   ADT_AVD              AVD to boot (default: the first one not open in normal mode)
+#   ADT_AVD              AVD to boot (default: the first one not open in normal mode,
+#                        on the --api level when one is free)
 #   ADT_DEVICE_MODE      "reuse" = use an attached device, boot nothing
 #   ADT_HEADLESS         "0" = show the emulator window (default: headless)
 #   ADT_BOOT_TIMEOUT_S   seconds to wait for boot (default 240)
@@ -347,25 +348,63 @@ avds_in_normal_mode() {
   done | sort -u
 }
 
-# Prints the first usable AVD not in the skip list (newline-separated).
+# The API level of <avd>: from its .ini (target=android-34), or else from its
+# config.ini (image.sysdir.1=system-images/android-34/...). Empty if unknown.
+avd_api() {
+  local ini path api
+  ini="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$1.ini"
+  api="$(tr -d '\r' < "$ini" 2>/dev/null | sed -n 's/^target=android-\([0-9][0-9]*\)$/\1/p' | head -n 1)"
+  if [ -z "$api" ]; then
+    path="$(tr -d '\r' < "$ini" 2>/dev/null | sed -n 's/^path=//p' | head -n 1)"
+    api="$(tr -d '\r' < "$path/config.ini" 2>/dev/null | \
+      sed -n 's#^image[.]sysdir[.]1=.*android-\([0-9][0-9]*\)/.*#\1#p' | head -n 1)"
+  fi
+  printf '%s\n' "$api"
+}
+
+# Prints the first usable AVD not in the skip list (newline-separated). With
+# <api>, the plan's device API (the app's targetSdk), an AVD on that API comes
+# first; if none is free, the one with the highest API, with a warning.
 choose_avd() {
-  local skip="$1" busy avd
+  local skip="$1" want="${2:-}" busy avd api best="" best_api=-1
   busy="$(avds_in_normal_mode)"
   if [ -n "${ADT_AVD:-}" ]; then
     is_avd_name "$ADT_AVD" || \
       die 10 "ADT_AVD=$ADT_AVD is not an AVD on this machine. Known AVDs: $(list_avds | tr '\n' ' ')"
     printf '%s\n' "$busy" | grep -Fxq "$ADT_AVD" && \
       die 10 "ADT_AVD=$ADT_AVD is open in normal mode, and a read-only copy cannot start beside it. Close it, or unset ADT_AVD."
+    if [ -n "$want" ]; then
+      api="$(avd_api "$ADT_AVD")"
+      [ "$api" = "$want" ] || say "adt: ADT_AVD=$ADT_AVD runs API ${api:-unknown}, but the plan's device API is $want"
+    fi
     printf '%s\n' "$ADT_AVD"
     return 0
   fi
   for avd in $(list_avds); do
     printf '%s\n' "$busy" | grep -Fxq "$avd" && continue
     printf '%s\n' "$skip" | grep -Fxq "$avd" && continue
-    printf '%s\n' "$avd"
-    return 0
+    if [ -z "$want" ]; then
+      printf '%s\n' "$avd"
+      return 0
+    fi
+    api="$(avd_api "$avd")"
+    if [ "$api" = "$want" ]; then
+      printf '%s\n' "$avd"
+      return 0
+    fi
+    case "$api" in ''|*[!0-9]*) api=-1 ;; esac
+    if [ -z "$best" ] || [ "$api" -gt "$best_api" ]; then
+      best="$avd"
+      best_api="$api"
+    fi
   done
-  return 1
+  [ -n "$best" ] || return 1
+  if [ "$best_api" -ge 0 ]; then
+    say "adt: no free AVD runs API $want, the plan's device API; using $best (API $best_api). Create an AVD on API $want to test on it."
+  else
+    say "adt: no free AVD runs API $want, the plan's device API; using $best (API unknown)."
+  fi
+  printf '%s\n' "$best"
 }
 
 # Claims the first free even port pair after <after>; prints the serial.
@@ -495,6 +534,7 @@ boot_avd() {
   lease="$(lease_path "$serial")"
   log="$lease/emulator.log"
   lease_set "$serial" avd "$avd"
+  lease_set "$serial" api "$(avd_api "$avd")"
   launch_emulator "$serial" "$avd" && return 0
 
   stop_emulator "$serial" > /dev/null 2>&1
@@ -900,15 +940,17 @@ cancel_second() {
 # ---------- subcommands ----------
 
 cmd_device_acquire() {
-  local slug="" background=0 project serial avd rc skip="" after=0 retried=0 log
+  local slug="" background=0 project serial avd rc skip="" after=0 retried=0 log api=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --slug) slug="${2:-}"; shift 2 ;;
+      --api) api="${2:-}"; shift 2 ;;
       --background) background=1; shift ;;
       *) usage ;;
     esac
   done
   [ -n "$slug" ] || usage
+  case "$api" in *[!0-9]*) die 2 "--api takes an API level, such as 35: $api" ;; esac
   find_adb
   project="$(project_dir)"
 
@@ -916,7 +958,7 @@ cmd_device_acquire() {
     local child lock waited=0
     mkdir -p "$ADT_HOME"
     log="$ADT_HOME/acquire-$(lock_key "$project" "$slug").log"
-    child="$(start_detached "$log" /bin/bash "${BASH_SOURCE[0]}" device-acquire --slug "$slug")"
+    child="$(start_detached "$log" /bin/bash "${BASH_SOURCE[0]}" device-acquire --slug "$slug" --api "$api")"
     # Return once the boot holds this run's lock (a few milliseconds), so a
     # device-release that follows at once waits for the boot, not misses it.
     lock="$LEASE_ROOT/.lock-$(lock_key "$project" "$slug")"
@@ -956,23 +998,22 @@ cmd_device_acquire() {
     die 10 "ADT_DEVICE_MODE=reuse, but no attached device is online and free."
   fi
 
+  # An attached device is the developer's own: flows clear the app's data on
+  # the device they run on. So it is used only when they ask for it.
   if ! find_emulator; then
-    acquire_attached "$project" "$slug" "the Android emulator is not installed" && return 0
-    die 10 "the Android emulator is not installed and no device is attached."
+    die 10 "the Android emulator is not installed. Install it from Android Studio's SDK Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
   fi
 
   if [ -n "${ADT_AVD:-}" ]; then
-    avd="$(choose_avd "")" || exit $?
+    avd="$(choose_avd "" "$api")" || exit $?
   fi
 
   while :; do
-    if ! avd="$(choose_avd "$skip")"; then
+    if ! avd="$(choose_avd "$skip" "$api")"; then
       if [ -z "$(list_avds)" ]; then
-        acquire_attached "$project" "$slug" "no AVD exists" && return 0
-        die 10 "no AVD exists and no device is attached. Create one in Android Studio's Device Manager."
+        die 10 "no AVD exists. Create one in Android Studio's Device Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
       fi
-      acquire_attached "$project" "$slug" "every AVD is open in normal mode" && return 0
-      die 10 "every AVD is open in normal mode and no other device is attached. Close one, or set ADT_AVD."
+      die 10 "every AVD is open in normal mode, and a read-only copy cannot start beside it. Close one, create another AVD, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
     fi
     serial="$(boot_avd "$project" "$slug" "$avd" "$after")"
     rc=$?
@@ -1689,15 +1730,16 @@ preflight_devices() {
     return
   fi
   if ! find_emulator; then
-    if [ -n "$attached" ]; then
-      pf_warn "the Android emulator is not installed, so the run will test on the attached device $attached."
-    else
-      pf_fail "the Android emulator is not installed and no device is attached. Install the emulator from Android Studio's SDK Manager."
-    fi
+    pf_fail "the Android emulator is not installed. Install it from Android Studio's SDK Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
     return
   fi
   pf_ok "emulator: $EMULATOR"
   avds="$(list_avds)"
+  if [ -n "$avds" ]; then
+    local list="" one
+    for one in $avds; do list="$list, $one (API $(avd_api "$one" | sed 's/^$/unknown/'))"; done
+    pf_ok "AVDs: ${list#, }. A run boots one on the app's targetSdk when it can."
+  fi
   busy="$(avds_in_normal_mode)"
   if [ -n "${ADT_AVD:-}" ]; then
     if ! printf '%s\n' "$avds" | grep -Fxq "$ADT_AVD"; then
@@ -1720,12 +1762,10 @@ preflight_devices() {
     pf_ok "AVD: $usable (the first one not open in normal mode)"
     preflight_parallel "$usable"
     pf_warn "ADT_AVD is not set, so runs may boot different AVDs and pay auto-mobile's first-time setup again. See HOW_IT_WORKS, 'Setting up device testing'."
-  elif [ -n "$attached" ]; then
-    pf_warn "every AVD is open in normal mode, so the run will test on $attached instead of an emulator of its own. Close one, or create another AVD."
   elif [ -z "$avds" ]; then
-    pf_fail "no AVD exists and no device is attached. Create one in Android Studio's Device Manager."
+    pf_fail "no AVD exists. Create one in Android Studio's Device Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
   else
-    pf_fail "every AVD is open in normal mode and no other device is attached. Close one, or create another AVD."
+    pf_fail "every AVD is open in normal mode, so no read-only copy can start. Close one, create another AVD, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
   fi
 }
 

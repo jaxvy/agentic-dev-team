@@ -393,6 +393,11 @@ Coder can re-invoke the same ones.
      `./gradlew tasks --all` you read once. A resolved command naming a
      non-existent task is a plan defect that fails every downstream phase, and
      the failure will look like broken code rather than a bad plan.
+   - **Record the device API**: the app's `targetSdk`, read from the
+     application module's `build.gradle.kts`, its version catalog entry, or the
+     convention plugin that sets it. The run boots an emulator on that API when
+     one exists, so the feature is tested on the platform behavior the app
+     targets (runtime permissions, edge-to-edge, background limits).
 
 4. **Write `pipeline_artifacts/{slug}/design-doc.md`** — unless
    `DESIGN_DOC: off` or `DESIGN_DOC: from-design-doc`, in which case skip to
@@ -526,6 +531,7 @@ Coder can re-invoke the same ones.
    build gate:          ./gradlew :app:assembleDebug :app:lintDebug detekt :app:testDebugUnitTest
    cross-section check: ./gradlew :app:lintDebug detekt :app:testDebugUnitTest
    install command:     ./gradlew :app:installDebug
+   device API:          35
    ```
 
    **Source**: <`AGENTS.md` declares them | derived from settings.gradle.kts +

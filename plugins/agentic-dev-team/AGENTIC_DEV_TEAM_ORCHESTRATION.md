@@ -329,8 +329,10 @@ below).
 
 Then, as soon as the plan names the slug `S` and before the Coder starts, the
 command **boots the run's device early**:
-`bash <adt.sh> device-acquire --slug S --background`. It returns at once, and
-the emulator boots while the Coder works. The test phase's own
+`bash <adt.sh> device-acquire --slug S --api <A> --background`, where `A` is
+the `device API` line of the plan's Section 0 (leave `--api` out when the plan
+has no such line). It returns at once, and the emulator boots while the Coder
+works, on an AVD of that API when one is free. The test phase's own
 `device-acquire` waits for it, so the boot costs no extra time. From this
 point on, every exit releases the device.
 
@@ -360,7 +362,7 @@ resolved in "Before the Run".
 Each test:
 
 1. **Lease the device — the run's first test only.**
-   `bash <adt.sh> device-acquire --slug S`. It returns the device the early
+   `bash <adt.sh> device-acquire --slug S --api <A>`. It returns the device the early
    boot started, waiting for it to finish booting; without an early boot, it
    boots a headless emulator of the run's own (never one the developer has
    open). It prints the serial on its last line: that is `DEVICE`. Running it

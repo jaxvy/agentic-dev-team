@@ -43,7 +43,8 @@ against the actual codebase. Judge it on:
    fails every downstream phase, and the failure will look like broken code
    rather than a bad plan. Section 0 restating the pipeline doc's defaults
    verbatim, with no Source line and no evidence of discovery, is itself worth
-   a flag.
+   a flag. The `device API` line must be the app's real `targetSdk`; a wrong
+   one tests the feature on the wrong platform version, which is a blocker.
 4. **Correctness & fit.** The design matches existing patterns (MVI/DI/module
    layout), doesn't conflict with the architecture, and actually satisfies the
    feature request.
