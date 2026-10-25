@@ -109,7 +109,7 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, how the named verification commands are
   resolved, required unit tests, review currency, review-driven fixes, and the
-  verdict markers. Part B is orchestrator-facing — skip it. If neither path
+  verdict markers. Part B (orchestration) is in another file; do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 
@@ -190,6 +190,11 @@ is not an error.
    example test still governs everything else — imports, dispatcher rules,
    fake construction.
 
+   A case marked `(instrumented)` goes under `src/androidTest/`, with the
+   project's instrumented test runner and the plan's libraries. You have no
+   device, so you cannot run it: the build gate compiles it, and the test phase
+   runs it. Say so in your DONE marker.
+
    Your section's test files are part of its file list, so writing them is in
    scope. If the plan names a test file that is *not* in your section's file
    list, STOP and report it — that is a plan defect, not something to work
@@ -216,7 +221,8 @@ is not an error.
 
    Fix any failures that ARE within your scope before declaring done.
    If a test failure indicates a plan problem, stop and report — do not
-   silently change the plan.
+   silently change the plan. A failed **device tests** finding you fix from
+   its log; you have no device, and the re-test runs those tests again.
 7. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
 8. End with: ✅ CODER DONE — section(s) implemented: <list>. Files

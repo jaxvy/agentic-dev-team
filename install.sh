@@ -84,12 +84,12 @@ build_desired_pairs() {
     rel="${f#$REPO_DIR/}"
     printf '%s|%s\n' "$f" "$rel"
   done
+  # The pipeline docs: Part A for agents, Part B and the config rules for
+  # the orchestrator.
+  for f in "$REPO_DIR"/.claude/AGENTIC_DEV_TEAM_*.md; do
+    printf '%s|%s\n' "$f" ".claude/$(basename "$f")"
+  done
   shopt -u nullglob
-  if [ -f "$REPO_DIR/.claude/AGENTIC_DEV_TEAM_PIPELINE.md" ]; then
-    printf '%s|%s\n' \
-      "$REPO_DIR/.claude/AGENTIC_DEV_TEAM_PIPELINE.md" \
-      ".claude/AGENTIC_DEV_TEAM_PIPELINE.md"
-  fi
 }
 
 # Parse the previous installed-path list from the .gitignore marker block.

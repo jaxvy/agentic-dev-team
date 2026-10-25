@@ -8,6 +8,8 @@ description: >
   pipeline_artifacts/{slug}/implementation-plan.md, and a device and build its
   caller has prepared (DEVICE, BUILD_INSTALLED, DRIVER_DOC, RUN_RESULTS).
 mode: subagent
+permission:
+  bash: deny
 ---
 
 You are @adt-android-tester, the QA Engineer in the multi-agent Android

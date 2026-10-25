@@ -130,7 +130,15 @@ steps:
 mode off and Wi-Fi on, portrait, light theme at the default font scale. Then
 the case's Setup, when it is device state — `setDeviceState` with
 `airplaneMode: true` for an offline case, say — so the app starts in it. Then
-`launchApp` with the installed app id and `clearAppData: true`.
+`launchApp` with the installed app id and `clearAppData: true`. Clearing the
+data also resets the app's runtime permissions, so a permission prompt the app
+shows at start appears again. Then the plan's "First launch" Shared setup: its
+onboarding screens, and a tap on the prompt's button with the selector the
+plan names (for example `[text="Allow"]`) unless the case tests a denial.
+
+**Test secrets.** A step that types a test secret uses its name,
+`text: "${TEST_PASSWORD}"`, exactly as the plan writes it. The script fills in
+the value when it runs the flow.
 
 **Steps.** Use the tools from section 4, with the same arguments a direct call
 would take. `tapOn` and `sendKeys` take `selector: {testTag: …}`.
@@ -161,7 +169,10 @@ bunx @kaeawc/auto-mobile@0.0.84 --cli executePlan --platform android \
 ```
 
 It exits 0 when the flow passed. On a failure it prints the failed step and its
-error, which the script copies into `run-results.md`. Before the first flow it
+error, which the script copies into `run-results.md`. Before the call, the
+script replaces each `${NAME}` of a test secret in the flow's content with its
+value from `.agentic-dev-team/secrets.env`; afterwards it scrubs the values
+from the flow's logs. The flow file keeps the names. Before the first flow it
 binds auto-mobile to the device once (`getAndroid` with `deviceId`): a fresh
 emulator on a serial auto-mobile has driven before lacks its helper app, and
 auto-mobile installs it again only when it binds. The command line reaches

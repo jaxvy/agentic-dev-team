@@ -86,6 +86,15 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    A testing dependency that appears in the diff without being named in the
    plan's Section 2 is a finding, as is a second assertion or mocking library
    alongside the one in Section 1's Test Stack.
+
+   Instrumented tests (`(instrumented)` cases, under `src/androidTest/`) are
+   judged the same way; the build gate compiles them, and the test phase runs
+   them on the device. A Room schema change needs its migration, the exported
+   schema JSON, and its migration test (Part A, "Data that outlives an
+   update"); a missing one is a blocker. A new class read by reflection (a
+   serialized model, a Retrofit interface) in a minified app needs keep rules
+   unless its library ships them; a missing rule is a blocker, because only
+   the release build would crash.
 6. **Build & test gate.** Run the build gate — resolved per the pipeline doc's
    Part A, which means the plan's `## 0. Verification Commands` block when a
    plan exists. Never substitute your own guess at the project's Gradle tasks.
@@ -93,7 +102,7 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    covers when judging API usage.
 
 **Blocks from a configured run.** In a configured `/build-auto-reviewed`
-run (Part B, "Configured Runs"), your prompt can contain two extra blocks:
+run (the orchestrator's "Configured Runs" rules), your prompt can contain two extra blocks:
 
 - `BUILD GATE OUTPUT`: the orchestrator already ran the build gate. Use
   that output for item 6. If it failed, the orchestrator already reports
@@ -173,7 +182,7 @@ the gate, approve it — needless re-runs waste tokens and time.
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, the changed-file manifest, how the
   named verification commands are resolved, required unit tests, review
-  currency, review-driven fixes, and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
+  currency, review-driven fixes, and the verdict markers. Part B (orchestration) is in another file; do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 

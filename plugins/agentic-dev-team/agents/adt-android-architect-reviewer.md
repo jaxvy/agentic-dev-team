@@ -44,6 +44,9 @@ against the actual codebase. Judge it on:
    rather than a bad plan. Section 0 restating the pipeline doc's defaults
    verbatim, with no Source line and no evidence of discovery, is itself worth
    a flag.
+   The device tests are a filtered connected
+   test task when any case is `(instrumented)`, with the instrumented test
+   APK's assemble task in the build gate, and `none` otherwise.
 4. **Correctness & fit.** The design matches existing patterns (MVI/DI/module
    layout), doesn't conflict with the architecture, and actually satisfies the
    feature request.
@@ -75,6 +78,14 @@ against the actual codebase. Judge it on:
    for a later round costs the run a whole Architect re-run, and the gate has
    only two. On a re-review, check all of Section 4 again, not only the cases
    you flagged: a fix can break another rule.
+
+   A credential value in a case (a password, a PIN, an email of a real
+   account) is a blocker: it would land in a flow file. So is a `${NAME}` the
+   project's `Test secrets:` does not declare, and a test hook its
+   `Test hooks:` does not list. A case that starts from a clean launch without
+   the "First launch" Shared setup, in an app whose code shows onboarding or a
+   permission prompt on first launch, is a blocker: its flow would stop at the
+   first screen.
 
    Every real case needs an **Id** (`<area>/<name>`) and a **Priority** with a
    reason; either missing is a blocker, because the case's flow cannot be named
@@ -118,6 +129,13 @@ against the actual codebase. Judge it on:
      observable result becomes a test that documents nothing — and a filler
      clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
      an omission, since it looks compliant.
+   - A section that changes a Room schema (or another stored format the app
+     reads after an update) without the migration, the exported schema JSON in
+     its **Files**, and an instrumented migration test, as Part A, "Data that
+     outlives an update", says, is a blocker. So is
+     `fallbackToDestructiveMigration` on user data that the request did not
+     ask for. A case marked `(instrumented)` that a JVM test could prove is a
+     nit, not a blocker.
    - A test file named in **Tests required** but absent from that section's
      **Files** list is a blocker. Scope, the parallel-safety overlap pre-check,
      and cross-section failure attribution all read **Files**: leave the test
@@ -191,7 +209,7 @@ tokens and time.
   path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, the build gate, required unit tests,
-  and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
+  and the verdict markers. Part B (orchestration) is in another file; do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 

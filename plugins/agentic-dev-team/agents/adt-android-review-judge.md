@@ -43,7 +43,7 @@ not matter.
   source of truth for the conventions the reviewers checked against.
 - Read **Part A (Agent Protocol)** of the pipeline doc, at the PIPELINE_DOC
   path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` if
-  none was given. Part B is orchestrator-facing; skip it.
+  none was given. Part B (orchestration) is in another file; do not read it.
 - Read the plan at PLAN_PATH (and the design doc at DOC_PATH, when given).
 - For a code gate, build the changed-file manifest (Part A) so you can open
   the code that each finding names.

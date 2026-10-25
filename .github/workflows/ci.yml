@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning install.sh plugins/agentic-dev-team/scripts/*.sh tests/*.sh tests/shims/*
+      - name: Wiring and links
+        run: bash tests/wiring.test.sh
+      - name: adt.sh
+        run: bash tests/adt.test.sh
+      - name: adt-run-agent.sh
+        run: bash tests/adt-run-agent.test.sh
+      - name: config file and install.sh
+        run: bash tests/adt-config.test.sh

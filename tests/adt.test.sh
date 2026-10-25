@@ -69,6 +69,8 @@ setup() {
   ln -s "$SHIMS/emulator" "$ANDROID_HOME/emulator/emulator"
   export PATH="$ANDROID_HOME/platform-tools:$BASE_PATH"
   printf 'Pixel_A\nPixel_B\n' > "$FAKE_ADT_STATE/avds"
+  export ANDROID_AVD_HOME="$SANDBOX/avd"
+  mkdir -p "$ANDROID_AVD_HOME"
   mkdir -p "$SANDBOX/proj1" "$SANDBOX/proj2"
   git -C "$SANDBOX/proj1" init -q
   git -C "$SANDBOX/proj2" init -q
@@ -77,7 +79,7 @@ setup() {
 teardown() {
   [ -n "$SANDBOX" ] || return 0
   # Stop any fake emulator still waiting on its device file.
-  rm -rf "$FAKE_ADT_STATE/dev"
+  rm -rf "${FAKE_ADT_STATE:?}/dev"
   sleep 0.5
   rm -rf "$SANDBOX"
   SANDBOX=""
@@ -163,16 +165,19 @@ expect_eq "your own emulator is left alone" "device" "$(device_state emulator-55
 setup
 attach emulator-5554 Pixel_A
 attach emulator-5556 Pixel_B
-err="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>&1 >/dev/null)"
-out="$(lease_file emulator-5554 slug)$(lease_file emulator-5556 slug)"
-expect_eq "with every AVD open in normal mode, an attached device is taken" "a" "$out"
-expect_true "and the script says why" grep -q 'every AVD is open in normal mode' <<EOF
+err="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>&1 >/dev/null)"; rc=$?
+expect_code "with every AVD open in normal mode, nothing is taken: exit 10" 10 $rc
+expect_eq "  (your emulators get no lease)" "" "$(lease_file emulator-5554 slug)$(lease_file emulator-5556 slug)"
+expect_true "  (and the script says how to opt in)" grep -q 'every AVD is open in normal mode.*ADT_DEVICE_MODE=reuse' <<EOF
 $err
 EOF
-taken="$(ls "$ADT_HOME/leases")"
-expect_eq "it is recorded as not started by adt.sh" "no" "$(lease_file "$taken" started)"
+export ADT_DEVICE_MODE=reuse
+out="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
+expect_eq "with ADT_DEVICE_MODE=reuse, an attached device is taken" "a" "$(lease_file "$out" slug)"
+expect_eq "it is recorded as not started by adt.sh" "no" "$(lease_file "$out" started)"
 adt "$SANDBOX/proj1" device-release --slug a >/dev/null 2>&1
-expect_eq "releasing it does not stop it" "device" "$(device_state "$taken")"
+expect_eq "releasing it does not stop it" "device" "$(device_state "$out")"
+unset ADT_DEVICE_MODE
 
 setup
 echo busy > "$FAKE_ADT_STATE/mode.Pixel_A"
@@ -197,8 +202,9 @@ setup
 adt "$SANDBOX/proj1" device-acquire --slug a >/dev/null 2>&1
 expect_code "no AVD and no device: exit 10" 10 $?
 attach R58M123
-out="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
-expect_eq "no AVD but a phone attached: the phone is used" "R58M123" "$out"
+adt "$SANDBOX/proj1" device-acquire --slug a >/dev/null 2>&1
+expect_code "no AVD but a phone attached: the phone is not used without ADT_DEVICE_MODE=reuse" 10 $?
+expect_eq "  (it gets no lease)" "" "$(lease_file R58M123 slug)"
 
 echo "reuse mode"
 setup
@@ -482,6 +488,59 @@ row_has "FLAKY when it passes on the retry" "$SANDBOX/my project" m 03-flaky "| 
 row_has "an auto-mobile flow is SKIPPED in a Maestro run" "$SANDBOX/my project" m 04-automobile "| SKIPPED | written for auto-mobile |"
 unset ADT_AUTOMOBILE ADT_MAESTRO
 
+echo "test secrets"
+setup
+export ADT_AUTOMOBILE="$SHIMS/auto-mobile" ADT_MAESTRO="$SHIMS/maestro"
+git -C "$SANDBOX/proj1" config user.email t@example.com
+git -C "$SANDBOX/proj1" config user.name t
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug s 2>/dev/null | tail -n 1)"
+mkdir -p "$SANDBOX/proj1/.agentic-dev-team"
+printf '*\n' > "$SANDBOX/proj1/.agentic-dev-team/.gitignore"
+printf '# test account\nTEST_EMAIL=qa@example.com\nTEST_PASSWORD=s3cr3t-Pa$$\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+f="$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+mkdir -p "$(dirname "$f")"
+printf '# adt:driver: auto-mobile\n# adt:priority: p0\n# fake: echo-plan\nname: sign-in\nsteps:\n  - tool: launchApp\n    appId: com.example.app\n  - tool: sendKeys\n    text: "${TEST_EMAIL}"\n  - tool: sendKeys\n    text: "${TEST_PASSWORD}"\n' > "$f"
+adt "$SANDBOX/proj1" run --slug s --driver auto-mobile >/dev/null 2>&1
+expect_code "a flow that uses declared secrets runs" 0 $?
+expect_true "auto-mobile gets the values in place of the names" grep -qF 'text: "s3cr3t-Pa$$"' "$FAKE_ADT_STATE/plan.sign-in"
+expect_true "  (both of them)" grep -qF 'text: "qa@example.com"' "$FAKE_ADT_STATE/plan.sign-in"
+expect_true "the flow file keeps the names, never the values" grep -qF '${TEST_PASSWORD}' "$f"
+expect_eq "no log of the run holds a value" "" "$(grep -rlF 's3cr3t-Pa$$' "$SANDBOX/proj1/pipeline_artifacts/s" 2>/dev/null)"
+expect_true "  (they hold *** instead)" grep -rqF 'text: "***"' "$SANDBOX/proj1/pipeline_artifacts/s/run-logs"
+printf '# adt:driver: auto-mobile\nname: other\nsteps:\n  - tool: sendKeys\n    text: "${TEST_PIN}"\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/pin.yaml"
+adt "$SANDBOX/proj1" run --slug s --driver auto-mobile >/dev/null 2>&1
+expect_code "a flow that uses a secret the file does not set fails the run" 1 $?
+row_has "  (its row names the missing secret)" "$SANDBOX/proj1" s auth/pin "| FAIL | needs the test secret TEST_PIN, which .agentic-dev-team/secrets.env does not set |"
+expect_eq "  (and it never reaches the device)" "0" "$(grep -c 'name=other' "$FAKE_ADT_STATE/automobile.calls")"
+rm -f "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/pin.yaml"
+
+printf '# adt:driver: maestro\n# fake: echo-env\nappId: com.example.app\n---\n- inputText: ${TEST_PASSWORD}\n- takeScreenshot: ${MAESTRO_FILENAME}\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "under Maestro, a flow with a secret runs" 0 $?
+expect_eq "Maestro gets only the secrets the flows use, as -e (not its own MAESTRO_ variables)" "TEST_PASSWORD=s3cr3t-Pa\$\$" "$(cat "$FAKE_ADT_STATE/maestro.env")"
+expect_eq "  (and no log keeps the value)" "" "$(grep -rlF 's3cr3t-Pa$$' "$SANDBOX/proj1/pipeline_artifacts/s" 2>/dev/null)"
+
+printf 'not a setting\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "a malformed secrets file stops the run" 2 $?
+printf 'TEST_PASSWORD=x1\n' > "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+rm "$SANDBOX/proj1/.agentic-dev-team/.gitignore"
+err="$(adt "$SANDBOX/proj1" run --slug s --driver maestro 2>&1 >/dev/null)"; rc=$?
+expect_code "a secrets file git does not ignore stops the run" 2 $rc
+expect_true "  (and says why)" grep -q 'is not git-ignored' <<EOF
+$err
+EOF
+git -C "$SANDBOX/proj1" add -f .agentic-dev-team/secrets.env
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "a tracked secrets file stops the run" 2 $?
+git -C "$SANDBOX/proj1" rm -q --cached .agentic-dev-team/secrets.env
+rm -f "$SANDBOX/proj1/.agentic-dev-team/secrets.env"
+printf '# adt:driver: maestro\nappId: com.example.app\n---\n- launchApp\n' > "$SANDBOX/proj1/pipeline_artifacts/s/flows/auth/sign-in.yaml"
+adt "$SANDBOX/proj1" run --slug s --driver maestro >/dev/null 2>&1
+expect_code "with no secrets file, flows without secrets run as before" 0 $?
+expect_eq "  (and Maestro gets no -e)" "" "$(cat "$FAKE_ADT_STATE/maestro.env")"
+unset ADT_AUTOMOBILE ADT_MAESTRO
+
 echo "where the project is"
 setup
 export ADT_AUTOMOBILE="$SHIMS/auto-mobile"
@@ -521,6 +580,12 @@ tiered() {
   flow "$1" "$2" "$3.yaml" "$4" "${6:-}"
   local f="$1/pipeline_artifacts/$2/flows/$3.yaml"
   { echo "# adt:priority: $5"; cat "$f"; } > "$f.tmp" && mv "$f.tmp" "$f"
+}
+# verdict <project> <slug> <verdict line> — the Tester's test-results.md
+verdict() {
+  mkdir -p "$1/pipeline_artifacts/$2"
+  printf '# Test Results: x\n\n## Summary\nVerified 1 of 1 plan cases; 0 not verified.\n\n## Verdict\n%s\n\n## Recommendations for Coder\n- None\n' "$3" \
+    > "$1/pipeline_artifacts/$2/test-results.md"
 }
 selected() { (cd "$1" && shift && /bin/bash "$SCRIPT" select "$@" 2>/dev/null) | sed "s#^$SANDBOX/proj1/e2e/flows/##"; }
 
@@ -573,6 +638,33 @@ expect_true "the P0 time is reported" grep -q '^P0 flows: [0-9]* seconds.$' "$SA
 ADT_P0_BUDGET_S=-1 adt "$SANDBOX/proj1" run --slug f --driver auto-mobile >/dev/null 2>&1
 expect_true "with a warning once it passes the budget" grep -q '^Warning: the P0 flows took more than -1 seconds' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
 
+echo "suite (CI)"
+attach emulator-5570 Pixel_A
+attach R58M999
+adt "$SANDBOX/proj2" suite --driver auto-mobile >/dev/null 2>&1
+expect_code "suite with no e2e/flows: exit 2" 2 $?
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile >/dev/null 2>&1
+expect_code "suite with several devices online and no --serial: exit 10" 10 $?
+: > "$FAKE_ADT_STATE/automobile.calls"
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile --serial R58M999 >/dev/null 2>&1
+expect_code "suite replays the P0 flows, which pass" 0 $?
+out_dir="$SANDBOX/proj1/pipeline_artifacts/suite"
+expect_true "  (on the device it was given, with no lease)" grep -q 'executePlan device=R58M999 name=launch' "$FAKE_ADT_STATE/automobile.calls"
+expect_eq "  (it takes no lease)" "" "$(lease_file R58M999 slug)"
+expect_true "  (it writes run-results.md)" grep -q '^| app/launch | regression | p0 | PASS |' "$out_dir/run-results.md"
+expect_true "  (and a JUnit report)" grep -q '<testcase classname="regression" name="app/launch"' "$out_dir/junit.xml"
+expect_eq "  (P0 only by default)" "0" "$(grep -c 'checkout/pay' "$out_dir/run-results.md")"
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile --serial R58M999 --all --out "$SANDBOX/suite-out" >/dev/null 2>&1
+expect_code "a failing suite flow fails the suite: exit 1" 1 $?
+expect_true "--all replays every tier" grep -q '^| checkout/pay | regression | p1 |' "$SANDBOX/suite-out/run-results.md"
+expect_true "  (into --out)" [ -f "$SANDBOX/suite-out/junit.xml" ]
+expect_true "a failing flow is a JUnit failure" grep -q '<failure message="step 2 (observe): observe waitFor timed out after 4000ms"/>' "$SANDBOX/suite-out/junit.xml"
+ANDROID_SERIAL=R58M999 ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile --area cart:p1 --out "$SANDBOX/suite-out2" >/dev/null 2>&1
+expect_true "ANDROID_SERIAL picks the device, and --area works as in run" grep -q '^| cart/add-item | regression | p1 |' "$SANDBOX/suite-out2/run-results.md"
+adt "$SANDBOX/proj1" suite --driver auto-mobile --serial nope >/dev/null 2>&1
+expect_code "a --serial that is not online: exit 10" 10 $?
+rm -f "$FAKE_ADT_STATE/dev/emulator-5570" "$FAKE_ADT_STATE/dev/R58M999"
+
 echo "promote"
 tiered "$SANDBOX/proj1" f checkout/no-tier auto-mobile none
 tiered "$SANDBOX/proj1" f checkout/flaky auto-mobile p1 flaky
@@ -580,8 +672,23 @@ tiered "$SANDBOX/proj1" f cart/add-item auto-mobile p1 fail
 tiered "$SANDBOX/proj1" f checkout/upper auto-mobile "P2 — an edge case"
 rm -f "$SANDBOX/proj1/e2e/flows/cart/broken.yaml"
 adt "$SANDBOX/proj1" run --slug f --driver auto-mobile --area checkout:p1,p2 --area cart:p1 >/dev/null 2>&1
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote with no Tester verdict is refused" 2 $?
+expect_true "  (and keeps nothing)" [ ! -f "$SANDBOX/proj1/e2e/flows/checkout/receipt.yaml" ]
+verdict "$SANDBOX/proj1" f "NEEDS FIXES"
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote after NEEDS FIXES is refused" 2 $?
+verdict "$SANDBOX/proj1" f "**BLOCKED**"
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote after BLOCKED is refused" 2 $?
+verdict "$SANDBOX/proj1" f "READY TO MERGE"
+touch -t 203001010000 "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
+adt "$SANDBOX/proj1" promote --slug f >/dev/null 2>&1
+expect_code "promote is refused when the flows ran after the verdict" 2 $?
+verdict "$SANDBOX/proj1" f "**READY TO MERGE**"
+touch -t 203001010001 "$SANDBOX/proj1/pipeline_artifacts/f/test-results.md"
 out="$(adt "$SANDBOX/proj1" promote --slug f --remove checkout/offline --remove cart/empty-cart 2>/dev/null)"
-expect_code "promote succeeds" 0 $?
+expect_code "promote succeeds after READY TO MERGE" 0 $?
 expect_true "a new passing flow with a tier is added" [ -f "$SANDBOX/proj1/e2e/flows/checkout/receipt.yaml" ]
 row_has "a priority written 'P2 — …' reads as p2" "$SANDBOX/proj1" f checkout/upper "| feature | p2 | PASS |"
 expect_true "  (and that flow is kept)" [ -f "$SANDBOX/proj1/e2e/flows/checkout/upper.yaml" ]
@@ -600,6 +707,87 @@ expect_true "--remove never deletes a flow this run just replaced" [ -f "$SANDBO
 adt "$SANDBOX/proj2" promote --slug nothing >/dev/null 2>&1
 expect_code "promote with no run results is refused" 2 $?
 unset ADT_AUTOMOBILE
+
+# ---------- checks ----------
+
+echo "check"
+setup
+mkdir -p "$SANDBOX/bin"
+printf '#!/bin/bash\necho "serial=${ANDROID_SERIAL:-none} args=$*"\nexit ${FAKE_CHECK_EXIT:-0}\n' > "$SANDBOX/bin/fake-gradle"
+chmod +x "$SANDBOX/bin/fake-gradle"
+table="$SANDBOX/proj1/pipeline_artifacts/a/checks.md"
+out="$(adt "$SANDBOX/proj1" check --slug a --name lint-extra -- "$SANDBOX/bin/fake-gradle" :app:lintDebug 2>/dev/null)"
+expect_code "a check that passes: exit 0" 0 $?
+expect_true "  (it prints one result line)" grep -q '^CHECK name=lint-extra status=PASS exit=0 log=' <<EOF
+$out
+EOF
+expect_true "  (its output is in its log)" grep -q 'args=:app:lintDebug' "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log"
+expect_true "  (without a device unless asked)" grep -q 'serial=none' "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log"
+expect_true "  (and checks.md has its row)" grep -q '^| lint-extra | PASS | 0 | [0-9]* | checks/lint-extra.log | ' "$table"
+adt "$SANDBOX/proj1" check --slug a --name device-tests --device -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
+expect_code "a device check with no leased device: exit 15" 15 $?
+serial="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
+FAKE_CHECK_EXIT=3 adt "$SANDBOX/proj1" check --slug a --name device-tests --device -- "$SANDBOX/bin/fake-gradle" :app:connectedDebugAndroidTest >/dev/null 2>&1
+expect_code "a check that fails: exit 1" 1 $?
+expect_true "  (a device check runs on the leased device only)" grep -q "serial=$serial" "$SANDBOX/proj1/pipeline_artifacts/a/checks/device-tests.log"
+expect_true "  (its row says FAIL, with the exit code)" grep -q '^| device-tests | FAIL | 3 |' "$table"
+expect_true "  (the other check's row is kept)" grep -q '^| lint-extra | PASS |' "$table"
+FAKE_CHECK_EXIT=1 adt "$SANDBOX/proj1" check --slug a --name lint-extra -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
+expect_eq "running a check again replaces its row" "1" "$(grep -c '^| lint-extra |' "$table")"
+expect_true "  (with the new result)" grep -q '^| lint-extra | FAIL | 1 |' "$table"
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
+expect_true "a flow run does not delete the check logs" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log" ]
+adt "$SANDBOX/proj1" check --slug a --name "Bad Name" -- true >/dev/null 2>&1
+expect_code "a check name with spaces is refused" 2 $?
+adt "$SANDBOX/proj1" check --slug a --name x >/dev/null 2>&1
+expect_code "a check with no command is a usage error" 2 $?
+
+# ---------- the run ledger ----------
+
+echo "state"
+setup
+ledger="$SANDBOX/proj1/pipeline_artifacts/.ledger/a"
+adt "$SANDBOX/proj1" state --slug a show >/dev/null 2>&1
+expect_code "show with no ledger: exit 2, nothing to resume" 2 $?
+adt "$SANDBOX/proj1" state --slug a set phase 2R >/dev/null 2>&1
+expect_code "set records a value" 0 $?
+expect_eq "  (in the ledger, outside the slug's own folder)" "phase=2R" "$(cat "$ledger")"
+expect_true "  (pipeline_artifacts is kept out of git)" grep -qx '[*]' "$SANDBOX/proj1/pipeline_artifacts/.gitignore"
+adt "$SANDBOX/proj1" state --slug a set plan "pipeline_artifacts/a/implementation-plan.md" >/dev/null 2>&1
+adt "$SANDBOX/proj1" state --slug a set phase 3 >/dev/null 2>&1
+expect_eq "set replaces a key and keeps the others" "pipeline_artifacts/a/implementation-plan.md
+3" "$(adt "$SANDBOX/proj1" state --slug a get plan 2>/dev/null; adt "$SANDBOX/proj1" state --slug a get phase 2>/dev/null)"
+adt "$SANDBOX/proj1" state --slug a get nope >/dev/null 2>&1
+expect_code "get of a missing key fails" 1 $?
+expect_eq "bump counts from 1" "1" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
+expect_eq "  (and up to the budget)" "2" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
+err="$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>&1 >/dev/null)"; rc=$?
+expect_code "a bump past the budget is refused: exit 17" 17 $rc
+expect_true "  (and says to stop)" grep -q 'budget spent: fix_iterations is already 2' <<EOF
+$err
+EOF
+expect_eq "  (the count stays at the budget)" "2" "$(adt "$SANDBOX/proj1" state --slug a get fix_iterations 2>/dev/null)"
+adt "$SANDBOX/proj1" state --slug a bump resumes --max 0 >/dev/null 2>&1
+expect_code "a budget of 0 refuses the first bump" 17 $?
+adt "$SANDBOX/proj1" state --slug ../x set phase 1 >/dev/null 2>&1
+expect_code "a slug with a path in it is refused" 2 $?
+adt "$SANDBOX/proj1" state --slug a set Phase 1 >/dev/null 2>&1
+expect_code "a key that is not lowercase is refused" 2 $?
+adt "$SANDBOX/proj1" state --slug a set note "two
+lines" >/dev/null 2>&1
+expect_code "a value on two lines is refused" 2 $?
+expect_true "show prints the whole ledger" grep -q '^fix_iterations=2$' <<EOF
+$(adt "$SANDBOX/proj1" state --slug a show 2>/dev/null)
+EOF
+adt "$SANDBOX/proj2" state --slug a show >/dev/null 2>&1
+expect_code "a ledger belongs to its project" 2 $?
+adt "$SANDBOX/proj1" state --slug a start build-auto >/dev/null 2>&1
+expect_code "start begins a new run's ledger" 0 $?
+expect_eq "  (no count of the earlier run carries over)" "1" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
+expect_eq "  (it records the command)" "build-auto" "$(adt "$SANDBOX/proj1" state --slug a get command 2>/dev/null)"
+expect_true "  (and keeps the earlier ledger beside it)" grep -q '^fix_iterations=2$' "$ledger.previous"
+adt "$SANDBOX/proj1" state --slug a start "build auto" >/dev/null 2>&1
+expect_code "start with a name that is not a command is refused" 2 $?
 
 # ---------- crashes ----------
 
@@ -818,8 +1006,8 @@ expect_code "an ADT_AVD open in normal mode fails preflight" 16 $?
 unset ADT_AVD
 attach emulator-5556 Pixel_B
 out="$(preflight "$SANDBOX/proj1" auto-mobile)"; rc=$?
-expect_code "every AVD open, but a device attached: a warning, not a failure" 0 $rc
-expect_true "  (naming the device it would use)" grep -q '^warn  every AVD is open in normal mode, so the run will test on emulator-5554' <<EOF
+expect_code "every AVD open, even with a device attached, fails preflight" 16 $rc
+expect_true "  (naming the device, and how to opt in)" grep -q '^FAIL  every AVD is open in normal mode.*ADT_DEVICE_MODE=reuse to test on an attached device such as emulator-5554' <<EOF
 $out
 EOF
 rm -f "$FAKE_ADT_STATE/dev/emulator-5554" "$FAKE_ADT_STATE/dev/emulator-5556"

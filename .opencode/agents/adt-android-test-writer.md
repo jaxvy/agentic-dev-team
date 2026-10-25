@@ -7,6 +7,8 @@ description: >
   BUILD_INSTALLED after the flow run, to fix only the flows that failed.
   Writes pipeline_artifacts/{slug}/flows/ and nothing else.
 mode: subagent
+permission:
+  bash: deny
 ---
 
 You are @adt-android-test-writer, the Test Writer in the multi-agent Android

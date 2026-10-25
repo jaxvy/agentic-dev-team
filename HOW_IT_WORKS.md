@@ -129,7 +129,10 @@ pipeline_artifacts/recently-played-carousel/
 ├── run-results.md          # each flow's result and time, from the last run,
 │                           #   including the regression suite's
 ├── run-logs/               # the driver's output for each flow
+├── checks.md, checks/      # the device tests' result, and their log
 └── test-results.md         # per-case results, verdict, observations
+pipeline_artifacts/.ledger/recently-played-carousel
+                            # the run ledger: phase, paths, budgets (for resume)
 ```
 
 Alongside that is the actual work: uncommitted changes in your working tree.
@@ -285,6 +288,20 @@ The build gate runs the project's unit-test task, but that only executes tests
 that exist — it can never fail for one that was never written. That is why the
 requirement lives in the plan and is checked by a reviewer instead.
 
+**Instrumented tests.** A case that needs a real Android runtime is marked
+`(instrumented)` and lives in `src/androidTest/`. JVM tests stay the default,
+because they run in the build gate on every review; instrumented ones run on
+the run's device as the device tests.
+
+**Data that outlives an update.** A change to a Room schema needs its
+migration, the exported schema JSON, and an instrumented migration test with
+`MigrationTestHelper` that creates the old version, migrates it, and checks the
+rows survive. `fallbackToDestructiveMigration` on user data is a blocker unless
+the request asks for it. The same rule covers other stored formats the app
+reads after an update, such as a renamed DataStore key. A missing migration
+test is a blocker for both reviewers, since data loss is the one defect a user
+cannot undo.
+
 ### Device tests: cases, flows and results
 
 Every device test is written once, by one agent, at the moment it can be
@@ -402,6 +419,25 @@ The results are in `pipeline_artifacts/manual/run-results.md`. Use
 `--driver maestro` in a Maestro project. With the Claude Code plugin and no
 per-project install, the script is in the plugin's directory, under
 `scripts/adt.sh`.
+
+#### Running the suite on its own, or in CI
+
+`adt.sh suite` replays `e2e/flows/` on a device that is already running (your
+emulator, or the one your CI machine has), with no lease, no slug and no
+model. It boots nothing:
+
+```bash
+bash adt.sh suite --driver maestro                # P0 flows, on the one online device
+bash adt.sh suite --driver maestro --all          # every tier
+bash adt.sh suite --driver maestro --serial emulator-5554 --area checkout:p1 --out results/
+```
+
+It writes `run-results.md`, the logs and a JUnit report (`junit.xml`) into
+`--out` (default `pipeline_artifacts/suite/`), fills in test secrets from
+`.agentic-dev-team/secrets.env` as a pipeline run does, and exits 1 when a flow
+failed. Install the build on the device first (your plan's install command).
+Run the preflight with `ADT_DEVICE_MODE=reuse`, because the device it tests on
+is one you attached.
 
 ### Test drivers
 
@@ -563,9 +599,11 @@ flowchart TD
   the same serial, and installs again. A device you attached is never cleaned
   or restarted.
 * **Your emulator is never touched.** An attached device is used only when you
-  set `ADT_DEVICE_MODE=reuse`, or when no AVD can be booted (none exists, or
-  every one is open normally). The script says which device it took and why,
-  and never stops a device it did not start.
+  set `ADT_DEVICE_MODE=reuse`, because flows clear the app's data on the device
+  they run on. When no AVD can be booted (none exists, or every one is open
+  normally), the preflight fails and says how to fix it; the run never falls
+  back to your phone or your open emulator. The script never stops a device it
+  did not start.
 
 * **Two emulators when there is memory.** If a second emulator would still
   leave a quarter of the machine's memory free, the run boots one beside its
@@ -590,7 +628,7 @@ All optional. Set them in your shell profile, or for Claude Code in
 | Variable | What it does |
 |---|---|
 | `ADT_AVD` | The AVD to boot. Recommended, so every run uses the one you prepared |
-| `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one |
+| `ADT_DEVICE_MODE=reuse` | Use the phone or emulator already attached instead of booting one. Flows clear the app's data on it, so only use a device whose app data you can lose |
 | `ADT_HEADLESS=0` | Show the emulator window, to watch a test run |
 | `ADT_PARALLEL=1` | Never boot a second emulator for a run (default: one when there is memory) |
 | `ADT_BOOT_TIMEOUT_S` | How long to wait for the emulator to start, in seconds (default 240) |
@@ -747,6 +785,59 @@ Four rules keep that narrow:
 - Test accounts only. A gate wanting a real person's account or production
   access is a `BLOCKED`, however it was supplied.
 
+"The value stays in the conversation" means your tool's transcript holds it,
+and Claude Code stores transcripts on disk. So use a test PIN and test
+accounts you can lose.
+
+### Test secrets and test hooks
+
+Most real features sit behind a sign-in, and a flow runs with no model in the
+loop, so it cannot ask for a password. Declare the test account once instead,
+and the flows sign in themselves:
+
+1. In `AGENTS.md`, name the secrets, never their values:
+
+   ```
+   Test secrets: TEST_EMAIL, TEST_PASSWORD
+   ```
+
+2. Put the values in `.agentic-dev-team/secrets.env`, on your machine only:
+
+   ```
+   TEST_EMAIL=qa+pipeline@example.com
+   TEST_PASSWORD=a-test-only-password
+   ```
+
+The Architect writes the sign-in as a Shared setup that types
+`${TEST_EMAIL}` and `${TEST_PASSWORD}`, the Test Writer copies the names into
+the flows, and `adt.sh run` fills in the values when it runs them: in the
+flow's content for auto-mobile, as `-e NAME=value` for Maestro. It scrubs the
+values from every log afterwards, and it refuses to run while `secrets.env` is
+tracked by git or not ignored (the folder's `.gitignore` covers it). No agent
+reads the file. The regression suite in `e2e/flows/` keeps only the names, so
+a teammate runs it with their own `secrets.env`, and CI with its own secrets.
+
+**Test hooks** make preconditions fast and repeatable. List the debug-only
+entry points your app has, and the Architect uses them as steps instead of
+tapping through screens:
+
+```
+Test hooks:
+- myapp://debug/seed?bookmarks=3: adds 3 bookmarks (debug builds only)
+- Fake backend: the `fake` flavor answers every request from local data
+```
+
+A hook is a step, `Open link "myapp://debug/seed?bookmarks=3"`. The Architect
+never invents one: a hook the feature would need is an Open Question in the
+plan. With a fake backend declared, the plan installs that build, so flows do
+not depend on a live server and never change shared test data.
+
+**First launch.** Every flow starts with the app's data cleared, which also
+resets its runtime permissions and brings back onboarding. The plan writes
+those screens once, as a "First launch" Shared setup, and every case starts
+with it. Maestro grants permissions at launch by default; under auto-mobile,
+the setup taps the prompt.
+
 ### Retry budgets
 
 Nothing retries forever. Each budget is separate, and exhausting one stops the
@@ -765,6 +856,32 @@ pipeline with a report rather than advancing.
 
 On a gate's second re-run, the producing agent receives all prior feedback from
 both rounds, with previously accepted items marked resolved.
+
+### The run ledger and resume
+
+A build command records its run in a small ledger,
+`pipeline_artifacts/.ledger/<slug>`, through `adt.sh state`: the command, the
+plan and design doc paths, the test driver, the phase it is in, each Tester
+verdict, and a counter for every budget in the table above. The orchestrator
+bumps a counter before each re-run, and the script refuses the bump (exit 17)
+once the budget is spent, so a budget holds even when the orchestrator's
+context was compacted during a long run.
+
+The ledger also makes a run resumable. If a session dies, or you stop it, start
+the same command again with `resume <slug>`:
+
+```
+/build-auto-reviewed resume save-draft-on-background
+```
+
+It continues at the start of the phase it was in, with the counters it had,
+also after a STOP whose cause you fixed. A Coder phase is told that part of
+its work may already be in the tree; a test phase installs the build again; a
+blocked Tester shows its question again. A run that had not finished its plan
+has nothing to resume; start it again.
+
+`adt.sh promote` reads the Tester's verdict itself: it keeps flows only when
+`test-results.md` says `READY TO MERGE` and is newer than the last flow run.
 
 ### The changed-file manifest
 
@@ -792,13 +909,16 @@ line of its implementation.
 
 ### Verification commands
 
-Three named commands are the only Gradle the pipeline runs.
+Four named commands are the only Gradle the pipeline runs. The last one is
+optional: the plan writes `none — <reason>` when it does not apply. The
+pipeline never builds the release variant.
 
 | Name | What it is | Who runs it |
 |---|---|---|
 | Build gate | The full end-of-work check | The Coder in a sequential run, before declaring done. Also the code reviewer, as part of every review |
 | Cross-section check | The build gate minus the assemble task | The orchestrator, after every parallel coder group |
 | Install command | Puts the build on the device | The orchestrator, through `adt.sh install`, right before every test and re-test, on the run's own device only. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
+| Device tests | The plan's instrumented tests (`src/androidTest/`), filtered to its test classes | The orchestrator, through `adt.sh check --device`, on the run's device, before the install of every test. A failure is a blocking finding. The build gate then also assembles the instrumented test APK, so the tests compile in every review |
 
 The cross-section check still catches compile errors, because its unit-test leg
 compiles the main sources.
@@ -818,7 +938,12 @@ them in this order and uses the first that applies:
    build gate:          ./gradlew assembleDebug lint detekt testDebugUnitTest
    cross-section check: ./gradlew lint detekt testDebugUnitTest
    install command:     ./gradlew installDebug
+   device tests:        none
    ```
+
+The device tests write `pipeline_artifacts/<slug>/checks.md` and their log to
+`checks/`. The Tester reads that file and reports a failure with the first
+failing test from the log.
 
 Those defaults are a starting point, not a contract. `detekt` does not exist in a
 project that never applied the plugin, and a multi-module project may need
@@ -981,7 +1106,7 @@ and sets two switches:
 | Switch | On when | Effect |
 |---|---|---|
 | `MODELS` | A model is set for a role the command starts | Claude Code passes that model when it starts the agent |
-| `RUNS` | `/build-auto-reviewed` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as the pipeline doc's "Configured Runs" section says |
+| `RUNS` | `/build-auto-reviewed` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as `AGENTIC_DEV_TEAM_CONFIG.md`, "Configured Runs", says |
 
 With both switches off, a command runs exactly as it would without the file.
 
@@ -1007,7 +1132,7 @@ In Claude Code the value is a model alias: `opus`, `sonnet`, `haiku` or
 | Your main session | Config | The agent runs |
 |---|---|---|
 | Same family (for example Opus, config `opus`) | `opus` | Exactly your main session's model, including a 1M-context variant |
-| Other family (for example Sonnet, config `opus`) | `opus` | The version the alias maps to (Opus 5.5 on the Anthropic API today), or the model in `ANTHROPIC_DEFAULT_OPUS_MODEL` when you set it |
+| Other family (for example Sonnet, config `opus`) | `opus` | The version the alias maps to (the newest Opus on the Anthropic API), or the model in `ANTHROPIC_DEFAULT_OPUS_MODEL` when you set it |
 
 You cannot pin an exact version for an agent that runs inside your tool. To
 pin one, use `runner: claude` with a full model ID in `/build-auto-reviewed`
@@ -1049,7 +1174,9 @@ Other keys: `model` (passed to the CLI's `--model`), `timeout_minutes`
 (default 30 for a reviewer, 120 for the others), and `required` (reviewers
 only; `false` lets the run continue without that reviewer). Each CLI must be
 installed and logged in; the run checks this before it starts. The Test Writer
-and the device steps of the test phase always run in your current tool.
+and the device steps of the test phase always run in your current tool. The
+Tester never has a shell, so its `runner` is `native`, `claude` or `command`
+only: `codex`, `agy` and `opencode` always give their agent one.
 
 An external role runs through `scripts/adt-run-agent.sh`, which writes a
 prompt file, starts the CLI detached in its own process group, enforces the
@@ -1134,7 +1261,7 @@ Each Android project that wants the pipeline links this repo's files into its ow
    identical persona. No `agents.md` inlining is needed, because the per-file
    definitions are the discovery mechanism.
 5. **One source of truth across all three.** Every tool ends up reading the same
-   agent prompts and the same `AGENTIC_DEV_TEAM_PIPELINE.md`. Edit those in the
+   agent prompts and the same pipeline docs (`AGENTIC_DEV_TEAM_*.md`). Edit those in the
    clone and every consuming project picks the change up on the next file read,
    with no re-install required for in-place edits.
 6. **A managed `.gitignore` block.** Symlink targets are per-developer absolute
@@ -1162,6 +1289,8 @@ path inside your project.
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/agents/adt-android-review-judge.md` | `<clone>/.claude/agents/adt-android-review-judge.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
+| `.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` |
+| `.claude/AGENTIC_DEV_TEAM_CONFIG.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_CONFIG.md` |
 | `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
 | `.claude/adt/scripts/adt-run-agent.sh` | `<clone>/.claude/adt/scripts/adt-run-agent.sh` |
 | `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
@@ -1185,12 +1314,14 @@ path inside your project.
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 | `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` |
 
-The canonical `AGENTIC_DEV_TEAM_PIPELINE.md`, `scripts/adt.sh` and `drivers/`
-live in `plugins/agentic-dev-team/` so the Claude Code plugin can package them;
-the clone's `.claude/adt/scripts` and `.claude/adt/drivers` are symlinks to
-those directories. The clone's
-`.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, which leaves the
-project-side path above unchanged, so installed projects need no re-install.
+The canonical pipeline docs (`AGENTIC_DEV_TEAM_PIPELINE.md`,
+`AGENTIC_DEV_TEAM_ORCHESTRATION.md` and `AGENTIC_DEV_TEAM_CONFIG.md`),
+`scripts/` and `drivers/` live in `plugins/agentic-dev-team/` so the Claude
+Code plugin can package them; the clone's `.claude/adt/scripts` and
+`.claude/adt/drivers` are symlinks to those directories, and the clone's
+`.claude/AGENTIC_DEV_TEAM_*.md` are symlinks to the docs. A project installed
+before a doc was added gets its link at the next `install.sh` run; until then,
+the commands stop and say so.
 
 Three further changes happen outside symlinks: two marker-fenced managed
 blocks, and three permission rules.
@@ -1248,11 +1379,13 @@ prompt, then create `.agents/workflows/<name>.md` and
 the command, which orchestrates the two reviewers between the existing phases.
 
 **Changing shared orchestration rules.** Edit the canonical
-`plugins/agentic-dev-team/AGENTIC_DEV_TEAM_PIPELINE.md`. Agent prompts reference
-it by path and the project copy is a symlink, so edits propagate the next time an
-agent reads the file, with no install needed. Agent-facing rules go in Part A and
-orchestrator-only rules in Part B, since agents are told to read Part A and stop
-there.
+pipeline docs in `plugins/agentic-dev-team/`. Agent prompts and commands
+reference them by path and the project copies are symlinks, so edits propagate
+the next time an agent reads the file, with no install needed. Agent-facing
+rules go in `AGENTIC_DEV_TEAM_PIPELINE.md` (Part A), which every agent reads.
+Orchestrator-only rules go in `AGENTIC_DEV_TEAM_ORCHESTRATION.md` (Part B), and
+the config file's rules in `AGENTIC_DEV_TEAM_CONFIG.md`. Agents never read
+those two, so a rule there costs agents nothing.
 
 **Removing or renaming files.** Just do it in the repo. The sync logic in
 `install.sh` removes stale symlinks from consuming projects on the next run.
@@ -1269,7 +1402,8 @@ instructions. What they need from you is what makes your codebase specific.
 **install.sh refused with "real file at X".** You have your own file at one of our
 install paths. Rename or delete one side, then re-run.
 
-**I pulled the repo but new commands are not showing up.** Run `install.sh` in the
+**I pulled the repo but new commands are not showing up**, or a command stops
+and says the installed files are older than the command. Run `install.sh` in the
 project again. `git pull` refreshes files that are already symlinked, but it
 cannot materialize symlinks for newly added ones.
 

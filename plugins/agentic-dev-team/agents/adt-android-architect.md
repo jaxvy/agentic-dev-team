@@ -102,6 +102,14 @@ it must not be.
    that in Section 1's Test Stack — the three clauses are required either way,
    only the punctuation follows the project.
 
+   **Instrumented and migration tests.** Prefer a JVM test: it runs in the
+   build gate on every review. Mark a case `(instrumented)`, with its file
+   under `src/androidTest/`, only when it needs a real Android runtime. A
+   section that changes a Room schema, or another stored format the app reads
+   after an update, follows Part A, "Data that outlives an update": the
+   migration, the exported schema in **Files**, and an instrumented migration
+   test with `MigrationTestHelper`.
+
    Do not specify fluff. A test asserting that a data class returns what was
    just passed to it, that a DI graph constructs, that a delegate forwards a
    call verbatim, or that a mock was called with the argument the test itself
@@ -140,6 +148,17 @@ it must not be.
    no machine can check marked *checked by hand*, timing stated, and test tags
    exposed in every window. A case that breaks one cannot be run, and the plan
    reviewer checks every case against all of them.
+
+   Read the project's `Test secrets:` and `Test hooks:` in `AGENTS.md` before
+   you write a case. A case that needs a signed-in user starts with a Shared
+   setup that types the declared secrets by name (`${TEST_EMAIL}`), never a
+   value; a case that needs data uses a declared hook (`Open link "<url>"`) or
+   the steps that create it. Never invent a hook: a hook the feature would
+   need, and the project does not have, is an Open Question. When the project
+   declares a fake backend build, Section 0's install command installs it.
+   Write the "First launch" Shared setup from the app's code: the onboarding
+   screens and permission prompts that appear after the app's data is
+   cleared.
 
    You write each case **once**, as the spec. After the Coder, the Test Writer
    turns it into a runnable flow, and the flows that pass join the project's
@@ -230,7 +249,8 @@ must not touch):
   boilerplate (per the tiered policy in Operating Principle 1).
 - Section 0 records the project's real, verified build gate, cross-section
   check, and install command — each one confirmed to exist in this project, not
-  copied from the pipeline doc's defaults on faith.
+  copied from the pipeline doc's defaults on faith — plus the device tests (a
+  command or `none — <reason>`).
 - The Parallelization Decision is made (YES/NO) with rationale, and Execution
   Groups list files, complexity, public interfaces, and required tests per
   section.
@@ -283,7 +303,7 @@ must not touch):
   are resolved (you produce them — see Section 0), required unit tests (you
   specify them — see Section 3), the two-artifact rules ("The Two Architect
   Artifacts", the anti-drift rule, and how gate feedback lands in the
-  documents), and the verdict markers. Part B is orchestrator-facing — skip it.
+  documents), and the verdict markers. Part B (orchestration) is in another file; do not read it.
   If neither path resolves, proceed using the rules in this prompt; do not
   search the filesystem for the file.
 
@@ -341,6 +361,9 @@ Coder can re-invoke the same ones.
      path (e.g. `pipeline_artifacts/background-link-checks/`). Read
      `{dir}/feature.md` completely. If neither the path nor the file
      exists, STOP and tell the user.
+   - **Feature spec run** (any flow; the prompt gives a path to a
+     `feature.md`, from `/plan-research`): read it completely and write into
+     its directory, keeping its slug. Do not derive a new one.
    - In /build-auto flow: derive a short feature slug from the feature request
      (lowercase, hyphens, no special chars — e.g. `recently-played-carousel`),
      then `mkdir -p pipeline_artifacts/{slug}`. Use `pipeline_artifacts/{slug}/`
@@ -393,6 +416,20 @@ Coder can re-invoke the same ones.
      `./gradlew tasks --all` you read once. A resolved command naming a
      non-existent task is a plan defect that fails every downstream phase, and
      the failure will look like broken code rather than a bad plan.
+   - **Keep rules.** When the application module's release build type sets
+     `isMinifyEnabled = true`, a feature that adds a class read by reflection
+     (a serialized model, a Retrofit interface, a class named in XML) also
+     adds the keep rules it needs to Section 2.3, in the module's
+     `proguard-rules.pro`, unless the library ships its own. The pipeline
+     never builds the release variant, so the plan is where this is caught.
+   - **Record the device tests.** When any section's **Tests required** has an
+     `(instrumented)` case, record the connected test task of its module,
+     filtered to those test classes:
+     `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=<fully qualified classes, comma-separated>`,
+     and add the instrumented test APK's assemble task
+     (`:app:assembleDebugAndroidTest`) to the build gate, so the tests compile
+     in every review. Otherwise write `none — no instrumented test in this
+     plan`.
 
 4. **Write `pipeline_artifacts/{slug}/design-doc.md`** — unless
    `DESIGN_DOC: off` or `DESIGN_DOC: from-design-doc`, in which case skip to
@@ -526,6 +563,7 @@ Coder can re-invoke the same ones.
    build gate:          ./gradlew :app:assembleDebug :app:lintDebug detekt :app:testDebugUnitTest
    cross-section check: ./gradlew :app:lintDebug detekt :app:testDebugUnitTest
    install command:     ./gradlew :app:installDebug
+   device tests:        none — no instrumented test in this plan
    ```
 
    **Source**: <`AGENTS.md` declares them | derived from settings.gradle.kts +
@@ -649,9 +687,9 @@ Coder can re-invoke the same ones.
    ```
    Use the `"<feature>_<element>"` naming convention so the Tester's selectors
    are unambiguous. An element repeated once per item — a row, a chip, a badge —
-   builds its tag from its position, or from a value a test case enters, never
-   from a generated id: `Modifier.testTag("duplicate_badge_$index")`, recorded in
-   the table as `duplicate_badge_<position>`. List all testTags introduced in a
+   builds its tag from its index in its list, or from a value a test case
+   enters, never from a generated id: `Modifier.testTag("duplicate_badge_$index")`,
+   recorded in the table as `duplicate_badge_<index>`. List all testTags introduced in a
    **"UI Selectors"** table at the end of Section 2:
    ```
    | Element                  | testTag / contentDesc          |
@@ -779,7 +817,9 @@ Coder can re-invoke the same ones.
    element selector** (testTag, contentDescription, or visible text) from the
    UI Selectors table so both can drive the app without live screen
    discovery. Use the format: `Tap [testTag=<value>]` or
-   `Tap [text="<label>"]` or `Type "…" into [testTag=<value>]`.
+   `Tap [text="<label>"]` or `Type "…" into [testTag=<value>]`, and, where a
+   case needs them, `Scroll [testTag=<list>] until [testTag=<value>] is visible`
+   and `Open link "<a declared test hook>"`.
 
    ### Test Case 1: Happy Path
    **Id**: items/add-item

@@ -6,6 +6,8 @@ description: >
   "I have an idea for". DO NOT use for /build-auto — /build-auto assumes
   the feature is already specified.
 mode: subagent
+permission:
+  bash: deny
 ---
 
 You are @adt-android-pm, the Product Manager in the multi-agent Android pipeline.

@@ -1,20 +1,23 @@
-# Multi-Agent Pipeline & Orchestration Rules
+# Multi-Agent Pipeline: Agent Protocol
 
 This file is the shared source of truth for the PM → Architect → Coder → Tester
-pipeline. Every agent and command file references this document. Project-specific
-architecture, libraries, and verification rules live in the consuming project's
-`AGENTS.md` (or `CLAUDE.md`).
+pipeline. Every agent reads it. Project-specific architecture, libraries, and
+verification rules live in the consuming project's `AGENTS.md` (or `CLAUDE.md`).
 
-The document has two halves:
+The rules come in three files, so that each reader loads only what it needs:
 
-- **Part A — Agent Protocol**: everything an `adt-*` agent must obey. Agents read
-  Part A and stop there.
-- **Part B — Orchestration & Tool Registration**: everything only the
-  orchestrator (the parent agent or slash command driving a run) needs —
-  subagent mappings, approval gates, the reviewer loop, and per-tool
-  registration. Agents do not need it.
+- **This file, Part A (Agent Protocol)**: everything an `adt-*` agent must obey.
+- **`AGENTIC_DEV_TEAM_ORCHESTRATION.md`, Part B (Orchestration & Tool
+  Registration)**: everything only the orchestrator (the parent agent or slash
+  command driving a run) needs: the start of every command, subagent mappings,
+  approval gates, the reviewer loop, the test phase, and per-tool registration.
+  Agents do not read it. Where this file says "Part B", it means that file.
+- **`AGENTIC_DEV_TEAM_CONFIG.md`**: the optional config file
+  (`.agentic-dev-team/config.yaml`) and configured runs. Only an orchestrator
+  whose config file has an active setting reads it.
 
-Commands and orchestrators read both halves.
+All three files sit side by side: at the plugin root, and in `.claude/` in a
+per-project install.
 
 ---
 
@@ -101,7 +104,7 @@ declining it.
 Feedback that lives only in the chat transcript is lost the moment the run ends,
 and a design doc that silently absorbs every request is how scope creep enters.
 
-## The Three Named Commands
+## The Named Commands
 
 These are the only Gradle verification commands the pipeline runs. Refer to
 them by name everywhere else — agent prompts and commands must not restate the
@@ -133,6 +136,17 @@ commands themselves.
   install succeeded — so a stale build is never tested by mistake, even when
   the Tester is invoked outside a build command.
 
+- **The device tests** (optional) — the instrumented tests the plan requires
+  (`src/androidTest/`, for example a Room migration test), run on the run's
+  device: the module's connected test task, filtered to the plan's test
+  classes. It is `none — <reason>` when the plan requires no instrumented
+  test. The orchestrator runs it in every test, through `adt.sh check` (Part
+  B, "The Test Phase"), before the install, because a connected test run
+  uninstalls the app when it ends; a failure is a blocking finding the Tester
+  reports, and it goes to the Coder through the fix loop like any other. When it is not `none`, the build gate also
+  assembles the instrumented test APK (for example
+  `:app:assembleDebugAndroidTest`), so those tests compile in every review.
+
 ### Resolving Them
 
 The commands are **project-specific and resolved per run** — never assumed.
@@ -153,6 +167,7 @@ Every agent resolves them in this order and uses the first that applies:
    build gate:          ./gradlew assembleDebug lint detekt testDebugUnitTest
    cross-section check: ./gradlew lint detekt testDebugUnitTest
    install command:     ./gradlew installDebug
+   device tests:        none — no plan, so no instrumented test is required
    ```
 
 The defaults are a starting point, not a contract: `detekt` does not exist in a
@@ -217,7 +232,8 @@ to fix how they reach the app, and the script re-runs just those. Then
   or the flow is wrong. An app defect is a finding like any other. A flow
   defect is listed under "Flow Defects" in `test-results.md`, never sent to the
   Coder, and rewritten by the Test Writer before the next re-test.
-- **Cases with no flow** — one that needs a credential, or whose Expected is a
+- **Cases with no flow** — one that needs a credential the project has not
+  declared as a test secret ("Test Credentials" below), or whose Expected is a
   judgment a machine cannot check — are driven by hand by the Tester. A case
   the driver can check only in part gets a **partial** flow, marked in
   `flows/INDEX.md` with what it leaves out; the Tester checks just that part by
@@ -239,16 +255,21 @@ plan reviewer checks every case against all of them:
 1. **Exact selectors.** Every step that acts, and every Expected, names its
    element by an exact test tag, content description or visible text, in the
    plan's notation: `[testTag=save_item_button]`, `[text="Save"]`. Never a
-   pattern or wildcard (`duplicate_badge_*`), a position in a list ("the first
-   row", "index 0"), or one element found inside another ("the Delete button
-   in Copy three's row"). Never a driver's own syntax; the Test Writer
-   translates the plan's notation.
+   pattern or wildcard (`duplicate_badge_*`), a position given as a selector
+   ("the first row", "index 0", "the third match"), or one element found
+   inside another ("the Delete button in Copy three's row"). A position built
+   into the tag itself is fine (rule 2). Never a driver's own syntax; the Test
+   Writer translates the plan's notation.
 2. **Predictable tags for repeated elements.** An element that appears once per
    item — a row, a chip, a badge — gets a tag the case can know in advance:
-   from its position on screen (`duplicate_badge_0` for the topmost) or from a
-   value the case itself enters, such as a title it types. Never from an id
-   generated at run time: a UUID, a database id, a timestamp. The code sample
-   builds the tag, and the UI Selectors table records the scheme.
+   from its index in the list it belongs to (`duplicate_badge_0` for the first
+   item, built from the list's index) or from a value the case itself enters,
+   such as a title it types. Never from an id generated at run time: a UUID, a
+   database id, a timestamp. The code sample builds the tag, and the UI
+   Selectors table records the scheme. A lazy list (`LazyColumn`,
+   `RecyclerView`) has only the rows on screen, so a case that checks a row
+   below the first screen scrolls to it first:
+   `Scroll [testTag=duplicate_list] until [testTag=duplicate_badge_7] is visible`.
 3. **Screen-wide checks.** A check says whether something is on screen, not
    where it is. When an Expected depends on where — "the sheet lists the other
    two copies, not this one" — give the elements inside that container their
@@ -260,10 +281,33 @@ plan reviewer checks every case against all of them:
    ("continue from TC1") or relies on data another case left behind. Steps
    several cases share can be written once as a named **Shared setup** — itself
    a list of steps with selectors — and each case starts by naming it.
+   Clearing the app's data also resets its runtime permissions and brings back
+   its first-run screens: onboarding, a consent dialog, the notification
+   permission prompt on Android 13 and later. Write those once, as a Shared
+   setup named "First launch", from the app's code, and start every case with
+   it. Whether the driver grants permissions at launch is in its adapter.
 5. **Preconditions are steps or device state.** "Three bookmarks exist" is the
-   steps that create them. Device state — offline, dark mode, a permission, a
-   rotation — goes in **Setup**. "Signed in" needs a credential, which a flow
-   never holds: say so, and the case is driven by hand.
+   steps that create them, or a **test hook** the project declares (below).
+   Device state — offline, dark mode, a permission, a rotation — goes in
+   **Setup**. "Signed in" is a Shared setup that types the project's **test
+   secrets** by name, `Type "${TEST_EMAIL}" into [testTag=email_field]`, never a
+   value ("Test Credentials" below). With no declared secret for it, say so,
+   and the case is driven by hand.
+
+   A project declares both in its `AGENTS.md` (or `CLAUDE.md`):
+
+   ```
+   Test secrets: TEST_EMAIL, TEST_PASSWORD
+   Test hooks:
+   - myapp://debug/seed?bookmarks=3: adds 3 bookmarks (debug builds only)
+   - Fake backend: the `fake` flavor answers every request from local data
+   ```
+
+   A test hook is used as a step, `Open link "myapp://debug/seed?bookmarks=3"`,
+   and never invented: a hook the project does not declare is an Open Question
+   in the plan, not a step. When the project declares a fake backend, the
+   plan's install command installs that build, so the flows do not depend on a
+   live server and never change shared test data.
 6. **What no machine can check is marked.** A clause only a person can judge
    ("the layout looks right in dark mode"), or one the drivers cannot check
    (which field has focus), is marked *checked by hand*. The Test Writer leaves
@@ -442,6 +486,40 @@ The build gate's unit-test leg runs whatever tests exist in the tree — it
 cannot fail for a test that was never written. That is precisely why the
 requirement is carried in the plan and checked by a reviewer, rather than left
 to the gate.
+
+### Instrumented tests
+
+A JVM test is the default: it runs in the build gate, in seconds, on every
+review. A case that needs a real Android runtime is marked `(instrumented)`
+in **Tests required**, with its file under `src/androidTest/`, and it runs as
+the **device tests** (above) on the run's device. Use it only where a JVM test
+(with Robolectric, when the project has it) cannot prove the behaviour. The
+same rules apply: the plan names it, the Coder writes it (and cannot run it,
+since the Coder has no device; the build gate compiles it), and the reviewers
+check it.
+
+### Data that outlives an update
+
+A user's data survives an app update, so a change to how it is stored must be
+proven against the old format. **When a section changes a Room schema** (a new
+or changed entity, column, index or table, or a new database version), the
+plan must:
+
+- add the migration (a `Migration`, or an `@AutoMigration` with its spec), and
+  never `fallbackToDestructiveMigration` for user data unless the feature
+  request asks for it;
+- keep `exportSchema = true` with a schema location (add `room.schemaLocation`
+  in Section 2.3 when the project has none), and list the new schema JSON in
+  that section's **Files**;
+- name an instrumented migration test with Room's `MigrationTestHelper`: create
+  the old version, insert rows, run the migration, and check the rows and the
+  new schema. Its dependency (`androidx.room:room-testing`) is in Section 2 when
+  the project lacks it.
+
+The same holds for other stored formats the app reads after an update, such as
+a renamed DataStore key or a changed serialized model: name a test that reads
+data in the old format. A schema change without its migration test is a
+blocker for both reviewers.
 
 ## Verdict and DONE Markers
 
@@ -638,6 +716,34 @@ Tester hits a keyguard  →  ⛔ TESTER BLOCKED, "I need the device PIN"
 **Invariant**: every credential the Tester types was handed to it by a human
 for this run, and none of them survives the run in a file.
 
+These values stay in the conversation, and the tool you run keeps the
+conversation's transcript (Claude Code stores it on disk). Use test accounts and
+a device PIN you can lose, never a real one.
+
+### Test secrets for flows
+
+A flow runs with no model in the loop, so it cannot ask. For the cases that
+sign in, a project declares **test secrets** instead: their names in
+`AGENTS.md` (`Test secrets: TEST_EMAIL, TEST_PASSWORD`), and their values in
+`.agentic-dev-team/secrets.env`, one `NAME=value` per line, on the developer's
+machine only.
+
+- **Agents use names, never values.** The Architect writes `${TEST_EMAIL}` in a
+  step, the Test Writer copies it into the flow, and neither reads
+  `secrets.env`. No agent ever opens that file, the Tester included: it is not
+  a credential handed to the run.
+- **The script fills them in.** `adt.sh run` gives auto-mobile the flow with
+  each `${NAME}` replaced by its value, and gives Maestro `-e NAME=value`. A
+  flow that uses a name the file does not set fails before it runs, with that
+  name.
+- **Nothing keeps a value.** The script scrubs every value from the run's logs
+  and from `run-results.md`, and refuses to run when `secrets.env` is tracked by
+  git or not git-ignored. The flow files, and the suite in `e2e/flows/`, hold
+  only names.
+- **Test accounts only**, as above. The values are visible to other processes
+  of the same user while a flow runs (they are command-line arguments), so a
+  secret is never a real person's password.
+
 ## Review-Driven Fixes Are In Scope
 
 A code-review finding usually has no fix in the plan. The plan is written before
@@ -684,1236 +790,3 @@ whose Coders never receive a code-review finding.
 - Reviewers are read-only — they never edit the plan or the code. The producing
   agent applies every fix: `adt-android-architect` for plan feedback,
   `adt-android-coder` for code feedback.
-
----
-
-# Part B — Orchestration & Tool Registration
-
-Orchestrator-facing. The agents spawned by the pipeline do not need this half.
-
-## Subagent Tool & Environment Mappings
-
-When defining subagents via the `define_subagent` tool, parse the configuration
-from `.claude/agents/adt-*.md` and configure tools as follows:
-
-- `adt-android-pm`: system prompt from `.claude/agents/adt-android-pm.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
-- `adt-android-architect`: system prompt from `.claude/agents/adt-android-architect.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
-- `adt-android-coder`: system prompt from `.claude/agents/adt-android-coder.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = false`.
-- `adt-android-test-writer`: system prompt from `.claude/agents/adt-android-test-writer.md`; `enable_write_tools = true` (for writing flow files — its prompt forbids a shell); `enable_subagent_tools = false`; `enable_mcp_tools = true`.
-- `adt-android-tester`: system prompt from `.claude/agents/adt-android-tester.md`; `enable_write_tools = true`; `enable_subagent_tools = false`; `enable_mcp_tools = true`.
-- `adt-android-architect-reviewer`: system prompt from `.claude/agents/adt-android-architect-reviewer.md`; `enable_write_tools = true` (for read-only Bash inspection — the reviewer never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
-- `adt-android-code-reviewer`: system prompt from `.claude/agents/adt-android-code-reviewer.md`; `enable_write_tools = true` (for `git diff` and the build gate — the reviewer never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
-- `adt-android-review-judge` (configured review panels only): system prompt from `.claude/agents/adt-android-review-judge.md`; `enable_write_tools = true` (for read-only Bash inspection; the judge never edits files per its prompt); `enable_subagent_tools = false`; `enable_mcp_tools = false`.
-
-Antigravity does not support per-subagent model selection. The recommended models
-in each agent file (`opus` for adt-android-pm/adt-android-architect and both
-reviewers, `sonnet` for adt-android-coder, adt-android-test-writer and adt-android-tester) are documented
-for reference; in Antigravity, all subagents inherit the user's globally selected
-model — select the strongest available model for full pipeline runs.
-The `agents:` model settings in .agentic-dev-team/config.yaml cannot change this; see "Agent Configuration".
-
-## Agent Configuration
-
-Every command reads this section, through its "Agent configuration" paragraph.
-It defines the optional config file `.agentic-dev-team/config.yaml`. **With no
-active setting in that file, nothing in this section changes a run**: a
-missing file, an empty file, and the file as created (every setting commented
-out) give `MODELS` off and `RUNS` off, and the command runs exactly as it
-would without the file.
-
-### The files
-
-```
-<project root>/.agentic-dev-team/
-  .gitignore     one line: *
-  config.yaml    copy of config.example.yaml, every setting commented out
-```
-
-The `*` line ignores the whole directory, the `.gitignore` included, so
-`git status` and the changed-file manifest never list these files.
-
-The command's "Agent configuration" paragraph creates both files once, with
-`bash "ADT_RUN" --init-config "PROJECT_ROOT"`, when
-`config.yaml` does not exist. `install.sh` runs the same step at install. The
-step never edits or overwrites an existing `config.yaml`, and it never creates
-`.gitignore` while `config.yaml` exists. It prints one status line first:
-`ADT_INIT status=created`, `status=exists`, `status=unreadable` (the path
-exists but is not a readable file: a config error) or `status=failed`.
-
-**Un-ignore.** To share the config with a team, the developer deletes
-`.agentic-dev-team/.gitignore` and commits `config.yaml`. Later `install.sh`
-runs and commands never re-create the `.gitignore` while `config.yaml` exists,
-and `install.sh --uninstall` never touches `.agentic-dev-team/`.
-
-### Schema (version 1)
-
-```yaml
-version: 1
-
-agents:                      # all commands; native agents only
-  <role>:
-    model: <alias>
-
-build_auto_reviewed:         # /build-auto-reviewed only
-  architect: <slot>
-  coder:     <slot>
-  tester:    <slot>
-  architect_reviewer:
-    reviewers: [<slot>, ...]   # 1 to 5 entries
-  code_reviewer:
-    reviewers: [<slot>, ...]   # 1 to 5 entries
-```
-
-Roles and agents:
-
-| Role | Agent | Frontmatter model |
-|---|---|---|
-| `pm` | `adt-android-pm` | `opus` |
-| `architect` | `adt-android-architect` | `opus` |
-| `architect_reviewer` | `adt-android-architect-reviewer` | `opus` |
-| `coder` | `adt-android-coder` | `sonnet` |
-| `code_reviewer` | `adt-android-code-reviewer` | `opus` |
-| `test_writer` | `adt-android-test-writer` | `sonnet` |
-| `tester` | `adt-android-tester` | `sonnet` |
-| `review_judge` | `adt-android-review-judge` | `inherit` (the main model) |
-
-A slot:
-
-| Key | Type | Required | Default | Meaning |
-|---|---|---|---|---|
-| `runner` | string | no | `native` | `native`, `claude`, `codex`, `agy`, `opencode`, `command` |
-| `model` | string | no | see "Model values" | For `native`: an alias. For external runners: any value that CLI's `--model` flag accepts. |
-| `timeout_minutes` | integer ≥ 1 | no | `30` for a reviewer, `120` for `architect`, `coder` and `tester` | External runners only. Ignored for `native` (a native agent has no time limit). |
-| `required` | boolean | no | `true` | Reviewer slots only, and only in a list with 2 or more entries. |
-| `command` | string | only for `runner: command` | none | Command template, see "Command templates" below. |
-| `check` | string | required for `runner: command`, not allowed for other runners | none | The program that preflight looks for, and the program word of the template (they must be the same). |
-
-`review_judge`, `pm` and `test_writer` are valid only under `agents:` (the
-Test Writer always runs native). The judge always runs
-native, on the main model unless `agents.review_judge.model` sets another.
-
-### Switches
-
-A **native model value** is any `agents.<role>.model`, or the `model` of a
-`build_auto_reviewed` slot or reviewer entry whose `runner` is `native` or
-that has no `runner` key.
-
-- **`MODELS` is on** when at least one native model value is set for a role
-  that the current command starts: an `agents.<role>.model` for a role in the
-  table below, or (in `/build-auto-reviewed` only) a native model value under
-  `build_auto_reviewed`.
-
-  | Command | Roles it starts |
-  |---|---|
-  | `/plan-research` | `pm` |
-  | `/plan-design` | `architect` |
-  | `/build-auto` | `architect`, `coder`, `test_writer`, `tester` |
-  | `/build-guided` | `pm`, `architect`, `coder`, `test_writer`, `tester` |
-  | `/build-auto-reviewed` | `architect`, `architect_reviewer`, `coder`, `code_reviewer`, `test_writer`, `tester`; and `review_judge` only when a **configured** `reviewers` list has 2 or more entries |
-
-- **`RUNS` is on** (only in `/build-auto-reviewed`) when at least one slot or
-  reviewer entry under `build_auto_reviewed:` has a `runner` other than
-  `native`, or a `reviewers` list has 2 or more entries. A native slot or a
-  single native reviewer entry with a `model` is a native model value
-  (`MODELS`), not `RUNS`. So `architect: { runner: native }` or
-  `coder: { runner: native, model: opus }` never turns on `RUNS`.
-
-`version` alone does not turn on a switch.
-
-### Validation
-
-Validate the whole file at the start of every command, before the first agent
-runs (every command validates the whole file, also the part it does not use).
-Any of these stops the command with a message that names the key and the
-problem:
-
-1. The file is not valid YAML, or its top level is neither empty (YAML
-   `null`: an empty or comments-only file, which counts as no config) nor a
-   mapping.
-2. `version` is present and is not `1`.
-3. An unknown top-level key, role, or slot key.
-4. A `runner` that is not in the list.
-5. A `reviewers` list that is empty or has more than 5 entries.
-6. A problem with a `command` runner, any of:
-   - `runner: command` without `command`, or without `check`;
-   - `command` or `check` with another runner;
-   - a `command` whose **parsed string value** (after YAML parsing, so YAML's
-     own quotes around the value do not count) fails any item of the
-     "Template check" list below;
-   - a `command` with neither `{instruction}` nor `{prompt_file}`;
-   - a `command` that uses `{model}` in a slot without `model`;
-   - a `check` value whose basename is one of the shells and command runners
-     listed in the "Template check";
-   - a `check` value that does not match
-     `^([A-Za-z0-9_+][A-Za-z0-9._+-]*|/[A-Za-z0-9._/+-]+)$`: a bare program
-     name (no `/`, does not start with `-` or `.`) or an absolute path. No
-     spaces, `$`, `~` or quotes, and no relative path such as `bin/gemini`.
-7. `required` outside a reviewer slot; `required: false` in a `reviewers`
-   list that has only one entry; or `timeout_minutes` that is not a whole
-   number ≥ 1.
-8. In Claude Code only, and only when the Agent (Task) tool has a `model`
-   parameter in its schema: **any** native model value in the file, also one
-   that the current command does not use, that is not one of the values that
-   parameter accepts: the values of its `enum` when the schema has one; when
-   the parameter is a plain string without an `enum`, the aliases `sonnet`,
-   `opus`, `haiku` and `fable` only. This rule only compares the file with the
-   schema; it runs no command.
-9. A value of the wrong type. The only allowed shapes are:
-   - `version`: the integer `1`.
-   - `agents`: `null` or a mapping; each role under it: a mapping with exactly
-     one key, `model`, whose value is a non-empty string (an empty mapping,
-     `model:` with no value, and `model: ""` are errors).
-   - `build_auto_reviewed`: `null` or a mapping. `architect`, `coder`,
-     `tester`: a slot. `architect_reviewer`, `code_reviewer`: a mapping whose
-     only key is `reviewers`, a **list** (not `null`) of slots.
-   - A slot: a mapping. `runner`, `model`, `command`, `check`: non-empty
-     strings. `timeout_minutes`: an integer. `required`: exactly `true` or
-     `false`, lowercase and without quotes. Every other value (`yes`, `no`,
-     `True`, `"false"`, ...) is an error.
-   A role key whose value is `null` (for example `coder:` with nothing after
-   it) is an error: remove the key or comment it out.
-
-### Command templates
-
-A `runner: command` slot runs a program from a template. **No shell runs the
-template.** The script turns it into an argument list:
-
-1. **Words.** Split on spaces and tabs that are **outside** double quotes. A
-   double-quoted part groups text (spaces included) into the word, and the
-   quote characters are removed. There is no other quoting or escaping.
-2. **Assignments.** Leading words of the form `NAME=value` (`NAME` matches
-   `[A-Za-z_][A-Za-z0-9_]*`) become environment variables for the program.
-   The first other word is the **program word**; the rest are its arguments.
-3. Placeholders `{instruction}`, `{prompt_file}`, `{output_file}` and
-   `{model}` are replaced inside each word, after the split, so a value never
-   creates or splits words.
-
-**Template check.** The template is rejected when:
-
-- it contains `'`, `\`, a backtick, `$`, a newline or carriage return, or any
-  of `|`, `;`, `&`, `<`, `>`;
-- its double quotes are not balanced (an odd number of `"`);
-- it has neither `{instruction}` nor `{prompt_file}`;
-- it uses `{model}` and the slot has no `model`;
-- it assigns `PATH`, `BASH_ENV`, `ENV`, `IFS`, or a name that starts with
-  `LD_` or `DYLD_`;
-- the program word is not exactly the slot's `check` value (so no wrapper such
-  as `env`, `timeout`, `nohup` or `sudo` can run in front of the program; set
-  a variable with `NAME=value` in front of the program word instead, and use
-  `timeout_minutes` for a time limit);
-- the basename of the program word is one of `sh`, `bash`, `rbash`, `zsh`,
-  `dash`, `ksh`, `mksh`, `ash`, `fish`, `csh`, `tcsh`, `pwsh`, `powershell`,
-  `busybox`, `env`, `sudo`, `su`, `ssh`.
-
-The script applies the same check before it runs anything. It cannot know
-what the checked program does with its arguments: never pass a placeholder to
-a program that runs an argument as code (`python3 -c`, `node -e`).
-
-### Model values
-
-**Native agents in Claude Code.** Pass the value in the `model` parameter of
-the Agent tool. That parameter accepts **aliases only** (today `sonnet`,
-`opus`, `haiku`, `fable`; the exact list is the enum in the tool's own
-schema). Full model IDs, `inherit`, `best`, `default`, `opusplan` and `[1m]`
-variants are rejected by validation rule 8.
-
-What a native alias runs (Claude Code resolves it when it starts the
-subagent):
-
-1. If the main conversation's model is in the same family (for example the
-   main session runs an Opus model and the config says `opus`), the subagent
-   runs on the main conversation's **exact** model, including any `[1m]`
-   suffix.
-2. Otherwise it runs the version the alias points to: the value of
-   `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` when that variable is set, else Claude
-   Code's current mapping (for example `opus` is Opus 5.5 on the Anthropic API
-   today; other providers can map it to another version).
-3. On a provider other than the Anthropic API, when Claude Code cannot tell
-   the main model's family, `opus` also resolves to the main model, unless
-   `ANTHROPIC_DEFAULT_OPUS_MODEL` is set.
-
-A native agent cannot be pinned to an exact version through this config. To
-pin one: in `/build-auto-reviewed` use `runner: claude` with a full model ID;
-for another family than the main model, set `ANTHROPIC_DEFAULT_<FAMILY>_MODEL`
-in the `env` of `.claude/settings.json`; otherwise select that version as the
-main session's model.
-
-**Precedence in Claude Code:** the per-invocation `model` parameter wins over
-the agent frontmatter, which wins over `CLAUDE_CODE_SUBAGENT_MODEL`, which wins
-over the main model. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` overrides all of them.
-
-**Model resolution for a native agent** (first match wins):
-
-1. In `/build-auto-reviewed` only: the `model` of the slot that starts this
-   agent (for a reviewer: its own entry in the `reviewers` list), when that
-   slot is native.
-2. `agents.<role>.model`.
-3. No value: pass no `model` parameter, so the agent file's frontmatter
-   applies (today's behavior).
-
-**Native agents in Antigravity and opencode.** These tools cannot select a
-model per subagent. Pass nothing, do not fail, and report once in the final
-summary: `Model settings were not applied: <tool> runs every subagent on its
-selected model.` Validation rule 8 does not apply there.
-
-**External runners** (`/build-auto-reviewed`): `model` goes to the CLI's
-`--model` flag unchanged (`claude`: an alias or a full ID such as
-`claude-opus-5-5`; `codex`: a Codex model name; `agy`: an Antigravity model
-slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
-`model`, the CLI uses its own default.
-
-### Steps at the start of every command
-
-1. The config file check and `--init-config` were done by the command's
-   "Agent configuration" paragraph. Do not run `--init-config` again here.
-2. Read `.agentic-dev-team/config.yaml` if it exists. Validate it (rules 1 to
-   7 and 9, and in Claude Code rule 8). On an error: stop, report, start no
-   agent.
-3. Set `MODELS` (and in `/build-auto-reviewed`, `RUNS`).
-4. If `MODELS` is off: skip the rest of this section and continue with the
-   command's first phase as usual. No `printenv`, no model passing, no summary
-   line about models.
-5. If `MODELS` is on and the tool is Claude Code: do the start check below.
-
-### When `MODELS` is on
-
-1. **Claude Code, every native start:** each time you start an `adt-*`
-   subagent natively (in `/build-auto-reviewed` this includes native slots and
-   native panel reviewers), resolve the model and, while model passing is on,
-   pass it in the Agent tool's `model` parameter. With no resolved value, pass
-   nothing.
-2. **Claude Code, start check (once).** Model passing starts **on**, and is
-   turned **off** for the whole run when:
-   1. `printenv CLAUDE_CODE_SUBAGENT_MODEL_FORCE` prints a non-empty value
-      other than `0` or `false` (any casing). REASON:
-      `CLAUDE_CODE_SUBAGENT_MODEL_FORCE is set to <value>`. Do not narrow
-      this to `1` or `true`: Claude Code applies the variable silently, so
-      treating an unusual value as on can only skip model passing, while
-      treating it as off could report a model that never ran.
-   2. The Agent (Task) tool has no `model` parameter in its schema. REASON:
-      `the Agent tool has no model parameter`.
-3. **Claude Code, during the run:** if a subagent start that included `model`
-   fails with an error that names the `model` parameter or says a model
-   cannot be passed, start that same subagent again once without `model`, and
-   turn model passing off for the rest of the run. REASON:
-   `Claude Code rejected the model parameter: <error message>`. Any other
-   start error is handled as usual; it never turns model passing off.
-4. **While model passing is off:** pass no `model` to any subagent, and put
-   `Model settings were not applied: <REASON>.` in the final summary. The run
-   continues normally.
-5. **Antigravity, opencode:** pass nothing, and report as in "Model values".
-6. **Summary line:** `Models requested: <role>=<value> ...` for each role
-   whose configured model was passed. Say "requested", never "ran": an
-   organization `availableModels` allowlist or alias case 1 above can still
-   change the model that runs.
-7. **`CLAUDE_CODE_SUBAGENT_MODEL` note (Claude Code).** In the start check,
-   also run `printenv CLAUDE_CODE_SUBAGENT_MODEL`. If it prints a value, add
-   to the summary: `Note: CLAUDE_CODE_SUBAGENT_MODEL is set to <value>.
-   Claude Code older than v2.1.251 lets it override the requested models
-   (sub-agents docs).` Model passing stays on.
-
-## Approval Gates
-
-For `/build-guided`, pause for explicit user approval between PM, Architect,
-Coder, and Tester phases. Accept `approve`, `revise: <feedback>`, or `stop`.
-The blocked gate is the one exception to that vocabulary: a `⛔ TESTER BLOCKED`
-run is not something to approve or revise, so it accepts `resume` (optionally
-carrying a credential) or `stop` instead — see "The Blocked Path" below.
-At the Architect gate the artifact presented is `design-doc.md` — the plan is a
-link for anyone who wants the file-by-file detail. A `revise:` there re-runs the
-Architect under Part A's "Feedback Lands in the Documents" rule.
-
-For `/build-auto`, skip the PM phase. If the feature description is too vague
-for the Architect to produce a concrete plan, stop and suggest `/build-guided`
-instead.
-
-For `/build-auto-reviewed`, skip the PM phase and run no human gates — but
-insert an automated reviewer after each producing phase, per the Reviewer-Loop
-Protocol below.
-
-**Both auto flows have exactly one human pause: the blocked Tester gate.** It
-is not an approval gate — it approves nothing and can only answer a question
-the run cannot proceed without. See "The Blocked Path".
-
-## Design Doc Defaults Per Command
-
-The rule is **the design doc follows review intent**: a flow with a review step
-gets one, and the pure-speed flow does not.
-
-| Command | Default | Where the human reads it |
-|---|---|---|
-| `/plan-design` | auto-detected from input | printed to chat upon completion |
-| `/build-guided` | on | at the plan approval gate, before any code is written |
-| `/build-auto-reviewed` | off | not generated |
-| `/build-auto` | off | not generated |
-
-`doc: on` / `doc: off` anywhere in `$ARGUMENTS` overrides the default in the
-pipeline commands. The orchestrator strips that token from the text before
-using the rest as the feature request, and translates it into the `DESIGN_DOC`
-value it passes to the Architect (Part A, "The Two Architect Artifacts").
-
-**Implementation Notes at end of run.** In the three build commands, when a
-design doc was produced, the orchestrator — not an agent — appends to the
-document's `## Implementation Notes` section what actually diverged from it:
-reviewer bounces that changed the approach, Tester fix-loop changes, and any
-approved `revise:` that landed after the plan gate. It has this in its own run
-history; no re-reading of the diff is required. It edits that section only, and
-writes "No divergence — the run implemented this document as written." when
-there is nothing to record.
-
-## Reviewer-Loop Protocol
-
-Used by `/build-auto-reviewed`. After a producing agent finishes, the
-orchestrator delegates to that agent's reviewer before proceeding:
-
-- `adt-android-architect` → reviewed by `adt-android-architect-reviewer`
-  (reviews `implementation-plan.md`, plus `design-doc.md` when the run produced
-  one — pass both paths).
-- `adt-android-coder` (all coding complete) → reviewed by
-  `adt-android-code-reviewer` (reviews the uncommitted diff against the plan).
-
-Act on the reviewer's verdict marker (the markers are defined in Part A):
-- `✅ PLAN APPROVED` / `✅ CODE APPROVED` → proceed to the next phase.
-- `🔧 PLAN CHANGES REQUESTED` / `🔧 CODE CHANGES REQUESTED` → re-run the
-  producing agent with the reviewer's numbered feedback, then review again.
-
-On the 2nd re-run, pass the producing agent all prior numbered feedback (both
-rounds), marking items the reviewer previously accepted as resolved.
-
-Each gate allows **at most 2 re-runs** (3 production attempts total). If the
-reviewer still requests changes after the 2nd re-run, the orchestrator **STOPS
-the entire pipeline** and reports to the user: the gate, the unresolved
-feedback, and the current artifact/diff state. It does not advance to later
-phases. Reviewers are
-read-only and the producing agent applies all fixes — see Part A,
-"Producing-Agent Obligations During a Reviewer Loop".
-
-### The Targeted Re-Review
-
-Per Part A's Review Currency rule, a Coder fix driven by the Tester invalidates
-the `✅ CODE APPROVED` verdict. Each iteration of the Tester fix loop therefore
-runs a **targeted re-review** between the Coder and the re-test:
-
-```
-Tester → NEEDS FIXES → Coder → targeted re-review → Tester → …
-```
-
-It differs from the full gate in scope and budget, not in authority:
-
-- **Scope**: only what changed since the last approved review — the reviewer is
-  told this is a targeted re-review and given the fix instructions the Coder
-  worked from. It does not re-review the whole feature.
-- **Budget**: **at most 1 Coder re-run per iteration**. If the reviewer still
-  requests changes after that re-run, STOP and report — do not proceed to the
-  re-test with unreviewed code, and do not spend the Tester's remaining
-  iterations on it.
-- **Verdict markers**: the same `✅ CODE APPROVED` / `🔧 CODE CHANGES
-  REQUESTED`. Only an approval lets the re-test start.
-
-A run may only reach `READY TO MERGE` with an approval that post-dates the last
-code mutation. If the loop exits any other way, it exits through a STOP.
-
-## Before the Run
-
-Testing should never be the first place a broken setup shows up. Before any
-agent runs, each build command:
-
-1. **Resolves the script**, `adt.sh`, the same way PIPELINE_DOC was resolved:
-   the relative path `.claude/adt/scripts/adt.sh`, kept exactly like that, if
-   it exists in the project, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`.
-   It is always run as one plain command — `bash <adt.sh> …`, from the project
-   root, with no `cd`, no `&&`, no variables in front and no absolute form of
-   the relative path — so the pre-approved permission rule matches it (see
-   "Permissions" below).
-2. **Runs the preflight**, `bash <adt.sh> preflight --driver <the test
-   driver>`. It checks `adb`, the emulator and the AVDs it would boot (or the
-   attached device), and the driver: for auto-mobile, that its background
-   service is on the pinned version or can be started, which it then does; for
-   Maestro, the CLI's version and Java. Each problem is a `FAIL` line that says
-   how to fix it, and exit 16 means STOP before planning or coding anything.
-   `warn` lines go into the final summary.
-3. **Checks its own tool list** for the driver's MCP tools. None means the
-   server is not registered: STOP. Under auto-mobile, a missing
-   `mcp__auto-mobile__rotate`, `setDeviceState` or `executePlan` means its
-   hidden tools are not switched on, which the run reports at the start and in
-   the summary.
-
-Then, as soon as the plan names the slug `S` and before the Coder starts, the
-command **boots the run's device early**:
-`bash <adt.sh> device-acquire --slug S --background`. It returns at once, and
-the emulator boots while the Coder works. The test phase's own
-`device-acquire` waits for it, so the boot costs no extra time. From this
-point on, every exit releases the device.
-
-**Permissions.** `install.sh` adds the pipeline's own rules to the project's
-`.claude/settings.local.json`: `Bash(bash .claude/adt/scripts/adt.sh *)`,
-`mcp__auto-mobile__*` and `mcp__maestro__*`. The build commands also list them
-under `allowed-tools`. So Claude Code does not stop a run to ask about the
-script or the driver's tools. An agent never adds permission rules itself;
-only a person runs `install.sh` or `adt.sh allow`.
-
-**Long-running calls.** `device-acquire`, `install` and `run` can each take
-several minutes — a cold boot, a Gradle install, a long suite — and so can
-`device-release` while an early boot is still in progress, since it waits for
-that boot to finish. Give them a long timeout (in Claude Code, the Bash tool's
-maximum, ten minutes), or run them in the background and wait for them to
-finish. Each is safe to repeat: if one is cut off by the tool's timeout, run it
-again in the background and wait for it.
-
-## The Test Phase
-
-The three build commands test the same way. A run leases one device for its
-whole life (Part A, "Devices"), and each test — the first one and every
-re-test in the fix loop — goes through the same steps. Below, `S` is the
-feature's slug, the `{slug}` in PLAN_PATH, and `<adt.sh>` is the script
-resolved in "Before the Run".
-
-Each test:
-
-1. **Lease the device — the run's first test only.**
-   `bash <adt.sh> device-acquire --slug S`. It returns the device the early
-   boot started, waiting for it to finish booting; without an early boot, it
-   boots a headless emulator of the run's own (never one the developer has
-   open). It prints the serial on its last line: that is `DEVICE`. Running it
-   again for the same slug in the same project returns the same device, so a
-   re-run of a command that died picks its emulator back up. If it fails,
-   release the device (an early boot may hold one), then STOP and report its
-   message.
-2. **Install — every test.**
-   `bash <adt.sh> install --slug S -- <the install command from the plan's Section 0>`.
-   It installs on `DEVICE` only, and prints a UTC timestamp on its last line:
-   that is `BUILD_INSTALLED`. A device that runs out of space is handled
-   inside the script: on an emulator it started, it clears app caches before
-   each install and, if the install still runs out of space, restarts that
-   emulator as a fresh copy on the same serial and installs again, so `DEVICE`
-   stays valid. Do not release and re-acquire the device yourself to work
-   around an install failure. If `install` fails, release the device (below),
-   then STOP and report its message. Never test a stale build. When the install
-   command is more than one plain command — it has `&&`, `;` or a pipe, or
-   starts with `cd` — pass it whole to a shell, so all of it runs inside the
-   script and reaches `DEVICE` only:
-   `bash <adt.sh> install --slug S -- bash -c '<the install command>'`.
-3. **Write the flows — the run's first test only.** Delegate to
-   `adt-android-test-writer` with PLAN_PATH, PIPELINE_DOC and DRIVER_DOC, and
-   wait for ✅ TEST WRITER DONE. It writes every flow from the plan and the code
-   without a device, so you may start it before step 2 and run the install
-   while it writes. Before a re-test, run it only if the previous
-   `test-results.md` lists Flow Defects: pass those flows and the Tester's
-   notes as `FIX`, with `DEVICE` and `BUILD_INSTALLED`. Otherwise skip this
-   step — the flows are already written. If it STOPs, release the device, then
-   STOP and report.
-4. **Run the flows.**
-   `bash <adt.sh> run --slug S --driver <the test driver> --area <area>:<tiers> … --exclude <id> …`,
-   with one `--area` per row of the plan's Regression Scope (its tiers joined
-   by commas, `--area checkout:p1,p2`) and one `--exclude` per row of Flows
-   Retired. A Regression Scope of `None — only P0`, or Flows Retired of
-   `None`, adds no argument. It runs this run's own flows plus the regression suite flows it
-   selects — every P0, the named tiers per area, never a flow this run
-   re-specifies — on `DEVICE` with no model in the loop, and writes
-   `pipeline_artifacts/S/run-results.md`. After each flow it reads Android's
-   crash log, so a crash or ANR of the app fails that flow even when every
-   check in it passed. Exit 0 means every flow passed and exit 1 that at least
-   one failed — both continue, because judging failures is the Tester's job.
-   Any other exit: release the device, then STOP and report its message. Each
-   flow may run for up to `ADT_FLOW_TIMEOUT_S` (300 s by default), so this is
-   one of the long-running calls in "Before the Run". When the run has a
-   second emulator, the script splits the flows between the two; nothing else
-   changes, and agents only ever use `DEVICE`.
-5. **Fix the flows that failed — the run's first test only.** If any of this
-   run's own flows (kind `feature`) is `FAIL` for a reason other than a crash
-   or an ANR, delegate to `adt-android-test-writer` with PLAN_PATH,
-   PIPELINE_DOC, DRIVER_DOC, `DEVICE`, `BUILD_INSTALLED`,
-   `RUN_RESULTS: pipeline_artifacts/S/run-results.md` and `FIX`: those flows'
-   ids, each with its failing step. When it names flows as fixed, re-run just
-   those: `bash <adt.sh> run --slug S --driver <the test driver> --only <id> …`,
-   one `--only` per fixed flow. That updates their rows in `run-results.md`;
-   every other row stands. Do this once, and skip it when no flow of this run
-   failed, or none was fixed. Flows it could not fix keep their `FAIL` rows for
-   the Tester. A regression-suite failure, a crash and an ANR always go
-   straight to the Tester.
-6. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
-   DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`,
-   `RUN_RESULTS: pipeline_artifacts/S/run-results.md`, and whatever the command
-   adds for a re-test. Wait for **either** `✅ TESTER DONE` **or**
-   `⛔ TESTER BLOCKED` — both end its turn. On `⛔ TESTER BLOCKED`, take "The
-   Blocked Path" below instead of the fix loop.
-
-The device stays leased between tests — while a Coder fixes, while a reviewer
-re-reviews, and in `/build-guided` while the run waits for the user — so a
-re-test needs no new boot.
-
-**Release the device when the run ends.** Once a device is leased, every exit
-from the command releases it first: before the final summary, before
-reporting any STOP, and when the user answers `stop`:
-`bash <adt.sh> device-release --slug S`. If the early boot is still in
-progress, it waits for that boot and then stops the device, so a run that
-stops early never leaves an emulator behind. If it exits non-zero, report the
-serial it names and carry on. This is deliberately its own step, not part of
-"Close the run", which is skipped whenever a run has no design doc.
-
-**Keep the passing flows — once, at the end.** After the run's final verdict
-is `READY TO MERGE` (in `/build-guided`, when the user answers `approve` and the
-last verdict was `READY TO MERGE`), run
-`bash <adt.sh> promote --slug S --remove <id> …`, with one `--remove` per row of
-Flows Retired and per entry in the last `test-results.md`'s "Suite Flows to
-Remove". It copies the flows to keep into `e2e/flows/` and prints what it
-added, replaced and removed. Never promote after `NEEDS FIXES`, `BLOCKED` or a
-STOP. If it fails, report it; the verdict stands.
-
-Note the time around steps 3, 5 and 6. The final summary names the test
-driver and the device, and reports, for each test, how long the Test Writer,
-the flow run and the Tester took, so the user can see where the run's time
-went. Take the flow run's time from the "Run time" line of `run-results.md`,
-not from when the command returned to you; a step 5 re-run writes its own. It repeats the preflight's warnings, and the Tester's Coverage: how many
-cases were verified by a flow, by hand, or not at all, with each unverified
-case and why — so `READY TO MERGE` always says how sure it is. It also gives the last run's regression counts (replayed, failed, flaky),
-any P0 warning from `run-results.md`, and the suite flows promote added,
-replaced and removed — reminding the user to commit `e2e/flows/` with the
-feature.
-
-**Running the Tester outside a build command.** Lease and install with the
-script yourself (`device-acquire`, then `install`), invoke
-`adt-android-tester` with PLAN_PATH, DRIVER_DOC, `DEVICE` and
-`BUILD_INSTALLED`, and run `device-release` when you are done. Without `BUILD_INSTALLED` the Tester stops
-and says the build was not installed. Without `RUN_RESULTS` it drives every
-case by hand; to use flows instead, run the Test Writer and `adt.sh run` first.
-
-**Script exit codes.** 0 success, 1 a flow failed (`run` only), 2 usage, 10 no
-usable device, 11 the emulator did not start or boot, 12 the install command
-failed, 13 a device could not be stopped, 14 the driver's command line is not
-installed, 15 no device is leased for this run, 16 the preflight found a
-problem. Its messages say what to do;
-report them verbatim.
-
-**The Tester and the Test Writer have no shell.** Their tool lists hold file
-tools and the two drivers' MCP tools, so they cannot reach for `adb` — every
-device action goes through the tools the adapter names, and a case that needs
-anything else is reported `INCONCLUSIVE`. Claude Code enforces the tool list.
-In Antigravity the one setting that grants a shell, `enable_write_tools`, is
-also what lets the Tester write `test-results.md` and the Test Writer write
-flows, so their mappings keep it; there, and in OpenCode, the no-shell rule is
-enforced by their prompts only.
-
-## Configured Runs (/build-auto-reviewed only)
-
-Only /build-auto-reviewed uses this section, and only when RUNS is on. Every other command, and a run with RUNS off, ignores it.
-
-Configured runs let a role run as an external CLI (Claude Code, Codex,
-Antigravity, opencode, or any command) instead of as a native subagent, and
-let a review gate run as a **review panel**: 2 to 5 reviewers whose findings
-the `adt-android-review-judge` agent verifies and merges. Each CLI uses the
-developer's own login; no API key is involved.
-
-### The runner script
-
-`RUNNER` is ADT_RUN, the script path that the command's "Agent configuration"
-paragraph resolved (`.claude/adt/scripts/adt-run-agent.sh` in an `install.sh`
-project, `scripts/adt-run-agent.sh` in the plugin). Always call it as
-`bash "RUNNER" ...`, and put every path in double quotes.
-
-```
-bash RUNNER --check <claude|codex|agy|opencode>
-bash RUNNER --check command --check-program <program> --command-file <path> [--model <model>]
-bash RUNNER --runner <runner> --access <read-only|write> --project-root <path>
-            --prompt-file <path> --output-file <path>
-            [--model <model>] [--timeout-minutes <n>]
-            [--command-file <path> --check-program <program>]
-            [--allow-read <path>]... --detach
-bash RUNNER --wait <output-file>... [--max-seconds <n>]
-bash RUNNER --hash <file>
-bash RUNNER --snapshot --project-root <path> [--guard-path <path>]...
-bash RUNNER --cancel <run dir>
-```
-
-**Paths.** Every path you pass is absolute (built from PROJECT_ROOT). The
-script exits 2 for a relative `--wait`, `--output-file`, `--prompt-file`,
-`--command-file`, `--allow-read`, `--project-root` or `--cancel` path.
-`--guard-path` is the one exception: it may be relative to `--project-root`.
-
-Files of one run, next to the output file `O`: `O` (the agent's final
-answer), `O.log` (CLI progress and errors), `O.status` (the result, written
-last), and the script's own `O.pid`, `O.clipid`, `O.cancel`, `O.elapsed` and
-`O.timedout`. You read only `O`, `O.log` and `O.status`.
-
-A result is five lines (stdout, and the content of `O.status`):
-
-```
-ADT_RUN status=<status> runner=<runner> exit=<CLI exit status>
-ADT_RUN marker=<last marker line, or empty>
-ADT_RUN output=<O> log=<O.log> seconds=<run time>
-ADT_RUN code=<this script's exit code>
-ADT_RUN sha=<output of `--hash O` when the run ended, or empty>
-```
-
-| Code | Status | Meaning |
-|---|---|---|
-| 0 | `ok` | Finished, marker found |
-| 2 | `usage` | Bad arguments; a relative path; not a git repo; `O` or `O.log` not git-ignored; a missing guard path |
-| 3 | `missing-runner` | CLI not on `PATH` |
-| 4 | `timeout` | Stopped at the timeout |
-| 5 | `failed` | CLI exit status not 0 |
-| 6 | `no-marker` | Finished without a marker line |
-| 13 | `conflicting-markers` | Finished with marker lines of different known markers |
-| 14 | `cancelled` | Stopped by `--cancel` |
-| 10 | `running` | `--wait` only: not finished yet |
-| 11 | `lost` | `--wait` only: the detached job ended without a result, or is stuck |
-| 12 | `not-started` | The CLI never started |
-
-**`--wait O...`** takes one or more output files and prints one block per
-file, in the order given: the five `ADT_RUN` lines of a finished run, or
-`ADT_RUN status=running output=<O>`. It exits 10 while any file is still
-running, else 0 (with a single file, it exits with that run's code). **The
-result of each run is the `code` line of its block**, never the exit code of
-a multi-file call. Repeat the call until it does not exit 10; the script's
-own stuck-job rules guarantee that this ends.
-
-### Marker rule
-
-Used for every answer in a configured run, native and external alike. Only
-these **known markers** count: `✅ ARCHITECT DONE`, `✅ CODER DONE`,
-`✅ TESTER DONE`, `⛔ TESTER BLOCKED`, `✅ PLAN APPROVED`,
-`🔧 PLAN CHANGES REQUESTED`, `✅ CODE APPROVED`, `🔧 CODE CHANGES REQUESTED`.
-
-- Remove every U+FE0F character (the invisible emoji variation selector, as in
-  `⛔️`) from a line before matching.
-- A **marker line** starts in the first column (a line that begins with a
-  space or tab is never one). After these are removed from its start, in this
-  order, it **starts with** a known marker: (1) if present, `#` characters and
-  spaces; (2) if present, one `**` or `__`; (3) if present, the label
-  `Verdict:` (any casing), then, if present, one `**` or `__`, then spaces,
-  then, if present, one `**` or `__`. So `✅ CODE APPROVED — summary`,
-  `## ✅ CODE APPROVED`, `**✅ CODE APPROVED**`, `Verdict: ✅ CODE APPROVED`,
-  `**Verdict:** ✅ CODE APPROVED` and `Verdict: **✅ CODE APPROVED**` are
-  marker lines.
-- A line that starts with a bullet (`*`, `-` or `+` and a space), `>`, a
-  backtick, or any other character is never a marker line. A line that starts
-  with an emoji but not with a known marker (`✅ Item 1 is fixed`) is ignored.
-- If every marker line starts with the **same** known marker, that is the
-  answer's marker (the last such line is reported). Marker lines with
-  **different** known markers make the answer invalid (`conflicting-markers`,
-  code 13). Never guess.
-
-In this section, "the marker is X" means this rule found a line that starts
-with X.
-
-### Start
-
-0. If ADT_ROOT is empty, STOP: the configured run needs the scripts. Report
-   that the agentic-dev-team install is incomplete.
-1. **Run directory:** `PROJECT_ROOT/pipeline_artifacts/.runs/<run id>/`, always
-   used as an absolute path. `<run id>` is the UTC timestamp from
-   `date -u +%Y%m%dT%H%M%SZ`, a `-`, and 6 random lowercase letters or digits;
-   if the directory already exists, choose new random characters. Before you
-   create it: create `PROJECT_ROOT/pipeline_artifacts/` with `mkdir -p`, then
-   create `PROJECT_ROOT/pipeline_artifacts/.gitignore` with the single line
-   `*` if it does not exist. Only then create the run directory.
-2. **Paths:**
-   - RUNNER: ADT_RUN.
-   - Persona of each agent: `ADT_ROOT/agents/<agent file>`.
-   - PIPELINE_DOC_ABS: PIPELINE_DOC as an absolute path (prefix it with
-     `PROJECT_ROOT/` when it does not start with `/`). Use it in every script
-     call and prompt file; native subagents keep getting PIPELINE_DOC.
-3. **Preflight.**
-   1. For each `runner: command` slot, write its command file
-      `<run dir>/command-<slot>.txt`, where `<slot>` is `architect`, `coder`,
-      `tester`, `architect_reviewer-<i>` or `code_reviewer-<i>` (`<i>` is the
-      1-based position in that `reviewers` list). It holds the **parsed string
-      value** of `command` followed by one newline.
-   2. Run `bash "RUNNER" --check <runner>` once for each distinct runner among
-      `claude`, `codex`, `agy` and `opencode` in the config.
-   3. For each `runner: command` slot, run
-      `bash "RUNNER" --check command --check-program <check> --command-file "<its command file>" [--model M]`
-      (with `--model` when the slot has `model`).
-   4. Exit 3 means the CLI is missing (below). Exit 2 from a `command` check
-      means the template is invalid: STOP before Phase 1 and show the
-      script's message. Any other non-zero exit: STOP and report the command
-      and its output.
-   5. A missing CLI in a producer slot (`architect`, `coder`, `tester`) or in
-      a required reviewer: STOP before Phase 1 and name the CLI. A missing CLI
-      in an optional reviewer: remove that reviewer, and report it in the
-      summary.
-4. **Effective reviewer lists.** Fix each gate's reviewer list for the whole
-   run: the configured list minus the removed reviewers, or one native
-   reviewer when the gate is not configured. If a configured gate's list is
-   now empty: STOP before Phase 1 and report `<gate> has no available
-   reviewer`. Choose each gate's case (A, B or C, below) from its effective
-   list here, one time. If the removals leave a single reviewer, that
-   reviewer is required from now on, and the summary says so.
-5. If the `coder` or `tester` slot uses `runner: codex`, print one warning:
-   Codex's `workspace-write` sandbox blocks network access and writes outside
-   the project by default, so Gradle downloads, the Gradle daemon and `adb`
-   can fail; use another runner for that role, or allow network and the
-   needed paths in your own Codex configuration (`sandbox_workspace_write`).
-
-### Starting an external agent
-
-1. **File names are unique for each start:**
-   `<run dir>/jobs/<phase>-<role>[-s<section>]-a<attempt>.prompt.md` and
-   `...-a<attempt>.out.md`. `<phase>` is `1`, `1R`, `2`, `2R`, `3`, `3B` or
-   `3F<iteration>`; `-s<section>` is for parallel coders; `<attempt>` starts at
-   1 and goes up each time the same phase starts the same role again. An
-   external reviewer uses `O = <run dir>/jobs/<gate>-r<N>-<letter>.out.md` and
-   `<run dir>/jobs/<gate>-r<N>-<letter>.prompt.md`. **All runner files live in
-   `<run dir>/jobs/`.** When a reviewer's run is complete, copy its answer to
-   the round directory with `cp "O" "<run dir>/<gate>-r<N>/reviewer-<letter>.md"`
-   (a byte copy in the shell, never a read-and-write of the text).
-2. Create `<run dir>/jobs/` with `mkdir -p`, then write the prompt file (see
-   "Prompt file").
-3. Start it detached:
-   `bash "RUNNER" --runner R --access A --project-root "PROJECT_ROOT" --prompt-file "P" --output-file "O" [--model M] --timeout-minutes N [--command-file "<run dir>/command-<slot>.txt" --check-program <check>] --allow-read "<persona path>" --allow-read "PIPELINE_DOC_ABS" --detach`
-   **Check the result before any `--wait`.** `--detach` prints
-   `ADT_RUN status=started` and exits 0 when the job started. Any other exit is
-   a STOP of the run for a producer or a required reviewer (for an optional
-   reviewer: drop it, as a failed reviewer), and the report shows the script's
-   output. Never call `--wait` for a job whose `--detach` did not exit 0.
-   Always pass `--timeout-minutes`: the slot's `timeout_minutes`, else 30 for a
-   reviewer and 120 for `architect`, `coder` and `tester`.
-4. **Wait** with `bash "RUNNER" --wait "O" --max-seconds <W>`. In Claude Code
-   use `--max-seconds 240` and set the Bash tool's timeout to 330000 ms; in a
-   tool whose shell timeout is unknown or short, use 60. Repeat the call until
-   its exit code is not 10. For several jobs started together, pass all their
-   output files to **one** `--wait` call and read each run's `code` from its
-   block.
-5. **Access:** `read-only` for reviewers, `write` for architect, coder and
-   tester.
-6. **Result of a producer** (architect, coder, tester):
-
-   | Script result | Marker | Action |
-   |---|---|---|
-   | code 0 | `✅ ARCHITECT DONE` / `✅ CODER DONE` / `✅ TESTER DONE` | Continue as the command file says for that marker. |
-   | code 0 | `⛔ TESTER BLOCKED` (tester only) | The Blocked Path, exactly as for a native Tester. Not a failure. |
-   | code 0 | any other marker | STOP: report role, runner, marker, output path. |
-   | code 6 (`no-marker`) | none | The agent stopped without a marker, as a native agent does for its own STOP conditions: relay the output file's text to the user as that agent's STOP report, and STOP the run. |
-   | code 13 (`conflicting-markers`) | several | STOP: report role, runner, the conflicting lines from `O.log`, and the output path. |
-   | code 2, 3, 4, 5, 11, 12 | any | STOP: report role, runner, status, and the log path. |
-   | code 14 (`cancelled`) | any | STOP: report the role and that its change may be incomplete. Never continue with its result. |
-
-   Never retry, and never fall back to native.
-
-**Parallel runs** (several coders in one group, several reviewers in a
-panel): start all detached jobs first, then wait for all of them with one
-repeated `--wait` call that lists every output file.
-
-### Prompt file
-
-Write exactly this, with the placeholders filled in:
-
-```
-# Task for <agent name> (agentic-dev-team pipeline)
-
-Another agent (the pipeline orchestrator) started you. No human will answer
-questions during this run.
-
-1. Read <absolute persona path> in full and follow it. It is your complete
-   role prompt. Ignore its YAML frontmatter: those settings are for Claude
-   Code subagents.
-2. Read Part A of <PIPELINE_DOC_ABS>.
-3. Read the project's AGENTS.md (or CLAUDE.md) as your role prompt says.
-
-## Your task
-
-<exactly the text the orchestrator gives the native subagent for this step,
-including PLAN_PATH, DOC_PATH, DESIGN_DOC, the section to implement, and
-the numbered feedback, as the command file specifies>
-
-## Access
-
-<read-only>
-You are read-only. Do not create, edit, move, or delete any file. Do not run
-git commands that change the repository. The orchestrator checks the working
-tree after your run, and a change stops the pipeline.
-</read-only>
-<write>
-You may edit files in the project as your role prompt allows. Never run git
-add, git commit, git stash, or any command that changes git history.
-</write>
-
-<optional blocks from 7.4>
-
-## End
-
-End your answer with the marker line that your role prompt defines. After
-it, write only what your role prompt puts after it (for a CHANGES REQUESTED
-verdict: the numbered list). Do not write a second marker line.
-```
-
-In this template, "7.4" means the section "Blocks given to reviewers" below.
-Use only the access block that applies (without its `<read-only>` or
-`<write>` tag lines). **Never put `TEST CREDENTIALS`, or any credential value,
-in a prompt file.** Two mechanical rules make sure of it:
-
-1. Text that comes from a Tester (findings, recommendations) is copied into a
-   prompt file **only from `test-results.md`**, never from the Tester's chat
-   answer. Part A already forbids credential values in `test-results.md`.
-2. **No text from a human reply** (a `resume` reply included) is ever copied
-   into a prompt file.
-
-### Blocks given to reviewers
-
-**`BUILD GATE OUTPUT`**: given to every code reviewer in a Case B or Case C
-code gate, after the build gate ran (passed or failed):
-
-```
-## BUILD GATE OUTPUT
-The orchestrator ran the build gate from the plan's Section 0:
-Command: <command>
-Exit status: <n>
-<last 200 lines of output>
-```
-
-**`EARLIER CONFIRMED FINDINGS`**: given to every reviewer in a Case B or Case
-C gate (plan or code) whenever the list below is not empty: from round 2 of
-the gate, and in every Phase 3F targeted gate.
-
-The list holds every numbered item that the producing agent was told to fix
-earlier in this run for this artifact, in order, with where it came from:
-
-1. each earlier round's feedback in this gate: when the build gate failed in
-   that round, its item as one line only, `Build gate failed: <command>
-   exited <n>` (never the Gradle output); then the judge's Confirmed list
-   (Case C) or the single reviewer's numbered **blocking** items (Case B;
-   never its "Nits / optional" items);
-2. for a code gate in Phase 3F: also every item from Phase 2R and from the
-   earlier Phase 3F iterations that came from a **reviewer, the judge, or a
-   build gate**.
-
-The Tester's findings are **never** in this block. A targeted re-review
-already gets them as "the fix instructions the Coder worked from", and the
-code reviewer must stay free to flag a Tester-driven fix as plan drift.
-
-```
-## EARLIER CONFIRMED FINDINGS
-Earlier in this run, the producing agent was told to fix these items, and
-changed the plan or code to fix them. Those changes are review-driven and in
-scope, even where the plan does not specify them. Do not report them as
-scope creep. You may report a fix that is wrong or incomplete.
-<source heading per group, for example "Code review, round 1 (panel)",
-"Code review, round 2 (build gate)", "Code review, Phase 3F iteration 1,
-round 1", then the items numbered as they were given>
-```
-
-The judge gets the same block and uses it for its REJECTED rule. For a native
-reviewer, add the same blocks to the subagent prompt.
-
-### Review gates with RUNS on
-
-A gate uses its effective reviewer list and the case chosen at the start.
-
-**Build gate first (Case B and Case C, code gates only).** Before the
-reviewers start, run the build gate from the plan's Section 0 one time (in
-Phase 3F targeted re-reviews too), and keep the command, exit status and
-output. The reviewers run in either case. **If the exit status is not 0**,
-the round result is always `🔧 CODE CHANGES REQUESTED`, whatever the reviewers
-and the judge say, and this item comes **first** in the numbered feedback:
-`Build gate failed: <command> exited <n>. Fix the failures in this output:
-<last 200 lines>.` The other items follow (the judge's Confirmed list, or the
-single reviewer's list); when every reviewer approved, the build item is the
-only one. The round counts once against the gate's budget. A failed build can
-never pass a gate.
-
-**Tree guard for the whole round (Case B and Case C).** Order within a round:
-(1) the build gate (code gates), (2) the first snapshot, (3) the reviewers,
-(4) the judge when it runs, (5) the second snapshot. Command:
-`bash "RUNNER" --snapshot --project-root "PROJECT_ROOT" --guard-path pipeline_artifacts/<slug>`.
-If the two hashes differ, or either call exits non-zero: **STOP the run**,
-whether the reviewer was required or optional. Report the gate, the round, the
-reviewers that ran in that round, and the output of `git status --short`. Do
-not revert anything; the developer decides.
-
-**Every STOP stops the external jobs.** On every exit path of a configured run
-(a STOP of any kind, the end of the run, or a failed gate), first run
-`bash "RUNNER" --cancel "<run dir>"`. The STOP report and the final summary
-always include this line: `To stop any external agent that is still running:
-bash "<RUNNER>" --cancel "<run dir>"`.
-
-**Case A: the effective list is exactly one native reviewer.** This is
-**today's gate**, unchanged: the native reviewer runs the build gate itself,
-there is no orchestrator build gate, no tree guard, no extra blocks, and no
-judge. The only differences are the model resolution of "Agent
-Configuration" and that you write the reviewer's final answer to
-`<run dir>/<gate>-r<N>/reviewer-A.md` (create the directory first). A gate the
-developer did not configure is always Case A.
-
-**Case B: the effective list is exactly one external reviewer.** For a code
-gate, build gate first, then that reviewer gets `BUILD GATE OUTPUT`. Its own
-marker is the verdict. No judge. A failure of this reviewer (script code not
-0) stops the run, whether it is marked required or not. A code 0 result whose
-marker is not this gate's APPROVED or CHANGES REQUESTED marker also stops the
-run (report the marker and the output path).
-
-**Case C: 2 to 5 reviewers (a panel).** One round:
-
-1. Code gates only: build gate first. The rest runs whether it passed or
-   failed.
-2. Create the round directory `<run dir>/<gate>-r<N>/` with `mkdir -p`. It
-   holds **only** the reviewer answers, `judge.md` and `panel-map.md`.
-   Assign the letters A, B, C, ... to the reviewers in a **random order, new
-   for every round**. Start all external reviewers detached, run the native
-   reviewer(s) as subagents, then wait for all. The same task text goes to
-   every reviewer, plus the blocks above.
-3. **Files in the round directory** (all written by you): for a native
-   reviewer, its final message; for an external reviewer, the `cp` copy of
-   its `O`; both as `<run dir>/<gate>-r<N>/reviewer-<letter>.md`. `<gate>` is
-   `plan-review`, `code-review`, or `targeted-review-<k>` (`<k>` is a run-wide
-   counter that starts at 1 and goes up each time a Phase 3F targeted gate
-   starts; it never repeats). `N` is the round of that gate, from 1. The same
-   names apply in Case B (letter `A`). Write the judge's final message to
-   `<run dir>/<gate>-r<N>/judge.md`. Right after you write a native reviewer's
-   file, take its hash with `bash "RUNNER" --hash <file>`.
-4. A reviewer **fails** when its script code is not 0, or its marker is not
-   this gate's APPROVED or CHANGES REQUESTED marker (a native reviewer with no
-   marker fails too). A required reviewer's failure stops the run; an
-   optional reviewer is dropped from this round and reported in the summary.
-   If no reviewer output is left: STOP. One remaining output still goes
-   through steps 5 to 8.
-5. If every remaining reviewer's marker is the gate's APPROVED marker: the
-   judge does not run, and the gate passes **unless the build gate failed**
-   (then the result is CHANGES REQUESTED with the build item only). Their
-   "Nits / optional" items go to the summary.
-6. **Reviewer files are checked first.** For each reviewer file that goes to
-   the judge, compute `bash "RUNNER" --hash <file>` now and compare it with
-   the hash taken when it was complete: the `sha` line of `O.status` for an
-   external reviewer, your own `--hash` result for a native one. A difference:
-   STOP the run and report the file.
-   Then start the judge (native, `adt-android-review-judge`) with: gate type
-   (`PLAN` or `CODE`), round number, targeted or full, PLAN_PATH, DOC_PATH when
-   present, the `BUILD GATE OUTPUT` block (code gates), the `EARLIER CONFIRMED
-   FINDINGS` block when it is not empty; for a targeted re-review, the fix
-   instructions the Coder worked from; from round 2, an `EARLIER PANEL
-   DECISIONS` block (the "Rejected" and "Disputed" sections of this gate's
-   earlier `judge.md` files, with their round numbers; for the judge only);
-   and the file paths of **only the reviewers that did not fail in this
-   round** (their original letters; gaps are allowed). Never tell the judge
-   which tool wrote which file, and never pass whole `judge.md` files to a
-   later judge or reviewer.
-7. At the **end of every round** (after the judge, or after the all-approve
-   decision; in Case B too), write `<run dir>/<gate>-r<N>/panel-map.md` with
-   the letter-to-runner-and-model map.
-8. The judge's marker is the gate verdict, **except** when the build gate
-   failed in this round: then the verdict is always CHANGES REQUESTED. On
-   CHANGES REQUESTED the producing agent gets, as its numbered feedback: the
-   build-gate item first when the build gate failed, then the judge's
-   **Confirmed** list.
-9. **No valid judge verdict:** the judge's verdict is not valid when there is
-   no marker, conflicting markers, a marker that is not this gate's APPROVED
-   or CHANGES REQUESTED marker, APPROVED with a non-empty Confirmed list, or
-   CHANGES REQUESTED with an empty Confirmed list (`None`) while the build gate
-   passed. Then STOP the run and report the gate, the round, and the path of
-   `judge.md`. Do not retry the judge, do not treat it as approval, and do not
-   start another round.
-
-**Budgets do not change.** A panel round counts as one review. Phase 1R and
-2R: at most 2 re-runs. Phase 3F targeted re-review: at most 1 re-run. A failed
-optional reviewer does not use budget.
-
-### The judge's output
-
-The judge checks each finding against the tree and the plan, and classifies
-it: **CONFIRMED** (real and blocking under the reviewer's own rules; a failing
-build gate is never listed by the judge, because you add it yourself),
-**REJECTED** (wrong, already fixed, a style preference, or it only asks to
-undo a fix listed in `EARLIER CONFIRMED FINDINGS` without showing that the fix
-is wrong; a finding that repeats one an earlier round rejected is rejected
-again unless that place changed), or **DISPUTED** (cannot be verified; not
-blocking). It merges duplicates and lists all letters that raised them;
-reviewer nits stay nits. In a targeted re-review, findings about code the fix
-did not touch go under "Out of scope (for the developer)". Its answer has
-these exact headings, `None` under an empty one:
-
-```
-## Panel result: <PLAN|CODE> gate, round <N>
-
-### Confirmed (blocking)
-1. <file:line or plan section>: <problem>. Fix: <what to do>. Raised by: <letters>.
-
-### Rejected
-- <letter>#<item number>: <the finding, in one line, with its file:line or plan section>. Reason: <reason>
-
-### Disputed (not blocking)
-- <letter>#<item number>: <claim>. Why not verified: <reason>
-
-### Nits / optional
-- <letter>#<item number>: <text>
-
-### Out of scope (for the developer)
-- <letter>#<item number>: <text> (targeted re-reviews only; write
-  `None` in a full review)
-```
-
-Its last line is exactly one marker: `✅ CODE APPROVED` or
-`🔧 CODE CHANGES REQUESTED` for a code gate, `✅ PLAN APPROVED` or
-`🔧 PLAN CHANGES REQUESTED` for a plan gate. APPROVED if and only if the
-Confirmed list is empty. Take the producing agent's feedback from the
-"Confirmed (blocking)" section only.
-
-### Special cases
-
-| Case | Rule |
-|---|---|
-| Parallel coders | Each section's coder uses the `coder` slot. External coders in one group run as parallel detached jobs. They run no Gradle, as usual. The cross-section check after each group is unchanged. |
-| Tester | May be external. That CLI must have the test driver's MCP server (auto-mobile or Maestro) in its own config. It gets the same DRIVER_DOC, DEVICE, BUILD_INSTALLED and RUN_RESULTS lines as a native Tester. The Test Writer and the steps of "The Test Phase" always run native. |
-| Tester and credentials | Credentials are never written to a file, and an external run needs a prompt file. So: **from the first reply at the blocked gate that is anything other than exactly `resume` or `stop`** (for example `resume: the PIN is 1234`), **every later Tester start in that run runs native**: that resume itself, every later resume, and every Phase 3F re-test. Only a reply that is exactly the word `resume` (spaces around it do not matter) keeps an external Tester external. Its native model comes from `agents.tester.model`, else the frontmatter (the external slot's `model` is for its CLI only). The summary says so. |
-| Architect | May be external (write). Read its `✅ ARCHITECT DONE` line and artifact paths from the output file. |
-| External Coder or Tester in Codex | See the warning of "Start" step 5. |
-
-### Summary additions
-
-Add a "Configured run" section to the final summary:
-
-1. Each role: runner and model.
-2. Each gate: panel members (letter, runner, model), rounds used, which
-   letters raised each confirmed item, disputed items, failed or removed
-   optional reviewers.
-3. A warning when two reviewers of one gate are in the same model family.
-   Family is decided from **what actually runs**:
-   - A native reviewer whose model was not applied (Antigravity, opencode, or
-     model passing turned off before it started) has the orchestrator tool's
-     current model family when known, else unknown.
-   - Otherwise use the model value (case-insensitive): for an `opencode`
-     value `provider/model`, the provider (`anthropic` is Anthropic, `openai`
-     is OpenAI, `google` is Google, any other is unknown); `claude-*`, `opus`,
-     `sonnet`, `haiku`, `fable` (also followed by `[`) are Anthropic; `gpt-*`
-     or `o` followed by a digit are OpenAI (`opus` and `ollama/...` are not);
-     `gemini-*` is Google.
-   - When no rule matches, or there is no model value: the `claude` runner is
-     Anthropic, `codex` is OpenAI; a `command` runner uses the basename of its
-     `check` value (`claude`, `codex`, `gemini` as above); a native reviewer
-     with no model value has the orchestrator tool's family when known.
-     Anything else is unknown, including `agy` and `opencode` without a model.
-   Unknown family: no warning.
-4. Every item from the judges' "Out of scope (for the developer)" sections,
-   and every DISPUTED item, with gate and round.
-5. Nits: the judges' "Nits / optional" items, and, in a round where every
-   reviewer approved, the reviewers' own "Nits / optional" items. They take
-   the place of "Nits the reviewer declined to block on" for panel gates.
-6. The run directory path, and the `--cancel` line above.
-
-## The Blocked Path
-
-When the Tester ends on `⛔ TESTER BLOCKED` (Part A, "When the Tester Is
-Blocked"), the orchestrator takes this path instead of the fix loop:
-
-1. **Do not spawn a Coder over a device gate.** A keyguard disproves nothing
-   about the code, and the fix could not be re-tested anyway. The exception is
-   a block whose cause *is* the code — a failing install command is a build
-   break, not a device problem — which the human routes like any other build
-   failure.
-2. **Do not re-invoke the Tester on the same conditions.** The device that
-   ignored it will ignore it again; a second attempt only spends tokens. The
-   one thing that changes the outcome is the human.
-3. **Relay the ask verbatim** — the line on the `⛔ TESTER BLOCKED` marker, and
-   the report's **Human Assistance Needed** section. State the artifact path so
-   they can read the rest.
-4. **Report the true state of the tree, which depends on how you got here.**
-   A block on the first Tester run means coded and unverified. A block on a
-   *re-test inside the fix loop* means something else entirely: blocking
-   defects were proven, a Coder attempted fixes, and those fixes were never
-   verified. Say which, and carry the earlier run's blocking findings into what
-   you show the human — never tell them "nothing about the code was disproved"
-   on a path where something was.
-5. **Ask the human, and wait — in every command.** Present the ask and take one
-   of two replies:
-   - `resume` — carrying what the Tester asked for when it named a credential
-     (`resume: the device PIN is 1234`), or on its own once the human has
-     cleared the gate themselves. Re-invoke the Tester with `PLAN_PATH`,
-     PIPELINE_DOC, DRIVER_DOC, the same `DEVICE`, `BUILD_INSTALLED` and
-     `RUN_RESULTS`, the previous `test-results.md`, any `TEST CREDENTIALS` they
-     just supplied, and the instruction to resume from the case it stopped at,
-     carrying the earlier results forward. The device stays leased while the
-     run waits, and the flows do not run again: nothing about the build
-     changed.
-   - `stop` — halt, reporting as in step 4, and release the device.
-
-   There is no `approve` and no `revise:` here. A run that could not finish its
-   cases is not something to approve, and the Coder is not the answer to a
-   locked screen.
-
-   **The unattended commands pause here too, and that is not a contradiction.** What
-   makes `/build-auto` and `/build-auto-reviewed` unattended is the absence of
-   *approval* gates — nobody signs off on the plan, the code, or the results.
-   This gate approves nothing. The run has hit a wall it cannot pass, and the
-   only two options are to wait for one short answer or to throw the run away.
-   Stopping costs strictly more: it discards a finished Architect phase and a
-   finished Coder phase that a re-run has to pay for all over again. If nobody
-   is watching, the run waits, and nothing is lost that stopping would have
-   saved.
-
-6. **A resumed run rejoins the normal flow.** `✅ TESTER DONE` is handled on
-   its verdict like any other run — `READY TO MERGE` closes the run,
-   `NEEDS FIXES` enters the Tester fix loop with its iteration budget
-   untouched, because a block consumed a resume rather than a fix. Only another
-   `⛔ TESTER BLOCKED` comes back here.
-7. **Close the run as usual** on the way out — Implementation Notes when a
-   design doc exists, per "Design Doc Defaults Per Command". A STOP is an exit
-   path like any other.
-
-A resumed Tester may block again — on the same gate, if the human's fix did not
-take, or on the next one. Allow **at most 2 resumes** in every command; after
-that, report and stop, so a device that cannot be made to cooperate does not
-turn into an unbounded loop.
-
-Never report a blocked run as a pass, and never let it exit silently. The
-failure this path exists to prevent is a green summary on a feature no one ever
-saw run.
-
-## Orchestration Workflow (Antigravity)
-
-When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
-
-1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above — including `adt-android-test-writer`, which every build command uses. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`. When a review panel is configured (Part B, "Configured Runs"), also register adt-android-review-judge.
-2. **Execute Phases**:
-   - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
-   - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows) and the `DESIGN_DOC` value this command defaults to (see "Design Doc Defaults Per Command"). Wait until it outputs `✅ ARCHITECT DONE`, and parse the artifact paths out of that marker — the plan path always, and the design doc path when one was requested.
-   - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
-   - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
-   - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Before the run**: resolve the test driver and the script, run the preflight, and check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot.
-   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, send any of this run's flows that failed back to the Test Writer to fix and re-run those with `adt.sh run --only`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
-   - **Tester Blocked**: on `⛔ TESTER BLOCKED`, take "The Blocked Path" above instead of the fix loop, and do not advance.
-   - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
-     Coder → targeted re-review → re-test loop the command file defines (max 2
-     iterations) — each re-test is a run of "The Test Phase" on the same
-     device, install included — then STOP and report if it is still
-     failing. In `/build-auto-reviewed` the targeted re-review is mandatory —
-     see "The Targeted Re-Review" above; the code that ships must have been
-     reviewed after its last mutation. A run never ends by declaring a
-     `NEEDS FIXES` feature complete.
-3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval — `approve`, `revise: <feedback>`, or `stop`, except at a blocked Tester gate, which takes `resume` or `stop` (see "Approval Gates" and "The Blocked Path"). For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
-4. **Close the run**: release the run's device (see "The Test Phase"), on every exit including a STOP. When a design doc was produced, append its Implementation Notes before reporting the final summary (see "Design Doc Defaults Per Command"), and report the design doc path alongside the verdict.
-
-## Native Workflow Registration
-
-`/build-auto`, `/build-auto-reviewed`, and `/build-guided` slash commands (along
-with `/plan-research` and `/plan-design`) are registered natively
-in Antigravity via symlinks in `.agents/workflows/` that point to
-`.claude/commands/`. Team personas are inlined into the consuming project's
-`.agents/agents.md` (inside a marker-fenced block managed by install.sh),
-sourced from `.agents/AGENTIC_DEV_TEAM.md` in this repo. Each persona stub
-references the canonical detailed prompt at `.claude/agents/adt-*.md`.
-
-## Orchestration Workflow (opencode)
-
-opencode drives the same pipeline through its native per-file discovery, wired
-up by the same install.sh run:
-
-1. **Commands**: the five slash commands live in `.opencode/commands/` as
-   symlinks to the canonical `.claude/commands/*.md` bodies — opencode reads the
-   same orchestration prompts (`$ARGUMENTS` and `` `adt-android-*` subagent ``
-   delegation are both opencode-native).
-2. **Subagents**: each role is a `mode: subagent` agent file in
-   `.opencode/agents/adt-android-*.md`. The orchestrator (primary agent)
-   delegates to them automatically by description or via `@adt-android-<role>`
-   mention; each stub reads its canonical prompt at `.claude/agents/adt-*.md`
-   before acting, so the persona is identical across tools.
-3. **Models**: opencode runs every subagent on the user's currently selected
-   model (the agent files set no per-role `model:`), matching Antigravity's
-   behavior. Select the strongest available model for full pipeline runs.
-   The `agents:` model settings in .agentic-dev-team/config.yaml cannot change this; see "Agent Configuration".
-4. **Tester MCP**: the test driver's MCP server is registered in
-   `opencode.json` under the `mcp` key — auto-mobile as an HTTP server
-   (`type: "remote"`, with auto-mobile's `url`), Maestro as a local one
-   (`type: "local"`, `command: ["maestro", "mcp"]`); the Tester reaches it like
-   any other tool.
-5. **Rules**: agents and commands reference `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
-   and the project's `AGENTS.md`/`CLAUDE.md` by path (both present in the project
-   tree), so opencode reads the same sources of truth as the other tools.

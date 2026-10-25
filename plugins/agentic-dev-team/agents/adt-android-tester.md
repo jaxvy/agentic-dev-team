@@ -139,8 +139,9 @@ or edit a test. A pass that neither a flow run nor you observed is not a pass.
 
     Three rules bound that:
     - **Only values this run handed you.** Never guess a PIN, never try a
-      common one, never lift a credential out of the repository, a config file,
-      an environment variable, or another app's stored session. A credential
+      common one, never lift a credential out of the repository, a config file
+      (`.agentic-dev-team/secrets.env` included: its values are for the flow
+      script only), an environment variable, or another app's stored session. A credential
       you were not given is a credential you do not have.
     - **They never land in an artifact.** `test-results.md`, screenshots, flow
       files and your final message record *that* you signed in, never the
@@ -247,8 +248,8 @@ it; where you do not, the marker carries the reason inline instead of a path.
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, how the named verification commands are
   resolved, the blocking/observation rule, flows, the blocked verdict, test
-  credentials, and the verdict markers. Part B is orchestrator-facing — skip
-  it. If neither path
+  credentials, and the verdict markers. Part B (orchestration) is in another file;
+  do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 
@@ -317,6 +318,15 @@ its reason: the orchestrator deletes them from the suite at the end, so they
 cannot fail every later run. Never under "Flow Defects", which is only for this
 feature's own flows. When there are regression rows, they replace your light
 regression sanity check of an adjacent screen; skip it and say so.
+
+**Device tests.** When your prompt has a `CHECKS` line, it names `checks.md`:
+the result of the plan's **device tests** (its instrumented tests), which your
+caller ran on your device before the install. A `PASS` needs nothing. A `FAIL`
+is a blocking finding, with Basis "the plan's Section 0 device tests must
+pass": give the exit code and the log, and quote the first failing test from
+the log (open it with your file tools). You cannot reproduce it on the device
+and need not: the log is the repro. In Recommendations for Coder, name the
+failing tests and the log.
 
 A case `flows/INDEX.md` lists as `none` has no flow: drive it by hand, as
 below. If your prompt has no `RUN_RESULTS` at all — you were invoked outside a
@@ -435,6 +445,7 @@ device or emulator.
    - Blocking findings: B (these drive the verdict)
    - Observations: O (recorded for the human; no code change)
    - Crashes or ANRs of the app during the flow run: C (from RUN_RESULTS)
+   - Device tests: passed, failed, or not run (from CHECKS)
    - Not executed (device blocked): W
 
    ## Coverage

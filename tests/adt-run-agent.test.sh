@@ -116,7 +116,16 @@ export FAKE_ANSWER_FILE="$ANS" FAKE_ARGS="$T/args"
 run claude read-only "$J/c1.out.md" --model opus > /dev/null
 eq "1 claude read-only args" "$(printf '%s\n' claude -p "$INSTR" --output-format text --permission-mode dontAsk --allowedTools "$RO_TOOLS" --disallowedTools 'Bash(*--output*)' --model opus)" "$(cat "$T/args")"
 run claude write "$J/c2.out.md" > /dev/null
-eq "1 claude write args" "$(printf '%s\n' claude -p "$INSTR" --output-format text --permission-mode acceptEdits --allowedTools "Read,Write,Edit,Glob,Grep,Skill,Bash,mcp__auto-mobile,mcp__maestro")" "$(cat "$T/args")"
+eq "1 claude write args" "$(printf '%s\n' claude -p "$INSTR" --output-format text --permission-mode acceptEdits --allowedTools "Read,Write,Edit,Glob,Grep,Skill,Bash,mcp__auto-mobile,mcp__maestro" --disallowedTools "Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git stash:*)")" "$(cat "$T/args")"
+answer "✅ TESTER DONE"
+run claude no-shell "$J/c3.out.md" --model sonnet > /dev/null
+eq "1 claude no-shell args (the Tester)" "$(printf '%s\n' claude -p "$INSTR" --output-format text --permission-mode acceptEdits --allowedTools "Read,Write,Edit,Glob,Grep,mcp__auto-mobile,mcp__maestro" --disallowedTools Bash --model sonnet)" "$(cat "$T/args")"
+for r in codex agy opencode; do
+  out=$(run "$r" no-shell "$J/ns-$r.out.md"); rc=$?
+  eq "1 $r no-shell is refused: exit" 2 "$rc"
+  check "1 $r no-shell is refused: says why" grep -q 'always gives its agent a shell' <<< "$out"
+done
+answer "✅ CODE APPROVED"
 run codex read-only "$J/x1.out.md" --model gpt-5 > /dev/null
 eq "1 codex read-only args" "$(printf '%s\n' codex exec --sandbox read-only --output-last-message "$J/x1.out.md" --model gpt-5 "$INSTR")" "$(cat "$T/args")"
 run codex write "$J/x2.out.md" > /dev/null

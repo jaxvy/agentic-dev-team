@@ -9,9 +9,15 @@
 #   adt.sh run            --slug <slug> --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
 #                         [--only <id>]...
+#   adt.sh suite          --driver auto-mobile|maestro [--serial <serial>]
+#                         [--area <area>:<tiers>]... [--all] [--exclude <id>]...
+#                         [--out <dir>]
 #   adt.sh select         --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
+#   adt.sh check          --slug <slug> --name <name> [--device] -- <command...>
 #   adt.sh promote        --slug <slug> [--remove <id>]...
+#   adt.sh state          --slug <slug> start <command> | set <key> <value>
+#                         | get <key> | bump <key> --max <n> | show
 #   adt.sh device-release --slug <slug> | --serial <serial>
 #   adt.sh device-list
 #   adt.sh allow          [--remove] [--project <dir>]
@@ -37,7 +43,13 @@
 # emulators when it has two, and writes run-results.md. It reads Android's
 # crash log after each flow, so a crash or ANR of the app fails the flow.
 # With --only, it re-runs just the named flows of this run and updates their
-# rows. promote keeps this run's passing flows in e2e/flows/. device-release
+# rows. check runs one of the plan's Section 0 checks (today, the device
+# tests on the run's device) and records it in checks.md for the Tester. promote keeps this run's passing flows in e2e/flows/, and only when
+# the Tester's test-results.md says READY TO MERGE. state is the run's
+# ledger: the phase, paths and budgets a build command records as it goes, so
+# a run can be resumed and a spent budget is refused (exit 17). suite replays
+# e2e/flows/ on a device it is given, with no lease (for CI), and writes a
+# JUnit report beside run-results.md. device-release
 # stops the run's devices when it ends. allow adds the pipeline's permission
 # rules to the project's .claude/settings.local.json (or, with --remove, takes
 # them out again).
@@ -70,15 +82,21 @@
 #   ADT_MAESTRO          Maestro command (default: maestro)
 #
 # Exit codes:
-#   0 success, 1 a flow failed (run), 2 usage, 10 no device, 11 the emulator
-#   did not start or boot, 12 install failed, 13 a device could not be
-#   stopped, 14 the driver's command was not found, 15 no live device is
-#   leased for this run, 16 preflight found a problem
+#   0 success, 1 a flow or a check failed (run, check), 2 usage, 10 no
+#   device, 11 the emulator did not start or boot, 12 install failed, 13 a
+#   device could not be stopped, 14 the driver's command was not found, 15 no
+#   live device is leased for this run, 16 preflight found a problem, 17 a
+#   budget is spent (state bump)
 #
 # Runs under bash 3.2 (the macOS system shell): no associative arrays, no
 # mapfile, no ${var,,}.
 
 set -u
+
+# Name checks list the letters. A range such as [a-z] follows the locale, and
+# under en_US.UTF-8 (the macOS default) it also matches capitals.
+LOWER=abcdefghijklmnopqrstuvwxyz
+UPPER=ABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 ADT_HOME="${ADT_HOME:-$HOME/.adt}"
 LEASE_ROOT="$ADT_HOME/leases"
@@ -664,6 +682,117 @@ save_crash_log() {
   } >> "$2"
 }
 
+# ---------- test secrets ----------
+# A flow never holds a credential. It names a test secret as ${NAME}, and the
+# value comes from .agentic-dev-team/secrets.env (NAME=value lines), which
+# must be git-ignored and untracked. auto-mobile gets the flow with the values
+# filled in; Maestro gets them as -e NAME=value. Every log the run keeps is
+# scrubbed of the values. No agent reads the file.
+
+SECRETS_FILE=""
+
+# Finds and checks the project's secrets file and sets SECRETS_FILE (empty
+# when there is none). Stops when the file could reach git, or is malformed.
+load_secrets() {
+  local project="$1" f bad
+  f="$project/.agentic-dev-team/secrets.env"
+  SECRETS_FILE=""
+  [ -f "$f" ] || return 0
+  if git -C "$project" rev-parse --git-dir > /dev/null 2>&1; then
+    if git -C "$project" ls-files --error-unmatch "$f" > /dev/null 2>&1; then
+      die 2 "$f is tracked by git. Remove it from git (git rm --cached), then change every secret in it."
+    fi
+    git -C "$project" check-ignore -q "$f" 2>/dev/null || \
+      die 2 "$f is not git-ignored, so a commit could publish it. Keep .agentic-dev-team/.gitignore, or ignore the file in .gitignore."
+  fi
+  bad="$(tr -d '\r' < "$f" | LC_ALL=C awk '!/^[[:space:]]*(#|$)/ && !/^[A-Z][A-Z0-9_]*=/ { print NR; exit }')"
+  [ -z "$bad" ] || die 2 "line $bad of $f is not NAME=value (NAME in capitals, digits and '_')."
+  SECRETS_FILE="$f"
+}
+
+# The value of secret <name>.
+secret_value() {
+  tr -d '\r' < "$SECRETS_FILE" | awk -v n="$1" 'index($0, n "=") == 1 { v = substr($0, length(n) + 2) } END { printf "%s", v }'
+}
+
+# The names of the secrets a flow uses: every ${NAME} in it.
+flow_secret_names() {
+  # MAESTRO_* are Maestro's own variables, not secrets.
+  LC_ALL=C grep -o '[$][{][A-Z][A-Z0-9_]*[}]' "$1" 2>/dev/null | sed 's/^[$][{]//; s/[}]$//' | \
+    grep -v '^MAESTRO_' | LC_ALL=C sort -u
+}
+
+# Prints the first secret a flow uses that secrets.env does not set, if any.
+missing_secret() {
+  local n
+  for n in $(flow_secret_names "$1"); do
+    [ -n "$SECRETS_FILE" ] && tr -d '\r' < "$SECRETS_FILE" | grep -q "^$n=" && continue
+    printf '%s\n' "$n"
+    return 0
+  done
+  return 1
+}
+
+# The secrets as awk arrays name[1..n] and val[1..n], loaded in BEGIN from
+# the file in the variable sf. (Not "NR == FNR": with a file that defines no
+# secret, that test would also match the lines of the file being processed.)
+# Run it with LC_ALL=C, so that [A-Z] is the capitals only.
+SECRETS_AWK='BEGIN {
+  while ((getline l < sf) > 0) {
+    sub(/\r$/, "", l)
+    if (l ~ /^[A-Z][A-Z0-9_]*=/) { i = index(l, "="); name[++n] = substr(l, 1, i - 1); val[n] = substr(l, i + 1) }
+  }
+  close(sf)
+}'
+
+# The flow's text, with each ${NAME} of a secret replaced by its value.
+flow_with_secrets() {
+  if [ -z "$SECRETS_FILE" ]; then
+    cat "$1"
+    return
+  fi
+  LC_ALL=C awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
+    {
+      line = $0
+      for (k = 1; k <= n; k++) {
+        tok = "${" name[k] "}"; out = ""
+        while ((p = index(line, tok)) > 0) { out = out substr(line, 1, p - 1) val[k]; line = substr(line, p + length(tok)) }
+        line = out line
+      }
+      print line
+    }' "$1"
+}
+
+# Replaces every secret value in the given files with ***.
+scrub_secrets() {
+  [ -n "$SECRETS_FILE" ] || return 0
+  local f tmp
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    tmp="$f.scrub.$$"
+    LC_ALL=C awk -v sf="$SECRETS_FILE" "$SECRETS_AWK"'
+      {
+        line = $0
+        for (k = 1; k <= n; k++) {
+          if (val[k] == "") continue
+          out = ""
+          while ((p = index(line, val[k])) > 0) { out = out substr(line, 1, p - 1) "***"; line = substr(line, p + length(val[k])) }
+          line = out line
+        }
+        print line
+      }' "$f" > "$tmp" && mv -f "$tmp" "$f"
+  done
+}
+
+# Scrubs every text file under <dir> (screenshots and videos are left as they
+# are: a password field shows dots).
+scrub_dir() {
+  [ -n "$SECRETS_FILE" ] && [ -d "$1" ] || return 0
+  local f
+  find "$1" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' ! -name '*.webp' ! -name '*.mp4' ! -name '*.gif' | \
+    while IFS= read -r f; do scrub_secrets "$f"; done
+}
+
 # auto-mobile: one --cli executePlan call per flow. Sets FLOW_RESULT (PASS or
 # FAIL), FLOW_STEP (the failing step and its error) and FLOW_SECONDS.
 run_automobile_flow() {
@@ -672,8 +801,9 @@ run_automobile_flow() {
   since="$(device_time "$serial")"
   start="$(now)"
   run_bounded "$FLOW_TIMEOUT" "$@" --cli executePlan --platform android \
-    --deviceId "$serial" --planContent "$(cat "$flow")" > "$log.out" 2> "$log"
+    --deviceId "$serial" --planContent "$(flow_with_secrets "$flow")" > "$log.out" 2> "$log"
   rc=$?
+  scrub_secrets "$log" "$log.out"
   FLOW_SECONDS=$(( $(now) - start ))
   FLOW_STEP=""
   # A result over 64 KB is written to a file, and stdout only points at it.
@@ -683,6 +813,7 @@ run_automobile_flow() {
     sed -n 's/^[[:space:]]*"path":[[:space:]]*"\([^"]*\)".*/\1/p' "$log.out" | head -n 1)"
   if [ -n "$artifact" ] && [ -f "$artifact" ]; then
     cp "$artifact" "$log.out"
+    scrub_secrets "$log.out"
   fi
   if crash="$(app_crash_since "$serial" "$(flow_app_id "$flow")" "$since")"; then
     save_crash_log "$serial" "$log" "$since"
@@ -714,12 +845,22 @@ run_automobile_flow() {
 # Maestro: one `maestro test` call for a list of flows. Prints one line per
 # flow: <file> TAB <PASS|FAIL> TAB <seconds> TAB <failure message>.
 run_maestro_flows() {
-  local serial="$1" out="$2" count
+  local serial="$1" out="$2" count n f
+  local -a envs
   shift 2
   count=$#
-  set -- ${ADT_MAESTRO:-maestro} --device "$serial" test --format junit \
+  envs=()
+  if [ -n "$SECRETS_FILE" ]; then
+    for n in $(for f in "$@"; do flow_secret_names "$f"; done | LC_ALL=C sort -u); do
+      envs+=(-e "$n=$(secret_value "$n")")
+    done
+  fi
+  set -- ${ADT_MAESTRO:-maestro} --device "$serial" test ${envs[@]+"${envs[@]}"} --format junit \
     --output "$out/junit.xml" --test-output-dir "$out/artifacts" "$@"
   run_bounded $(( FLOW_TIMEOUT * count )) "$@" > "$out/maestro.log" 2>&1
+  # Not "$out" as a whole: the caller is writing results.tsv there now.
+  scrub_secrets "$out/maestro.log" "$out/junit.xml"
+  scrub_dir "$out/artifacts"
   [ -f "$out/junit.xml" ] || return 0
   tr '\n\r' '  ' < "$out/junit.xml" | awk '
     function unxml(v) {
@@ -759,12 +900,13 @@ tier_rank() {
   case "$1" in p0) echo 0 ;; p1) echo 1 ;; p2) echo 2 ;; *) echo 9 ;; esac
 }
 
-# select_suite <project> <driver> <areas> <excludes> <feature ids>
-# The last three are newline-separated lists; areas are "<area>:<tiers>".
+# select_suite <project> <driver> <areas> <excludes> <feature ids> [all]
+# Areas, excludes and feature ids are newline-separated lists; areas are
+# "<area>:<tiers>". With all=yes, every p0, p1 and p2 flow is selected.
 # Prints "<tier> TAB <id> TAB <path>" per selected flow, P0 first; reports
 # flows written for the other driver on stderr.
 select_suite() {
-  local project="$1" driver="$2" areas="$3" excludes="$4" feature_ids="$5"
+  local project="$1" driver="$2" areas="$3" excludes="$4" feature_ids="$5" all="${6:-no}"
   local suite="$project/e2e/flows" flow rel id area tier header spec tiers
   [ -d "$suite" ] || return 0
   find "$suite" -type f -name '*.yaml' | LC_ALL=C sort | while IFS= read -r flow; do
@@ -779,7 +921,9 @@ select_suite() {
       say "adt: skipped suite flow $id: written for $header"
       continue
     fi
-    if [ "$tier" != p0 ]; then
+    if [ "$all" = yes ]; then
+      case "$tier" in p0|p1|p2) ;; *) continue ;; esac
+    elif [ "$tier" != p0 ]; then
       [ -n "$area" ] || continue
       tiers=""
       for spec in $areas; do
@@ -950,9 +1094,10 @@ cmd_device_acquire() {
     die 10 "ADT_DEVICE_MODE=reuse, but no attached device is online and free."
   fi
 
+  # An attached device is the developer's own: flows clear the app's data on
+  # the device they run on. So it is used only when they ask for it.
   if ! find_emulator; then
-    acquire_attached "$project" "$slug" "the Android emulator is not installed" && return 0
-    die 10 "the Android emulator is not installed and no device is attached."
+    die 10 "the Android emulator is not installed. Install it from Android Studio's SDK Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
   fi
 
   if [ -n "${ADT_AVD:-}" ]; then
@@ -962,11 +1107,9 @@ cmd_device_acquire() {
   while :; do
     if ! avd="$(choose_avd "$skip")"; then
       if [ -z "$(list_avds)" ]; then
-        acquire_attached "$project" "$slug" "no AVD exists" && return 0
-        die 10 "no AVD exists and no device is attached. Create one in Android Studio's Device Manager."
+        die 10 "no AVD exists. Create one in Android Studio's Device Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
       fi
-      acquire_attached "$project" "$slug" "every AVD is open in normal mode" && return 0
-      die 10 "every AVD is open in normal mode and no other device is attached. Close one, or set ADT_AVD."
+      die 10 "every AVD is open in normal mode, and a read-only copy cannot start beside it. Close one, create another AVD, or set ADT_DEVICE_MODE=reuse to test on an attached device (flows clear the app's data on it)."
     fi
     serial="$(boot_avd "$project" "$slug" "$avd" "$after")"
     rc=$?
@@ -1124,7 +1267,7 @@ EOF
     log="$logs/$kind-$(printf '%s' "$id" | tr '/' '_').attempt$attempt.log"
     run_automobile_flow "$flow" "$log" "$serial" < /dev/null
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$kind" "$flow" "$FLOW_RESULT" "${FLOW_STEP:--}" "$FLOW_SECONDS" \
-      "${log#"$project/pipeline_artifacts/$slug"/}" >> "$rows"
+      "${log#"$rel_base"/}" >> "$rows"
   done
 }
 
@@ -1144,7 +1287,7 @@ maestro_batch() {
     if crash="$(app_crash_since "$serial" "$app" "$since")"; then
       save_crash_log "$serial" "$out/maestro.log" "$since"
       printf '%s\t%s\t%s\tFAIL\t%s\t0\t%s\n' "$crash_id" "check" "-" "$crash ($app, during the Maestro run)" \
-        "${out#"$project/pipeline_artifacts/$slug"/}/maestro.log" >> "$logs/.rows"
+        "${out#"$rel_base"/}/maestro.log" >> "$logs/.rows"
     fi
   done
   while IFS="$(printf '\t')" read -r kind id flow; do
@@ -1159,7 +1302,7 @@ maestro_batch() {
     fi
     [ "$result" = PASS ] && step=""
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$kind" "$flow" "$result" "${step:--}" "${secs:-0}" \
-      "${out#"$project/pipeline_artifacts/$slug"/}/maestro.log" >> "$rows"
+      "${out#"$rel_base"/}/maestro.log" >> "$rows"
   done < "$todo"
 }
 
@@ -1234,12 +1377,16 @@ run_attempt() {
 cmd_run() {
   local slug="" driver="" project serial flows_dir results logs flow id rel only="" recheck=""
   local total=0 passed=0 failed=0 flaky=0 skipped=0 seconds=0 areas="" excludes="" started_at
-  local second="" second_ready=no second_used=no
+  local second="" second_ready=no second_used=no rel_base suite_serial="" suite_out="" all_tiers=no
   started_at="$(now)"
   while [ $# -gt 0 ]; do
     case "$1" in
       --slug) slug="${2:-}"; shift 2 ;;
       --driver) driver="${2:-}"; shift 2 ;;
+      # Set by cmd_suite only: the device, the results folder, every tier.
+      --suite-serial) suite_serial="${2:-}"; shift 2 ;;
+      --suite-out) suite_out="${2:-}"; shift 2 ;;
+      --all) all_tiers=yes; shift ;;
       --area) areas="$areas
 $(area_spec "${2:-}")"; shift 2 ;;
       # A tier on its own, as in "--area checkout:p1 p2", belongs to that area.
@@ -1255,9 +1402,13 @@ ${2:-}"; shift 2 ;;
   case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
   find_adb
   project="$(project_dir)"
-  serial="$(find_lease "$project" "$slug")"
-  [ -n "$serial" ] && lease_live "$serial" || \
-    die 15 "no live device is leased for slug '$slug' in $project. Run device-acquire first."
+  if [ -n "$suite_serial" ]; then
+    serial="$suite_serial"
+  else
+    serial="$(find_lease "$project" "$slug")"
+    [ -n "$serial" ] && lease_live "$serial" || \
+      die 15 "no live device is leased for slug '$slug' in $project. Run device-acquire first."
+  fi
 
   if [ "$driver" = auto-mobile ]; then
     set -- ${ADT_AUTOMOBILE:-bunx @kaeawc/auto-mobile@0.0.84}
@@ -1266,10 +1417,17 @@ ${2:-}"; shift 2 ;;
   fi
   command -v "$1" > /dev/null 2>&1 || die 14 "the $driver command '$1' was not found. See HOW_IT_WORKS, 'Setting up device testing'."
 
-  flows_dir="$project/pipeline_artifacts/$slug/flows"
-  results="$project/pipeline_artifacts/$slug/run-results.md"
-  logs="$project/pipeline_artifacts/$slug/run-logs"
-  local list="$logs/.flows" suite_tier suite_id
+  load_secrets "$project"
+  if [ -n "$suite_out" ]; then
+    rel_base="$suite_out"
+    flows_dir="$suite_out/.no-feature-flows"
+  else
+    rel_base="$project/pipeline_artifacts/$slug"
+    flows_dir="$rel_base/flows"
+  fi
+  results="$rel_base/run-results.md"
+  logs="$rel_base/run-logs"
+  local list="$logs/.flows"
   if [ -n "$only" ]; then
     # Re-run only the named flows of this run, and update their rows in the
     # results of the last full run.
@@ -1294,8 +1452,8 @@ ${2:-}"; shift 2 ;;
         printf 'feature\t%s\t%s\n' "$flows_dir" "$flow"
       done >> "$list"
     fi
-    select_suite "$project" "$driver" "$areas" "$excludes" "$(feature_ids "$flows_dir")" | \
-      while IFS="$(printf '\t')" read -r suite_tier suite_id flow; do
+    select_suite "$project" "$driver" "$areas" "$excludes" "$(feature_ids "$flows_dir")" "$all_tiers" | \
+      while IFS="$(printf '\t')" read -r _ _ flow; do
         printf 'regression\t%s\t%s\n' "$project/e2e/flows" "$flow"
       done >> "$list"
   fi
@@ -1303,7 +1461,7 @@ ${2:-}"; shift 2 ;;
   # Driver mismatch: a flow written for the other driver is skipped, not run.
   local runnable="$logs/.runnable"
   : > "$runnable"
-  local kind base header tier
+  local kind base header tier secret
   while IFS="$(printf '\t')" read -r kind base flow; do
     rel="${flow#"$base"/}"
     id="${rel%.yaml}"
@@ -1313,13 +1471,19 @@ ${2:-}"; shift 2 ;;
       printf '%s\t%s\t%s\tSKIPPED\twritten for %s\t0\t-\n' "$id" "$kind" "${tier:--}" "$header" >> "$logs/.rows"
       continue
     fi
+    if secret="$(missing_secret "$flow")"; then
+      tier="$(flow_tier "$flow")"
+      printf '%s\t%s\t%s\tFAIL\tneeds the test secret %s, which .agentic-dev-team/secrets.env does not set\t0\t-\n' \
+        "$id" "$kind" "${tier:--}" "$secret" >> "$logs/.rows"
+      continue
+    fi
     printf '%s\t%s\t%s\n' "$kind" "$id" "$flow" >> "$runnable"
   done < "$list"
 
   # The run's second device, when it has one and there is more than one flow.
   # No device is driven while one of the run's emulators is still booting:
   # a second one gets a little longer, then is stopped.
-  second="$(find_lease "$project" "$(second_slug "$slug")")"
+  [ -n "$suite_serial" ] || second="$(find_lease "$project" "$(second_slug "$slug")")"
   if [ -n "$second" ] && ! boot_completed "$second"; then
     local waited=0
     while [ "$waited" -lt "${ADT_SECOND_BOOT_WAIT_S:-90}" ] && lease_live "$second" && ! boot_completed "$second"; do
@@ -1388,6 +1552,8 @@ ${2:-}"; shift 2 ;;
     cp "$logs/.rows" "$logs/rows.tsv"
   fi
 
+  scrub_dir "$logs"
+
   # Write run-results.md.
   local devices="Device: $serial"
   [ "$second_used" = yes ] && devices="Devices: $serial and $(find_lease "$project" "$(second_slug "$slug")")"
@@ -1434,6 +1600,74 @@ ${2:-}"; shift 2 ;;
   [ "$failed" -eq 0 ]
 }
 
+# ---------- the suite on its own (CI) ----------
+# suite replays e2e/flows/ on a device it is given, with no lease and no
+# pipeline run: in CI, or on a developer's machine before a release. It
+# writes run-results.md, its logs and junit.xml into --out, and exits 1 when
+# a flow failed.
+
+# One JUnit <testcase> per row of <rows.tsv>, for CI systems to show.
+write_junit() {
+  local rows="$1" out="$2"
+  awk -F'\t' '
+    function esc(v) { gsub(/&/, "\\&amp;", v); gsub(/</, "\\&lt;", v); gsub(/>/, "\\&gt;", v); gsub(/"/, "\\&quot;", v); return v }
+    { n++; id[n] = $1; kind[n] = $2; res[n] = $4; step[n] = ($5 == "-" ? "" : $5); secs[n] = $6
+      if ($4 == "FAIL") f++; if ($4 == "SKIPPED") sk++; t += $6 }
+    END {
+      printf "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+      printf "<testsuites>\n  <testsuite name=\"e2e-flows\" tests=\"%d\" failures=\"%d\" skipped=\"%d\" time=\"%d\">\n", n, f, sk, t
+      for (i = 1; i <= n; i++) {
+        printf "    <testcase classname=\"%s\" name=\"%s\" time=\"%d\"", esc(kind[i]), esc(id[i]), secs[i]
+        if (res[i] == "FAIL") printf ">\n      <failure message=\"%s\"/>\n    </testcase>\n", esc(step[i])
+        else if (res[i] == "SKIPPED") printf ">\n      <skipped message=\"%s\"/>\n    </testcase>\n", esc(step[i])
+        else if (res[i] == "FLAKY") printf ">\n      <system-out>FLAKY: failed once, then passed on its retry</system-out>\n    </testcase>\n"
+        else printf "/>\n"
+      }
+      printf "  </testsuite>\n</testsuites>\n"
+    }' "$rows" > "$out"
+}
+
+cmd_suite() {
+  local driver="" serial="${ANDROID_SERIAL:-}" out="" project rc online
+  local -a pass
+  pass=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --driver) driver="${2:-}"; shift 2 ;;
+      --serial) serial="${2:-}"; shift 2 ;;
+      --out) out="${2:-}"; shift 2 ;;
+      --area|--exclude) pass+=("$1" "${2:-}"); shift 2 ;;
+      [pP][0-2]) pass+=("$1"); shift ;;
+      --all) pass+=(--all); shift ;;
+      *) usage ;;
+    esac
+  done
+  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  find_adb
+  project="$(project_dir)"
+  [ -d "$project/e2e/flows" ] || die 2 "no regression suite in $project/e2e/flows."
+  if [ -z "$serial" ]; then
+    online="$(adb_devices | awk '$2 == "device" { print $1 }')"
+    case "$(printf '%s\n' "$online" | awk 'NF' | wc -l | tr -d ' ')" in
+      0) die 10 "no device is online. Start an emulator, or pass --serial." ;;
+      1) serial="$online" ;;
+      *) die 10 "more than one device is online ($(printf '%s ' $online)). Pass --serial." ;;
+    esac
+  fi
+  [ "$(adb_devices | awk -v s="$serial" '$1 == s { print $2 }')" = device ] || \
+    die 10 "device $serial is not online."
+  [ -n "$out" ] || out="$project/pipeline_artifacts/suite"
+  mkdir -p "$out"
+  out="$(cd "$out" && pwd -P)"
+  case "$out" in "$project"/pipeline_artifacts|"$project"/pipeline_artifacts/*)
+    [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore" ;;
+  esac
+  cmd_run --slug suite --driver "$driver" --suite-serial "$serial" --suite-out "$out" ${pass[@]+"${pass[@]}"}
+  rc=$?
+  [ -f "$out/run-logs/rows.tsv" ] && write_junit "$out/run-logs/rows.tsv" "$out/junit.xml"
+  return "$rc"
+}
+
 cmd_select() {
   local driver="" areas="" excludes="" project
   while [ $# -gt 0 ]; do
@@ -1450,6 +1684,195 @@ ${2:-}"; shift 2 ;;
   case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
   project="$(project_dir)"
   select_suite "$project" "$driver" "$areas" "$excludes" "" | cut -f3
+}
+
+# ---------- checks ----------
+# A check is one of the plan's Section 0 commands that the test phase runs
+# beside the flows: today, the device tests (instrumented tests, on the run's
+# device, with --device). Its output goes to
+# pipeline_artifacts/<slug>/checks/<name>.log, and its row to checks.md,
+# which the Tester reads. A failed check is the Tester's to report, so it
+# exits 1, like a failed flow.
+
+cmd_check() {
+  local slug="" name="" on_device=0 project serial dir log table rc start secs status row tmp
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slug) slug="${2:-}"; shift 2 ;;
+      --name) name="${2:-}"; shift 2 ;;
+      --device) on_device=1; shift ;;
+      --) shift; break ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$name" ] && [ $# -gt 0 ] || usage
+  case "$name" in *[!"$LOWER"0123456789-]*) die 2 "a check name is lowercase letters, digits and '-': $name" ;; esac
+  project="$(project_dir)"
+  dir="$project/pipeline_artifacts/$slug"
+  mkdir -p "$dir/checks"
+  log="$dir/checks/$name.log"
+  table="$dir/checks.md"
+  if [ "$on_device" = 1 ]; then
+    find_adb
+    serial="$(find_lease "$project" "$slug")"
+    [ -n "$serial" ] && lease_live "$serial" || \
+      die 15 "no live device is leased for slug '$slug' in $project. Run device-acquire first."
+  fi
+  start="$(now)"
+  if [ "$on_device" = 1 ]; then
+    say "adt: running check $name on $serial: $*"
+    ANDROID_SERIAL="$serial" "$@" > "$log" 2>&1 < /dev/null
+    rc=$?
+  else
+    say "adt: running check $name: $*"
+    "$@" > "$log" 2>&1 < /dev/null
+    rc=$?
+  fi
+  secs=$(( $(now) - start ))
+  if [ "$rc" -eq 0 ]; then status=PASS; else status=FAIL; fi
+  row="$(printf '| %s | %s | %s | %s | checks/%s.log | %s |' "$name" "$status" "$rc" "$secs" "$name" "$(printf '%s ' "$@" | cell)")"
+  tmp="$table.tmp.$$"
+  {
+    printf '# Checks: %s\n\n' "$slug"
+    printf 'Section 0 commands run beside the flows. A FAIL is a blocking finding for the Tester to report.\n\n'
+    printf '| Check | Result | Exit | Seconds | Log | Command |\n'
+    printf '|---|---|---|---|---|---|\n'
+    [ -f "$table" ] && grep '^| ' "$table" | grep -v '^| Check |' | awk -v n="$name" -F'|' '{ c = $2; gsub(/^ +| +$/, "", c) } c != n'
+    printf '%s\n' "$row"
+  } > "$tmp" && mv -f "$tmp" "$table"
+  say "adt: check $name: $status (exit $rc). Log: $log"
+  printf 'CHECK name=%s status=%s exit=%s log=%s\n' "$name" "$status" "$rc" "$log"
+  [ "$rc" -eq 0 ]
+}
+
+# ---------- the run ledger ----------
+# pipeline_artifacts/.ledger/<slug> holds what a build command must not
+# forget: its command, phase, paths and budgets, one "key=value" per line.
+# The orchestrator writes it at each phase and before each re-run, so a run
+# whose session died, or whose context was compacted, continues from the file
+# rather than from memory, and a spent budget is refused here. It lives
+# outside pipeline_artifacts/<slug>/, which a review round's tree guard
+# hashes.
+
+ledger_file() { printf '%s/pipeline_artifacts/.ledger/%s\n' "$1" "$2"; }
+
+ledger_get() { # <file> <key>
+  [ -f "$1" ] || return 1
+  awk -v k="$2" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2); found = 1 }
+    END { if (found) print v; exit !found }' "$1"
+}
+
+ledger_put() { # <file> <key> <value>
+  local tmp="$1.tmp.$$"
+  {
+    [ -f "$1" ] && awk -v k="$2" 'index($0, k "=") != 1' "$1"
+    printf '%s=%s\n' "$2" "$3"
+  } > "$tmp" && mv -f "$tmp" "$1"
+}
+
+cmd_state() {
+  local slug="" project file action key value max cur next nl
+  nl='
+'
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slug) slug="${2:-}"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  [ -n "$slug" ] && [ $# -gt 0 ] || usage
+  case "$slug" in .*|*[!"$UPPER$LOWER"0123456789._~-]*) die 2 "a slug is letters, digits, '.', '_', '~' and '-' only: $slug" ;; esac
+  action="$1"; shift
+  project="$(project_dir)"
+  file="$(ledger_file "$project" "$slug")"
+  case "$action" in
+    set|bump|get)
+      key="${1:-}"
+      case "$key" in ''|[!"$LOWER"]*|*[!"$LOWER"0123456789_]*) die 2 "a ledger key is lowercase letters, digits and '_': '$key'" ;; esac
+      ;;
+  esac
+  case "$action" in
+    start)
+      # A new run of this slug: a fresh ledger, so no count of an earlier run
+      # carries over. A resume never runs this.
+      [ $# -eq 1 ] || usage
+      case "$1" in ''|*[!"$LOWER"-]*) die 2 "start takes the command's name, such as build-auto: '$1'" ;; esac
+      mkdir -p "$(dirname "$file")"
+      [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
+      [ -f "$file" ] && mv -f "$file" "$file.previous"
+      printf 'command=%s\nstarted=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$file"
+      ;;
+    set)
+      [ $# -eq 2 ] || usage
+      value="$2"
+      case "$value" in *"$nl"*) die 2 "a ledger value is one line." ;; esac
+      mkdir -p "$(dirname "$file")"
+      [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
+      ledger_put "$file" "$key" "$value"
+      ;;
+    get)
+      [ $# -eq 1 ] || usage
+      ledger_get "$file" "$key" || { say "adt: the ledger for '$slug' has no $key"; return 1; }
+      ;;
+    bump)
+      [ $# -eq 3 ] && [ "$2" = --max ] || usage
+      max="$3"
+      case "$max" in ''|*[!0-9]*) die 2 "--max takes a whole number: $max" ;; esac
+      cur="$(ledger_get "$file" "$key" 2>/dev/null)"
+      case "$cur" in ''|*[!0-9]*) cur=0 ;; esac
+      next=$((cur + 1))
+      if [ "$next" -gt "$max" ]; then
+        say "adt: budget spent: $key is already $cur, the most this run allows ($max). STOP the run and report it."
+        printf '%s\n' "$cur"
+        exit 17
+      fi
+      mkdir -p "$(dirname "$file")"
+      [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
+      ledger_put "$file" "$key" "$next"
+      printf '%s\n' "$next"
+      ;;
+    show)
+      [ $# -eq 0 ] || usage
+      [ -f "$file" ] || die 2 "no ledger for '$slug' in $project: there is no run to resume."
+      cat "$file"
+      ;;
+    *) usage ;;
+  esac
+}
+
+# The verdict of a test-results.md: the first non-empty line under its
+# "## Verdict" heading, without markdown emphasis.
+tester_verdict() {
+  awk '
+    /^##[[:space:]]+Verdict[[:space:]]*$/ { inv = 1; next }
+    inv && /^#/ { exit }
+    inv && NF { gsub(/[*_`]/, ""); sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }
+  ' "$1" 2>/dev/null
+}
+
+# Succeeds when <test-results.md> gives READY TO MERGE and is not older than
+# <run-results.md>; otherwise says why, and fails. promote checks this itself,
+# so a suite never keeps the flows of a run that was not ready.
+check_ready_to_merge() {
+  local tests="$1" flows="$2" verdict
+  if [ ! -f "$tests" ]; then
+    say "adt: no $tests: the Tester has not given a verdict, so nothing is promoted."
+    return 1
+  fi
+  verdict="$(tester_verdict "$tests")"
+  case "$verdict" in
+    *"NEEDS FIXES"*|*BLOCKED*|"")
+      say "adt: the Tester's verdict is '${verdict:-missing}', not READY TO MERGE, so nothing is promoted."
+      return 1 ;;
+    "READY TO MERGE"*) ;;
+    *)
+      say "adt: the Tester's verdict is '$verdict', not READY TO MERGE, so nothing is promoted."
+      return 1 ;;
+  esac
+  if [ -n "$flows" ] && [ "$flows" -nt "$tests" ]; then
+    say "adt: the flows ran again after the Tester's verdict, so that verdict does not cover them. Nothing is promoted."
+    return 1
+  fi
 }
 
 # Keeps this run's passing flows in the suite. A flow is kept when its last
@@ -1473,6 +1896,7 @@ ${2:-}"; shift 2 ;;
   flows_dir="$project/pipeline_artifacts/$slug/flows"
   suite="$project/e2e/flows"
   [ -f "$results" ] || die 2 "no $results: run the flows before promoting them."
+  check_ready_to_merge "$project/pipeline_artifacts/$slug/test-results.md" "$results" || exit 2
 
   while IFS="$(printf '\t')" read -r id kind tier result; do
     [ "$kind" = feature ] || continue
@@ -1562,11 +1986,7 @@ preflight_devices() {
     return
   fi
   if ! find_emulator; then
-    if [ -n "$attached" ]; then
-      pf_warn "the Android emulator is not installed, so the run will test on the attached device $attached."
-    else
-      pf_fail "the Android emulator is not installed and no device is attached. Install the emulator from Android Studio's SDK Manager."
-    fi
+    pf_fail "the Android emulator is not installed. Install it from Android Studio's SDK Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
     return
   fi
   pf_ok "emulator: $EMULATOR"
@@ -1593,12 +2013,10 @@ preflight_devices() {
     pf_ok "AVD: $usable (the first one not open in normal mode)"
     preflight_parallel "$usable"
     pf_warn "ADT_AVD is not set, so runs may boot different AVDs and pay auto-mobile's first-time setup again. See HOW_IT_WORKS, 'Setting up device testing'."
-  elif [ -n "$attached" ]; then
-    pf_warn "every AVD is open in normal mode, so the run will test on $attached instead of an emulator of its own. Close one, or create another AVD."
   elif [ -z "$avds" ]; then
-    pf_fail "no AVD exists and no device is attached. Create one in Android Studio's Device Manager."
+    pf_fail "no AVD exists. Create one in Android Studio's Device Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
   else
-    pf_fail "every AVD is open in normal mode and no other device is attached. Close one, or create another AVD."
+    pf_fail "every AVD is open in normal mode, so no read-only copy can start. Close one, create another AVD, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
   fi
 }
 
@@ -1941,7 +2359,10 @@ case "$command" in
   allow)          cmd_allow "$@" ;;
   run)            cmd_run "$@" ;;
   select)         cmd_select "$@" ;;
+  suite)          cmd_suite "$@" ;;
   promote)        cmd_promote "$@" ;;
+  check)          cmd_check "$@" ;;
+  state)          cmd_state "$@" ;;
   device-release) cmd_device_release "$@" ;;
   device-list)    cmd_device_list ;;
   -h|--help|help) usage ;;
