@@ -79,7 +79,7 @@ setup() {
 teardown() {
   [ -n "$SANDBOX" ] || return 0
   # Stop any fake emulator still waiting on its device file.
-  rm -rf "$FAKE_ADT_STATE/dev"
+  rm -rf "${FAKE_ADT_STATE:?}/dev"
   sleep 0.5
   rm -rf "$SANDBOX"
   SANDBOX=""
@@ -665,6 +665,33 @@ expect_eq "unselected tiers are not replayed" "0" "$(grep -c '^| cart/empty-cart
 expect_true "the P0 time is reported" grep -q '^P0 flows: [0-9]* seconds.$' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
 ADT_P0_BUDGET_S=-1 adt "$SANDBOX/proj1" run --slug f --driver auto-mobile >/dev/null 2>&1
 expect_true "with a warning once it passes the budget" grep -q '^Warning: the P0 flows took more than -1 seconds' "$SANDBOX/proj1/pipeline_artifacts/f/run-results.md"
+
+echo "suite (CI)"
+attach emulator-5570 Pixel_A
+attach R58M999
+adt "$SANDBOX/proj2" suite --driver auto-mobile >/dev/null 2>&1
+expect_code "suite with no e2e/flows: exit 2" 2 $?
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile >/dev/null 2>&1
+expect_code "suite with several devices online and no --serial: exit 10" 10 $?
+: > "$FAKE_ADT_STATE/automobile.calls"
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile --serial R58M999 >/dev/null 2>&1
+expect_code "suite replays the P0 flows, which pass" 0 $?
+out_dir="$SANDBOX/proj1/pipeline_artifacts/suite"
+expect_true "  (on the device it was given, with no lease)" grep -q 'executePlan device=R58M999 name=launch' "$FAKE_ADT_STATE/automobile.calls"
+expect_eq "  (it takes no lease)" "" "$(lease_file R58M999 slug)"
+expect_true "  (it writes run-results.md)" grep -q '^| app/launch | regression | p0 | PASS |' "$out_dir/run-results.md"
+expect_true "  (and a JUnit report)" grep -q '<testcase classname="regression" name="app/launch"' "$out_dir/junit.xml"
+expect_eq "  (P0 only by default)" "0" "$(grep -c 'checkout/pay' "$out_dir/run-results.md")"
+ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile --serial R58M999 --all --out "$SANDBOX/suite-out" >/dev/null 2>&1
+expect_code "a failing suite flow fails the suite: exit 1" 1 $?
+expect_true "--all replays every tier" grep -q '^| checkout/pay | regression | p1 |' "$SANDBOX/suite-out/run-results.md"
+expect_true "  (into --out)" [ -f "$SANDBOX/suite-out/junit.xml" ]
+expect_true "a failing flow is a JUnit failure" grep -q '<failure message="step 2 (observe): observe waitFor timed out after 4000ms"/>' "$SANDBOX/suite-out/junit.xml"
+ANDROID_SERIAL=R58M999 ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" suite --driver auto-mobile --area cart:p1 --out "$SANDBOX/suite-out2" >/dev/null 2>&1
+expect_true "ANDROID_SERIAL picks the device, and --area works as in run" grep -q '^| cart/add-item | regression | p1 |' "$SANDBOX/suite-out2/run-results.md"
+adt "$SANDBOX/proj1" suite --driver auto-mobile --serial nope >/dev/null 2>&1
+expect_code "a --serial that is not online: exit 10" 10 $?
+rm -f "$FAKE_ADT_STATE/dev/emulator-5570" "$FAKE_ADT_STATE/dev/R58M999"
 
 echo "promote"
 tiered "$SANDBOX/proj1" f checkout/no-tier auto-mobile none

@@ -417,6 +417,27 @@ The results are in `pipeline_artifacts/manual/run-results.md`. Use
 per-project install, the script is in the plugin's directory, under
 `scripts/adt.sh`.
 
+#### Running the suite in CI
+
+The suite should guard every pull request, not only the runs of the pipeline.
+`adt.sh suite` replays `e2e/flows/` on a device it is given, with no lease, no
+slug and no model:
+
+```bash
+bash adt.sh suite --driver maestro                # P0 flows, on the one online device
+bash adt.sh suite --driver maestro --all          # every tier
+bash adt.sh suite --driver maestro --serial emulator-5554 --area checkout:p1 --out results/
+```
+
+It writes `run-results.md`, the logs and a JUnit report (`junit.xml`) into
+`--out` (default `pipeline_artifacts/suite/`), fills in test secrets from
+`.agentic-dev-team/secrets.env` as a pipeline run does, and exits 1 when a flow
+failed. [`examples/ci/android-e2e.yml`](examples/ci/android-e2e.yml) is a
+GitHub Actions workflow to copy: P0 on your minSdk and targetSdk, the whole
+suite on your targetSdk, test secrets from GitHub secrets. In CI, run the
+preflight with `ADT_DEVICE_MODE=reuse`, because the CI emulator is the attached
+device.
+
 ### Test drivers
 
 The Tester never talks to a device directly. It goes through a *test driver*,

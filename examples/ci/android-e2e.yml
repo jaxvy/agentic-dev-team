@@ -1,0 +1,88 @@
+# Replays the regression suite that the agentic-dev-team pipeline keeps in
+# e2e/flows/, on every pull request, with no model involved.
+#
+# Copy this file to .github/workflows/ in your Android project and edit the
+# lines marked EDIT. HOW_IT_WORKS.md, "Running the suite in CI", explains it.
+#
+# - P0 flows run on two API levels: your minSdk and your targetSdk.
+# - The full suite (--all) runs on your targetSdk.
+# - Test secrets come from GitHub secrets and are written to a git-ignored
+#   .agentic-dev-team/secrets.env, exactly as on a developer machine.
+
+name: e2e regression suite
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 26        # EDIT: your minSdk
+            tiers: ""            # P0 only
+          - api-level: 35        # EDIT: your targetSdk
+            tiers: "--all"       # every tier
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the pipeline scripts
+        uses: actions/checkout@v4
+        with:
+          repository: jaxvy/agentic-dev-team
+          ref: main              # EDIT: pin a release tag, such as v0.6.0
+          path: .adt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Enable KVM, so the emulator runs at full speed
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install Maestro
+        run: |
+          export MAESTRO_VERSION=2.11.0
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # For auto-mobile instead of Maestro: add oven-sh/setup-bun@v2 here, and
+      # use --driver auto-mobile below. The preflight starts its service.
+
+      - name: Write the test secrets (git-ignored, never committed)
+        env:
+          TEST_EMAIL: ${{ secrets.TEST_EMAIL }}         # EDIT: the names your
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}   # AGENTS.md declares
+        run: |
+          mkdir -p .agentic-dev-team
+          echo '/.agentic-dev-team/secrets.env' >> .git/info/exclude
+          printf 'TEST_EMAIL=%s\nTEST_PASSWORD=%s\n' "$TEST_EMAIL" "$TEST_PASSWORD" > .agentic-dev-team/secrets.env
+
+      - name: Run the suite on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          # Each line runs on its own. EDIT the install command to match
+          # Section 0 of your plans (for example :app:installFakeDebug).
+          script: |
+            ./gradlew :app:installDebug
+            ADT_DEVICE_MODE=reuse bash .adt/plugins/agentic-dev-team/scripts/adt.sh preflight --driver maestro
+            bash .adt/plugins/agentic-dev-team/scripts/adt.sh suite --driver maestro ${{ matrix.tiers }} --out pipeline_artifacts/suite
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-api${{ matrix.api-level }}
+          path: pipeline_artifacts/suite/

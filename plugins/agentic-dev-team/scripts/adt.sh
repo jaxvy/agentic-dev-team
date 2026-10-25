@@ -9,6 +9,9 @@
 #   adt.sh run            --slug <slug> --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
 #                         [--only <id>]...
+#   adt.sh suite          --driver auto-mobile|maestro [--serial <serial>]
+#                         [--area <area>:<tiers>]... [--all] [--exclude <id>]...
+#                         [--out <dir>]
 #   adt.sh select         --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
 #   adt.sh check          --slug <slug> --name <name> [--device] -- <command...>
@@ -45,7 +48,9 @@
 # Tester. promote keeps this run's passing flows in e2e/flows/, and only when
 # the Tester's test-results.md says READY TO MERGE. state is the run's
 # ledger: the phase, paths and budgets a build command records as it goes, so
-# a run can be resumed and a spent budget is refused (exit 17). device-release
+# a run can be resumed and a spent budget is refused (exit 17). suite replays
+# e2e/flows/ on a device it is given, with no lease (for CI), and writes a
+# JUnit report beside run-results.md. device-release
 # stops the run's devices when it ends. allow adds the pipeline's permission
 # rules to the project's .claude/settings.local.json (or, with --remove, takes
 # them out again).
@@ -928,12 +933,13 @@ tier_rank() {
   case "$1" in p0) echo 0 ;; p1) echo 1 ;; p2) echo 2 ;; *) echo 9 ;; esac
 }
 
-# select_suite <project> <driver> <areas> <excludes> <feature ids>
-# The last three are newline-separated lists; areas are "<area>:<tiers>".
+# select_suite <project> <driver> <areas> <excludes> <feature ids> [all]
+# Areas, excludes and feature ids are newline-separated lists; areas are
+# "<area>:<tiers>". With all=yes, every p0, p1 and p2 flow is selected.
 # Prints "<tier> TAB <id> TAB <path>" per selected flow, P0 first; reports
 # flows written for the other driver on stderr.
 select_suite() {
-  local project="$1" driver="$2" areas="$3" excludes="$4" feature_ids="$5"
+  local project="$1" driver="$2" areas="$3" excludes="$4" feature_ids="$5" all="${6:-no}"
   local suite="$project/e2e/flows" flow rel id area tier header spec tiers
   [ -d "$suite" ] || return 0
   find "$suite" -type f -name '*.yaml' | LC_ALL=C sort | while IFS= read -r flow; do
@@ -948,7 +954,9 @@ select_suite() {
       say "adt: skipped suite flow $id: written for $header"
       continue
     fi
-    if [ "$tier" != p0 ]; then
+    if [ "$all" = yes ]; then
+      case "$tier" in p0|p1|p2) ;; *) continue ;; esac
+    elif [ "$tier" != p0 ]; then
       [ -n "$area" ] || continue
       tiers=""
       for spec in $areas; do
@@ -1294,7 +1302,7 @@ EOF
     log="$logs/$kind-$(printf '%s' "$id" | tr '/' '_').attempt$attempt.log"
     run_automobile_flow "$flow" "$log" "$serial" < /dev/null
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$kind" "$flow" "$FLOW_RESULT" "${FLOW_STEP:--}" "$FLOW_SECONDS" \
-      "${log#"$project/pipeline_artifacts/$slug"/}" >> "$rows"
+      "${log#"$rel_base"/}" >> "$rows"
   done
 }
 
@@ -1314,7 +1322,7 @@ maestro_batch() {
     if crash="$(app_crash_since "$serial" "$app" "$since")"; then
       save_crash_log "$serial" "$out/maestro.log" "$since"
       printf '%s\t%s\t%s\tFAIL\t%s\t0\t%s\n' "$crash_id" "check" "-" "$crash ($app, during the Maestro run)" \
-        "${out#"$project/pipeline_artifacts/$slug"/}/maestro.log" >> "$logs/.rows"
+        "${out#"$rel_base"/}/maestro.log" >> "$logs/.rows"
     fi
   done
   while IFS="$(printf '\t')" read -r kind id flow; do
@@ -1329,7 +1337,7 @@ maestro_batch() {
     fi
     [ "$result" = PASS ] && step=""
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$kind" "$flow" "$result" "${step:--}" "${secs:-0}" \
-      "${out#"$project/pipeline_artifacts/$slug"/}/maestro.log" >> "$rows"
+      "${out#"$rel_base"/}/maestro.log" >> "$rows"
   done < "$todo"
 }
 
@@ -1404,12 +1412,16 @@ run_attempt() {
 cmd_run() {
   local slug="" driver="" project serial flows_dir results logs flow id rel only="" recheck=""
   local total=0 passed=0 failed=0 flaky=0 skipped=0 seconds=0 areas="" excludes="" started_at
-  local second="" second_ready=no second_used=no
+  local second="" second_ready=no second_used=no rel_base suite_serial="" suite_out="" all_tiers=no
   started_at="$(now)"
   while [ $# -gt 0 ]; do
     case "$1" in
       --slug) slug="${2:-}"; shift 2 ;;
       --driver) driver="${2:-}"; shift 2 ;;
+      # Set by cmd_suite only: the device, the results folder, every tier.
+      --suite-serial) suite_serial="${2:-}"; shift 2 ;;
+      --suite-out) suite_out="${2:-}"; shift 2 ;;
+      --all) all_tiers=yes; shift ;;
       --area) areas="$areas
 $(area_spec "${2:-}")"; shift 2 ;;
       # A tier on its own, as in "--area checkout:p1 p2", belongs to that area.
@@ -1425,9 +1437,13 @@ ${2:-}"; shift 2 ;;
   case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
   find_adb
   project="$(project_dir)"
-  serial="$(find_lease "$project" "$slug")"
-  [ -n "$serial" ] && lease_live "$serial" || \
-    die 15 "no live device is leased for slug '$slug' in $project. Run device-acquire first."
+  if [ -n "$suite_serial" ]; then
+    serial="$suite_serial"
+  else
+    serial="$(find_lease "$project" "$slug")"
+    [ -n "$serial" ] && lease_live "$serial" || \
+      die 15 "no live device is leased for slug '$slug' in $project. Run device-acquire first."
+  fi
 
   if [ "$driver" = auto-mobile ]; then
     set -- ${ADT_AUTOMOBILE:-bunx @kaeawc/auto-mobile@0.0.84}
@@ -1437,10 +1453,16 @@ ${2:-}"; shift 2 ;;
   command -v "$1" > /dev/null 2>&1 || die 14 "the $driver command '$1' was not found. See HOW_IT_WORKS, 'Setting up device testing'."
 
   load_secrets "$project"
-  flows_dir="$project/pipeline_artifacts/$slug/flows"
-  results="$project/pipeline_artifacts/$slug/run-results.md"
-  logs="$project/pipeline_artifacts/$slug/run-logs"
-  local list="$logs/.flows" suite_tier suite_id
+  if [ -n "$suite_out" ]; then
+    rel_base="$suite_out"
+    flows_dir="$suite_out/.no-feature-flows"
+  else
+    rel_base="$project/pipeline_artifacts/$slug"
+    flows_dir="$rel_base/flows"
+  fi
+  results="$rel_base/run-results.md"
+  logs="$rel_base/run-logs"
+  local list="$logs/.flows"
   if [ -n "$only" ]; then
     # Re-run only the named flows of this run, and update their rows in the
     # results of the last full run.
@@ -1465,8 +1487,8 @@ ${2:-}"; shift 2 ;;
         printf 'feature\t%s\t%s\n' "$flows_dir" "$flow"
       done >> "$list"
     fi
-    select_suite "$project" "$driver" "$areas" "$excludes" "$(feature_ids "$flows_dir")" | \
-      while IFS="$(printf '\t')" read -r suite_tier suite_id flow; do
+    select_suite "$project" "$driver" "$areas" "$excludes" "$(feature_ids "$flows_dir")" "$all_tiers" | \
+      while IFS="$(printf '\t')" read -r _ _ flow; do
         printf 'regression\t%s\t%s\n' "$project/e2e/flows" "$flow"
       done >> "$list"
   fi
@@ -1496,7 +1518,7 @@ ${2:-}"; shift 2 ;;
   # The run's second device, when it has one and there is more than one flow.
   # No device is driven while one of the run's emulators is still booting:
   # a second one gets a little longer, then is stopped.
-  second="$(find_lease "$project" "$(second_slug "$slug")")"
+  [ -n "$suite_serial" ] || second="$(find_lease "$project" "$(second_slug "$slug")")"
   if [ -n "$second" ] && ! boot_completed "$second"; then
     local waited=0
     while [ "$waited" -lt "${ADT_SECOND_BOOT_WAIT_S:-90}" ] && lease_live "$second" && ! boot_completed "$second"; do
@@ -1611,6 +1633,74 @@ ${2:-}"; shift 2 ;;
 
   say "adt: $total flow(s): $passed passed, $failed failed, $flaky flaky, $skipped skipped. Results: $results"
   [ "$failed" -eq 0 ]
+}
+
+# ---------- the suite on its own (CI) ----------
+# suite replays e2e/flows/ on a device it is given, with no lease and no
+# pipeline run: in CI, or on a developer's machine before a release. It
+# writes run-results.md, its logs and junit.xml into --out, and exits 1 when
+# a flow failed.
+
+# One JUnit <testcase> per row of <rows.tsv>, for CI systems to show.
+write_junit() {
+  local rows="$1" out="$2"
+  awk -F'\t' '
+    function esc(v) { gsub(/&/, "\\&amp;", v); gsub(/</, "\\&lt;", v); gsub(/>/, "\\&gt;", v); gsub(/"/, "\\&quot;", v); return v }
+    { n++; id[n] = $1; kind[n] = $2; res[n] = $4; step[n] = ($5 == "-" ? "" : $5); secs[n] = $6
+      if ($4 == "FAIL") f++; if ($4 == "SKIPPED") sk++; t += $6 }
+    END {
+      printf "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+      printf "<testsuites>\n  <testsuite name=\"e2e-flows\" tests=\"%d\" failures=\"%d\" skipped=\"%d\" time=\"%d\">\n", n, f, sk, t
+      for (i = 1; i <= n; i++) {
+        printf "    <testcase classname=\"%s\" name=\"%s\" time=\"%d\"", esc(kind[i]), esc(id[i]), secs[i]
+        if (res[i] == "FAIL") printf ">\n      <failure message=\"%s\"/>\n    </testcase>\n", esc(step[i])
+        else if (res[i] == "SKIPPED") printf ">\n      <skipped message=\"%s\"/>\n    </testcase>\n", esc(step[i])
+        else if (res[i] == "FLAKY") printf ">\n      <system-out>FLAKY: failed once, then passed on its retry</system-out>\n    </testcase>\n"
+        else printf "/>\n"
+      }
+      printf "  </testsuite>\n</testsuites>\n"
+    }' "$rows" > "$out"
+}
+
+cmd_suite() {
+  local driver="" serial="${ANDROID_SERIAL:-}" out="" project rc online
+  local -a pass
+  pass=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --driver) driver="${2:-}"; shift 2 ;;
+      --serial) serial="${2:-}"; shift 2 ;;
+      --out) out="${2:-}"; shift 2 ;;
+      --area|--exclude) pass+=("$1" "${2:-}"); shift 2 ;;
+      [pP][0-2]) pass+=("$1"); shift ;;
+      --all) pass+=(--all); shift ;;
+      *) usage ;;
+    esac
+  done
+  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  find_adb
+  project="$(project_dir)"
+  [ -d "$project/e2e/flows" ] || die 2 "no regression suite in $project/e2e/flows."
+  if [ -z "$serial" ]; then
+    online="$(adb_devices | awk '$2 == "device" { print $1 }')"
+    case "$(printf '%s\n' "$online" | awk 'NF' | wc -l | tr -d ' ')" in
+      0) die 10 "no device is online. Start an emulator, or pass --serial." ;;
+      1) serial="$online" ;;
+      *) die 10 "more than one device is online ($(printf '%s ' $online)). Pass --serial." ;;
+    esac
+  fi
+  [ "$(adb_devices | awk -v s="$serial" '$1 == s { print $2 }')" = device ] || \
+    die 10 "device $serial is not online."
+  [ -n "$out" ] || out="$project/pipeline_artifacts/suite"
+  mkdir -p "$out"
+  out="$(cd "$out" && pwd -P)"
+  case "$out" in "$project"/pipeline_artifacts|"$project"/pipeline_artifacts/*)
+    [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore" ;;
+  esac
+  cmd_run --slug suite --driver "$driver" --suite-serial "$serial" --suite-out "$out" ${pass[@]+"${pass[@]}"}
+  rc=$?
+  [ -f "$out/run-logs/rows.tsv" ] && write_junit "$out/run-logs/rows.tsv" "$out/junit.xml"
+  return "$rc"
 }
 
 cmd_select() {
@@ -2299,6 +2389,7 @@ case "$command" in
   allow)          cmd_allow "$@" ;;
   run)            cmd_run "$@" ;;
   select)         cmd_select "$@" ;;
+  suite)          cmd_suite "$@" ;;
   promote)        cmd_promote "$@" ;;
   check)          cmd_check "$@" ;;
   state)          cmd_state "$@" ;;
