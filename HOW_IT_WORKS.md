@@ -130,15 +130,10 @@ pipeline_artifacts/recently-played-carousel/
 │                           #   including the regression suite's
 ├── run-logs/               # the driver's output for each flow
 ├── checks.md, checks/      # the release check and device tests, and their logs
-├── test-results.md         # per-case results, verdict, observations
-└── run-summary.json        # the run's record: verdict, coverage, budgets used,
-                            #   flow counts, checks (adt.sh summary)
+└── test-results.md         # per-case results, verdict, observations
 pipeline_artifacts/.ledger/recently-played-carousel
                             # the run ledger: phase, paths, budgets (for resume)
 ```
-
-`run-summary.json` is for a team that tracks the pipeline over time, and for
-evaluating a new release of it ([evals/README.md](evals/README.md)).
 
 Alongside that is the actual work: uncommitted changes in your working tree.
 Review them, stage what you want, and commit on your own terms. When the run

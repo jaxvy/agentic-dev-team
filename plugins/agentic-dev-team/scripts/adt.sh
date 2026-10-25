@@ -18,7 +18,6 @@
 #   adt.sh promote        --slug <slug> [--remove <id>]...
 #   adt.sh state          --slug <slug> start <command> | set <key> <value>
 #                         | get <key> | bump <key> --max <n> | show
-#   adt.sh summary        --slug <slug>
 #   adt.sh device-release --slug <slug> | --serial <serial>
 #   adt.sh device-list
 #   adt.sh allow          [--remove] [--project <dir>]
@@ -51,8 +50,7 @@
 # ledger: the phase, paths and budgets a build command records as it goes, so
 # a run can be resumed and a spent budget is refused (exit 17). suite replays
 # e2e/flows/ on a device it is given, with no lease (for CI), and writes a
-# JUnit report beside run-results.md. summary writes run-summary.json, the
-# run's record for a team that tracks the pipeline. device-release
+# JUnit report beside run-results.md. device-release
 # stops the run's devices when it ends. allow adds the pipeline's permission
 # rules to the project's .claude/settings.local.json (or, with --remove, takes
 # them out again).
@@ -1879,93 +1877,6 @@ cmd_state() {
   esac
 }
 
-# ---------- the run summary ----------
-# summary writes pipeline_artifacts/<slug>/run-summary.json from the files a
-# run leaves: the ledger, test-results.md, run-results.md and checks.md. It
-# is the run's record for a team that tracks the pipeline (verdicts, budgets
-# used, flow counts, time), and the input of evals/report.py.
-
-json_str() {
-  printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037' | tr '\t\n\r' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')"
-}
-
-json_num() {
-  case "$1" in ''|*[!0-9]*) printf 'null' ;; *) printf '%s' "$1" ;; esac
-}
-
-cmd_summary() {
-  local slug="" project dir out ledger tests flows checks verdict cov v n u totals
-  local key value first rows name result code secs
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ -n "$slug" ] || usage
-  project="$(project_dir)"
-  dir="$project/pipeline_artifacts/$slug"
-  [ -d "$dir" ] || die 2 "no run for '$slug' in $project."
-  out="$dir/run-summary.json"
-  ledger="$(ledger_file "$project" "$slug")"
-  tests="$dir/test-results.md"
-  flows="$dir/run-results.md"
-  checks="$dir/checks.md"
-  rows="$dir/run-logs/rows.tsv"
-  verdict="$(tester_verdict "$tests")"
-  cov="$(sed -n 's/^Verified \([0-9][0-9]*\) of \([0-9][0-9]*\) plan cases; \([0-9][0-9]*\) not verified.*/\1 \2 \3/p' "$tests" 2>/dev/null | head -n 1)"
-  v="${cov%% *}"; n="$(printf '%s' "$cov" | awk '{ print $2 }')"; u="${cov##* }"
-  {
-    printf '{\n  "schema": 1,\n'
-    printf '  "slug": %s,\n' "$(json_str "$slug")"
-    printf '  "generated": %s,\n' "$(json_str "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
-    printf '  "verdict": %s,\n' "$([ -n "$verdict" ] && json_str "$verdict" || printf 'null')"
-    printf '  "coverage": {"verified": %s, "cases": %s, "not_verified": %s},\n' "$(json_num "$v")" "$(json_num "$n")" "$(json_num "$u")"
-    printf '  "ledger": {'
-    first=1
-    if [ -f "$ledger" ]; then
-      while IFS= read -r key; do
-        case "$key" in *=*) ;; *) continue ;; esac
-        value="${key#*=}"; key="${key%%=*}"
-        [ "$first" = 1 ] || printf ','
-        first=0
-        case "$value" in ''|*[!0-9]*) printf '\n    %s: %s' "$(json_str "$key")" "$(json_str "$value")" ;;
-          *) printf '\n    %s: %s' "$(json_str "$key")" "$value" ;; esac
-      done < "$ledger"
-    fi
-    [ "$first" = 1 ] && printf '},\n' || printf '\n  },\n'
-    if [ -f "$rows" ]; then
-      awk -F'\t' '
-        { t++; if ($4 == "PASS") p++; else if ($4 == "FAIL") f++; else if ($4 == "FLAKY") k++; else if ($4 == "SKIPPED") s++
-          sec += $6
-          if ($2 == "regression") { r++; if ($4 == "FAIL") rf++; if ($4 == "FLAKY") rk++ } }
-        END { printf "  \"flows\": {\"total\": %d, \"passed\": %d, \"failed\": %d, \"flaky\": %d, \"skipped\": %d, \"seconds\": %d,\n", t, p, f, k, s, sec
-              printf "            \"regression\": {\"replayed\": %d, \"failed\": %d, \"flaky\": %d}", r, rf, rk }' "$rows"
-      totals="$(sed -n 's/^Run time: \([0-9][0-9]*\) seconds.*/\1/p' "$flows" 2>/dev/null | head -n 1)"
-      printf ', "run_seconds": %s},\n' "$(json_num "$totals")"
-    else
-      printf '  "flows": null,\n'
-    fi
-    printf '  "checks": ['
-    first=1
-    if [ -f "$checks" ]; then
-      while IFS='|' read -r _ name result code secs _; do
-        name="$(printf '%s' "$name" | tr -d ' ')"
-        case "$name" in ''|Check|---) continue ;; esac
-        [ "$first" = 1 ] || printf ','
-        first=0
-        printf '\n    {"name": %s, "result": %s, "exit": %s, "seconds": %s}' "$(json_str "$name")" \
-          "$(json_str "$(printf '%s' "$result" | tr -d ' ')")" "$(json_num "$(printf '%s' "$code" | tr -d ' ')")" \
-          "$(json_num "$(printf '%s' "$secs" | tr -d ' ')")"
-      done < "$checks"
-    fi
-    [ "$first" = 1 ] && printf ']\n' || printf '\n  ]\n'
-    printf '}\n'
-  } > "$out"
-  cat "$out"
-  say "adt: run summary: $out"
-}
-
 # The verdict of a test-results.md: the first non-empty line under its
 # "## Verdict" heading, without markdown emphasis.
 tester_verdict() {
@@ -2494,7 +2405,6 @@ case "$command" in
   promote)        cmd_promote "$@" ;;
   check)          cmd_check "$@" ;;
   state)          cmd_state "$@" ;;
-  summary)        cmd_summary "$@" ;;
   device-release) cmd_device_release "$@" ;;
   device-list)    cmd_device_list ;;
   -h|--help|help) usage ;;

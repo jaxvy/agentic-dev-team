@@ -166,7 +166,7 @@ round. When you are not sure of a count, run `bash <ADT_SH> state --slug S
 show`: the ledger is the record, not your memory.
 
 **At the end.** On every exit once the slug is known, after the device
-release, record how the run ended, then write its summary:
+release, record how the run ended:
 
 - The run finished (its final summary, or the user's `approve` or `stop` at a
   gate): `bash <ADT_SH> state --slug S set phase done`.
@@ -174,10 +174,6 @@ release, record how the run ended, then write its summary:
   line>"`, and keep the phase. The user can fix the cause (a broken install, a
   device that would not boot) and resume; a STOP on a spent budget stops again
   at once on a resume, because the counter is still spent.
-
-Then `bash <ADT_SH> summary --slug S`. It writes `run-summary.json` beside the
-plan: the run's record of its verdict, coverage, budgets used, flows and
-checks. Name that file in the final summary.
 
 **Resume.** When a build command's `$ARGUMENTS` is exactly `resume <slug>`:
 

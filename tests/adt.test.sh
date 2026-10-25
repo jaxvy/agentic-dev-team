@@ -736,30 +736,6 @@ adt "$SANDBOX/proj2" promote --slug nothing >/dev/null 2>&1
 expect_code "promote with no run results is refused" 2 $?
 unset ADT_AUTOMOBILE
 
-# ---------- the run summary ----------
-
-echo "summary"
-adt "$SANDBOX/proj1" summary --slug nope >/dev/null 2>&1
-expect_code "summary of a run that does not exist: exit 2" 2 $?
-adt "$SANDBOX/proj1" state --slug f set command build-auto-reviewed >/dev/null 2>&1
-adt "$SANDBOX/proj1" state --slug f bump fix_iterations --max 2 >/dev/null 2>&1
-mkdir -p "$SANDBOX/proj1/pipeline_artifacts/f/checks"
-printf '# Checks: f\n\ntext\n\n| Check | Result | Exit | Seconds | Log | Command |\n|---|---|---|---|---|---|\n| release-check | PASS | 0 | 41 | checks/release-check.log | ./gradlew :app:assembleRelease |\n' > "$SANDBOX/proj1/pipeline_artifacts/f/checks.md"
-json="$(adt "$SANDBOX/proj1" summary --slug f 2>/dev/null)"
-expect_code "summary writes the run's record" 0 $?
-expect_true "  (as run-summary.json beside the plan)" [ -f "$SANDBOX/proj1/pipeline_artifacts/f/run-summary.json" ]
-if command -v python3 > /dev/null 2>&1; then
-  expect_eq "  (valid JSON, with the verdict, coverage, ledger, flows and checks)" \
-    "READY TO MERGE 1/1 build-auto-reviewed 1 True release-check:PASS" \
-    "$(printf '%s' "$json" | python3 -c 'import json, sys
-d = json.load(sys.stdin)
-c = d["coverage"]
-print(d["verdict"], "%s/%s" % (c["verified"], c["cases"]), d["ledger"]["command"], d["ledger"]["fix_iterations"],
-      d["flows"]["total"] > 0, " ".join("%s:%s" % (k["name"], k["result"]) for k in d["checks"]))')"
-  expect_eq "  (and evals/report.py reads it)" "1" \
-    "$(python3 "$ROOT/evals/report.py" "$SANDBOX/proj1/pipeline_artifacts/f/run-summary.json" | grep -c '^| f | READY TO MERGE |')"
-fi
-
 # ---------- checks ----------
 
 echo "check"

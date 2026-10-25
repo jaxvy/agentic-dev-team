@@ -304,8 +304,7 @@ your-android-project/
         ├── flows/                  # one flow per test case, and INDEX.md
         ├── run-results.md          # each flow's result and time
         ├── run-logs/               # the test driver's output for each flow
-        ├── test-results.md         # per-case results, verdict, observations
-        └── run-summary.json        # the run's record, for tracking and evals
+        └── test-results.md         # per-case results, verdict, observations
 ```
 
 Nothing is committed for you. Review the diff, stage what you want, and commit
