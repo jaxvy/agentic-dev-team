@@ -886,10 +886,11 @@ the same command again with `resume <slug>`:
 /build-auto-reviewed resume save-draft-on-background
 ```
 
-It continues at the start of the phase it was in, with the counters it had, also after a STOP whose cause you fixed. A
-Coder phase is told that part of its work may already be in the tree; a test
-phase installs the build again; a blocked Tester shows its question again. A
-run that had not finished its plan has nothing to resume; start it again.
+It continues at the start of the phase it was in, with the counters it had,
+also after a STOP whose cause you fixed. A Coder phase is told that part of
+its work may already be in the tree; a test phase installs the build again; a
+blocked Tester shows its question again. A run that had not finished its plan
+has nothing to resume; start it again.
 
 `adt.sh promote` reads the Tester's verdict itself: it keeps flows only when
 `test-results.md` says `READY TO MERGE` and is newer than the last flow run.
