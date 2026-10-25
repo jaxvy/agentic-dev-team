@@ -221,10 +221,8 @@ is not an error.
 
    Fix any failures that ARE within your scope before declaring done.
    If a test failure indicates a plan problem, stop and report — do not
-   silently change the plan. When a finding you were sent to fix names a
-   failed **release check**, run Section 0's release check after the build
-   gate, and fix it until it passes too. A failed **device tests** finding you
-   fix from its log; the re-test runs those tests again.
+   silently change the plan. A failed **device tests** finding you fix from
+   its log; you have no device, and the re-test runs those tests again.
 7. Run `git status` to confirm all changes are uncommitted and unstaged,
    present in the working tree for human review. Do not commit or stage.
 8. End with: ✅ CODER DONE — section(s) implemented: <list>. Files

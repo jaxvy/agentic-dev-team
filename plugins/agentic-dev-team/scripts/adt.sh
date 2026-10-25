@@ -43,9 +43,8 @@
 # emulators when it has two, and writes run-results.md. It reads Android's
 # crash log after each flow, so a crash or ANR of the app fails the flow.
 # With --only, it re-runs just the named flows of this run and updates their
-# rows. check runs one of the plan's Section 0 checks (the release check, or
-# the device tests on the run's device) and records it in checks.md for the
-# Tester. promote keeps this run's passing flows in e2e/flows/, and only when
+# rows. check runs one of the plan's Section 0 checks (today, the device
+# tests on the run's device) and records it in checks.md for the Tester. promote keeps this run's passing flows in e2e/flows/, and only when
 # the Tester's test-results.md says READY TO MERGE. state is the run's
 # ledger: the phase, paths and budgets a build command records as it goes, so
 # a run can be resumed and a spent budget is refused (exit 17). suite replays
@@ -1683,8 +1682,8 @@ ${2:-}"; shift 2 ;;
 
 # ---------- checks ----------
 # A check is one of the plan's Section 0 commands that the test phase runs
-# beside the flows: the release check (R8 on the release build) and the
-# device tests (instrumented tests, on the run's device). Its output goes to
+# beside the flows: today, the device tests (instrumented tests, on the run's
+# device, with --device). Its output goes to
 # pipeline_artifacts/<slug>/checks/<name>.log, and its row to checks.md,
 # which the Tester reads. A failed check is the Tester's to report, so it
 # exits 1, like a failed flow.

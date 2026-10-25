@@ -136,22 +136,14 @@ commands themselves.
   install succeeded — so a stale build is never tested by mistake, even when
   the Tester is invoked outside a build command.
 
-- **The release check** (optional) — builds the release variant with R8 on, so
-  a missing keep rule or a release-only compile error shows up before the
-  developer ships, not in the first release build. It is `none — <reason>`
-  when the release build is not minified. The orchestrator runs it in every
-  test, through `adt.sh check` (Part B, "The Test Phase"); a failure is a
-  blocking finding the Tester reports, and it goes to the Coder through the fix
-  loop like any other. A Coder fixing that finding runs the release check
-  itself after the build gate.
-
 - **The device tests** (optional) — the instrumented tests the plan requires
   (`src/androidTest/`, for example a Room migration test), run on the run's
   device: the module's connected test task, filtered to the plan's test
   classes. It is `none — <reason>` when the plan requires no instrumented
-  test. The orchestrator runs it in every test, before the install, because a
-  connected test run uninstalls the app when it ends; a failure is a blocking
-  finding the Tester reports. When it is not `none`, the build gate also
+  test. The orchestrator runs it in every test, through `adt.sh check` (Part
+  B, "The Test Phase"), before the install, because a connected test run
+  uninstalls the app when it ends; a failure is a blocking finding the Tester
+  reports, and it goes to the Coder through the fix loop like any other. When it is not `none`, the build gate also
   assembles the instrumented test APK (for example
   `:app:assembleDebugAndroidTest`), so those tests compile in every review.
 
@@ -175,7 +167,6 @@ Every agent resolves them in this order and uses the first that applies:
    build gate:          ./gradlew assembleDebug lint detekt testDebugUnitTest
    cross-section check: ./gradlew lint detekt testDebugUnitTest
    install command:     ./gradlew installDebug
-   release check:       none — no plan, so nothing says the release build is minified
    device tests:        none — no plan, so no instrumented test is required
    ```
 

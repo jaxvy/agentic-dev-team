@@ -129,7 +129,7 @@ pipeline_artifacts/recently-played-carousel/
 ├── run-results.md          # each flow's result and time, from the last run,
 │                           #   including the regression suite's
 ├── run-logs/               # the driver's output for each flow
-├── checks.md, checks/      # the release check and device tests, and their logs
+├── checks.md, checks/      # the device tests' result, and their log
 └── test-results.md         # per-case results, verdict, observations
 pipeline_artifacts/.ledger/recently-played-carousel
                             # the run ledger: phase, paths, budgets (for resume)
@@ -909,15 +909,15 @@ line of its implementation.
 
 ### Verification commands
 
-Five named commands are the only Gradle the pipeline runs. The last two are
-optional: the plan writes `none — <reason>` when they do not apply.
+Four named commands are the only Gradle the pipeline runs. The last one is
+optional: the plan writes `none — <reason>` when it does not apply. The
+pipeline never builds the release variant.
 
 | Name | What it is | Who runs it |
 |---|---|---|
 | Build gate | The full end-of-work check | The Coder in a sequential run, before declaring done. Also the code reviewer, as part of every review |
 | Cross-section check | The build gate minus the assemble task | The orchestrator, after every parallel coder group |
 | Install command | Puts the build on the device | The orchestrator, through `adt.sh install`, right before every test and re-test, on the run's own device only. A failure here is a stop condition. The Tester has no shell, so it refuses to test unless the orchestrator confirms the install with a `BUILD_INSTALLED` timestamp |
-| Release check | Builds the release variant with R8, when the release build is minified | The orchestrator, through `adt.sh check`, in every test. A failure is a blocking finding: a missing keep rule or a release-only compile error is found before you ship, not after |
 | Device tests | The plan's instrumented tests (`src/androidTest/`), filtered to its test classes | The orchestrator, through `adt.sh check --device`, on the run's device, before the install of every test. A failure is a blocking finding. The build gate then also assembles the instrumented test APK, so the tests compile in every review |
 
 The cross-section check still catches compile errors, because its unit-test leg
@@ -938,13 +938,12 @@ them in this order and uses the first that applies:
    build gate:          ./gradlew assembleDebug lint detekt testDebugUnitTest
    cross-section check: ./gradlew lint detekt testDebugUnitTest
    install command:     ./gradlew installDebug
-   release check:       none
    device tests:        none
    ```
 
-The checks write `pipeline_artifacts/<slug>/checks.md`, one row per check, and
-their logs to `checks/`. The Tester reads that file and reports each failed
-check with the first error from its log.
+The device tests write `pipeline_artifacts/<slug>/checks.md` and their log to
+`checks/`. The Tester reads that file and reports a failure with the first
+failing test from the log.
 
 Those defaults are a starting point, not a contract. `detekt` does not exist in a
 project that never applied the plugin, and a multi-module project may need

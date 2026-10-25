@@ -187,10 +187,9 @@ Phase 3 — Tester:
   Run the test phase exactly as ORCHESTRATION_DOC, "The Test Phase",
   defines it:
     1. lease this run's device with `adt.sh device-acquire` (DEVICE);
-    2. run the plan's Section 0 checks with `adt.sh check` (the release check,
-       then the device tests; a failed check continues, for the Tester), then
-       install the build with `adt.sh install` (BUILD_INSTALLED; release and
-       STOP if it fails);
+    2. run the plan's device tests with `adt.sh check`, when Section 0 has
+       them (a failure continues, for the Tester), then install the build with
+       `adt.sh install` (BUILD_INSTALLED; release and STOP if it fails);
     3. delegate to the `adt-android-test-writer` subagent, which writes one
        flow per test case from the plan and the code, without a device (you
        may run step 2 while it writes), and wait for ✅ TEST WRITER DONE;
@@ -203,7 +202,7 @@ Phase 3 — Tester:
     6. delegate to the `adt-android-tester` subagent.
   Pass the Tester: PLAN_PATH, PIPELINE_DOC, DRIVER_DOC, `DEVICE: <serial>`,
   `BUILD_INSTALLED: <timestamp>`, `RUN_RESULTS: <path>`, and `CHECKS: <path>`
-  when a check ran. On a first run you
+  when the device tests ran. On a first run you
   have no credentials to pass — the Tester asks for one only if it hits a
   gate, at Phase 3B below.
   Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on one or

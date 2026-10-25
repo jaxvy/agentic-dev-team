@@ -249,8 +249,8 @@ must not touch):
   boilerplate (per the tiered policy in Operating Principle 1).
 - Section 0 records the project's real, verified build gate, cross-section
   check, and install command — each one confirmed to exist in this project, not
-  copied from the pipeline doc's defaults on faith — plus the release check and
-  the device tests (each a command or `none — <reason>`).
+  copied from the pipeline doc's defaults on faith — plus the device tests (a
+  command or `none — <reason>`).
 - The Parallelization Decision is made (YES/NO) with rationale, and Execution
   Groups list files, complexity, public interfaces, and required tests per
   section.
@@ -416,16 +416,12 @@ Coder can re-invoke the same ones.
      `./gradlew tasks --all` you read once. A resolved command naming a
      non-existent task is a plan defect that fails every downstream phase, and
      the failure will look like broken code rather than a bad plan.
-   - **Record the release check.** When the application module's release
-     build type sets `isMinifyEnabled = true`, record the task that runs R8 on
-     it: its assemble task (`:app:assembleRelease`, or the real variant's, such
-     as `:app:assembleProdRelease`), or, when that task needs a signing key
-     this machine does not have, the R8 task alone
-     (`:app:minifyReleaseWithR8`). Otherwise write
-     `none — release build is not minified`. A feature that adds a class read
-     by reflection (a serialized model, a Retrofit interface, a class named in
-     XML) also adds the keep rules it needs to Section 2.3, in the module's
-     `proguard-rules.pro`, unless the library ships its own.
+   - **Keep rules.** When the application module's release build type sets
+     `isMinifyEnabled = true`, a feature that adds a class read by reflection
+     (a serialized model, a Retrofit interface, a class named in XML) also
+     adds the keep rules it needs to Section 2.3, in the module's
+     `proguard-rules.pro`, unless the library ships its own. The pipeline
+     never builds the release variant, so the plan is where this is caught.
    - **Record the device tests.** When any section's **Tests required** has an
      `(instrumented)` case, record the connected test task of its module,
      filtered to those test classes:
@@ -567,7 +563,6 @@ Coder can re-invoke the same ones.
    build gate:          ./gradlew :app:assembleDebug :app:lintDebug detekt :app:testDebugUnitTest
    cross-section check: ./gradlew :app:lintDebug detekt :app:testDebugUnitTest
    install command:     ./gradlew :app:installDebug
-   release check:       ./gradlew :app:assembleRelease
    device tests:        none — no instrumented test in this plan
    ```
 

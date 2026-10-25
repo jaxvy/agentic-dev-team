@@ -44,8 +44,7 @@ against the actual codebase. Judge it on:
    rather than a bad plan. Section 0 restating the pipeline doc's defaults
    verbatim, with no Source line and no evidence of discovery, is itself worth
    a flag.
-   The release check is a real R8 task when the release build is minified,
-   and `none` only when it is not. The device tests are a filtered connected
+   The device tests are a filtered connected
    test task when any case is `(instrumented)`, with the instrumented test
    APK's assemble task in the build gate, and `none` otherwise.
 4. **Correctness & fit.** The design matches existing patterns (MVI/DI/module

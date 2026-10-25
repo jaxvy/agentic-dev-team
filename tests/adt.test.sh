@@ -716,14 +716,14 @@ mkdir -p "$SANDBOX/bin"
 printf '#!/bin/bash\necho "serial=${ANDROID_SERIAL:-none} args=$*"\nexit ${FAKE_CHECK_EXIT:-0}\n' > "$SANDBOX/bin/fake-gradle"
 chmod +x "$SANDBOX/bin/fake-gradle"
 table="$SANDBOX/proj1/pipeline_artifacts/a/checks.md"
-out="$(adt "$SANDBOX/proj1" check --slug a --name release-check -- "$SANDBOX/bin/fake-gradle" :app:assembleRelease 2>/dev/null)"
+out="$(adt "$SANDBOX/proj1" check --slug a --name lint-extra -- "$SANDBOX/bin/fake-gradle" :app:lintDebug 2>/dev/null)"
 expect_code "a check that passes: exit 0" 0 $?
-expect_true "  (it prints one result line)" grep -q '^CHECK name=release-check status=PASS exit=0 log=' <<EOF
+expect_true "  (it prints one result line)" grep -q '^CHECK name=lint-extra status=PASS exit=0 log=' <<EOF
 $out
 EOF
-expect_true "  (its output is in its log)" grep -q 'args=:app:assembleRelease' "$SANDBOX/proj1/pipeline_artifacts/a/checks/release-check.log"
-expect_true "  (without a device unless asked)" grep -q 'serial=none' "$SANDBOX/proj1/pipeline_artifacts/a/checks/release-check.log"
-expect_true "  (and checks.md has its row)" grep -q '^| release-check | PASS | 0 | [0-9]* | checks/release-check.log | ' "$table"
+expect_true "  (its output is in its log)" grep -q 'args=:app:lintDebug' "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log"
+expect_true "  (without a device unless asked)" grep -q 'serial=none' "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log"
+expect_true "  (and checks.md has its row)" grep -q '^| lint-extra | PASS | 0 | [0-9]* | checks/lint-extra.log | ' "$table"
 adt "$SANDBOX/proj1" check --slug a --name device-tests --device -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
 expect_code "a device check with no leased device: exit 15" 15 $?
 serial="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
@@ -731,12 +731,12 @@ FAKE_CHECK_EXIT=3 adt "$SANDBOX/proj1" check --slug a --name device-tests --devi
 expect_code "a check that fails: exit 1" 1 $?
 expect_true "  (a device check runs on the leased device only)" grep -q "serial=$serial" "$SANDBOX/proj1/pipeline_artifacts/a/checks/device-tests.log"
 expect_true "  (its row says FAIL, with the exit code)" grep -q '^| device-tests | FAIL | 3 |' "$table"
-expect_true "  (the other check's row is kept)" grep -q '^| release-check | PASS |' "$table"
-FAKE_CHECK_EXIT=1 adt "$SANDBOX/proj1" check --slug a --name release-check -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
-expect_eq "running a check again replaces its row" "1" "$(grep -c '^| release-check |' "$table")"
-expect_true "  (with the new result)" grep -q '^| release-check | FAIL | 1 |' "$table"
+expect_true "  (the other check's row is kept)" grep -q '^| lint-extra | PASS |' "$table"
+FAKE_CHECK_EXIT=1 adt "$SANDBOX/proj1" check --slug a --name lint-extra -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
+expect_eq "running a check again replaces its row" "1" "$(grep -c '^| lint-extra |' "$table")"
+expect_true "  (with the new result)" grep -q '^| lint-extra | FAIL | 1 |' "$table"
 ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
-expect_true "a flow run does not delete the check logs" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/checks/release-check.log" ]
+expect_true "a flow run does not delete the check logs" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log" ]
 adt "$SANDBOX/proj1" check --slug a --name "Bad Name" -- true >/dev/null 2>&1
 expect_code "a check name with spaces is refused" 2 $?
 adt "$SANDBOX/proj1" check --slug a --name x >/dev/null 2>&1

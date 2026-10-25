@@ -356,8 +356,8 @@ script or the driver's tools. An agent never adds permission rules itself;
 only a person runs `install.sh` or `adt.sh allow`.
 
 **Long-running calls.** `device-acquire`, `check`, `install` and `run` can
-each take several minutes — a cold boot, a release build, a Gradle install, a
-long suite — and so can
+each take several minutes — a cold boot, instrumented tests, a Gradle install,
+a long suite — and so can
 `device-release` while an early boot is still in progress, since it waits for
 that boot to finish. Give them a long timeout (in Claude Code, the Bash tool's
 maximum, ten minutes), or run them in the background and wait for them to
@@ -383,15 +383,13 @@ Each test:
    re-run of a command that died picks its emulator back up. If it fails,
    release the device (an early boot may hold one), then STOP and report its
    message.
-2. **Checks, then install — every test.** First the plan's checks, one call
-   for each of these Section 0 lines that is not `none`:
-   `bash <adt.sh> check --slug S --name release-check -- <the release check>`
-   and
+2. **Device tests, then install — every test.** When the plan's Section 0
+   `device tests` line is not `none`, first run it on the run's device:
    `bash <adt.sh> check --slug S --name device-tests --device -- <the device tests>`
    (a command with `&&`, `;`, a pipe or a leading `cd` goes whole into
    `bash -c '…'`, as for the install below). The device tests run before the
    install, because a connected test run uninstalls the app when it ends.
-   Exit 0, and exit 1 (the check failed), both continue: a failed check is the
+   Exit 0, and exit 1 (the tests failed), both continue: a failure is the
    Tester's to report, from `pipeline_artifacts/S/checks.md`. Any other exit:
    release the device, then STOP and report its message. Then the install:
    `bash <adt.sh> install --slug S -- <the install command from the plan's Section 0>`.
@@ -449,7 +447,7 @@ Each test:
 6. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
    DRIVER_DOC, `DEVICE: <serial>`, `BUILD_INSTALLED: <timestamp>`,
    `RUN_RESULTS: pipeline_artifacts/S/run-results.md`,
-   `CHECKS: pipeline_artifacts/S/checks.md` when step 2 ran a check, and
+   `CHECKS: pipeline_artifacts/S/checks.md` when step 2 ran the device tests, and
    whatever the command adds for a re-test. Wait for **either** `✅ TESTER DONE` **or**
    `⛔ TESTER BLOCKED` — both end its turn. On `⛔ TESTER BLOCKED`, take "The
    Blocked Path" below instead of the fix loop.
@@ -485,8 +483,8 @@ went. Take the flow run's time from the "Run time" line of `run-results.md`,
 not from when the command returned to you; a step 5 re-run writes its own. It repeats the preflight's warnings, and the Tester's Coverage: how many
 cases were verified by a flow, by hand, or not at all, with each unverified
 case and why — so `READY TO MERGE` always says how sure it is. It also gives the last run's regression counts (replayed, failed, flaky),
-any P0 warning from `run-results.md`, each check's result from `checks.md`
-(or that Section 0 has none), and the suite flows promote added, replaced and
+any P0 warning from `run-results.md`, the device tests' result from
+`checks.md` (or that Section 0 has none), and the suite flows promote added, replaced and
 removed — reminding the user to commit `e2e/flows/` with the feature.
 
 **Running the Tester outside a build command.** Lease and install with the
@@ -593,7 +591,7 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Before the run**: resolve the test driver and the script, run the preflight, and check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot.
-   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, run the plan's Section 0 checks and install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, send any of this run's flows that failed back to the Test Writer to fix and re-run those with `adt.sh run --only`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, `CHECKS` when a check ran, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
+   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, run the plan's device tests and install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, send any of this run's flows that failed back to the Test Writer to fix and re-run those with `adt.sh run --only`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, `CHECKS` when a check ran, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
    - **Tester Blocked**: on `⛔ TESTER BLOCKED`, take "The Blocked Path" above instead of the fix loop, and do not advance.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
