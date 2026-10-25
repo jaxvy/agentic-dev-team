@@ -247,8 +247,8 @@ it; where you do not, the marker carries the reason inline instead of a path.
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, how the named verification commands are
   resolved, the blocking/observation rule, flows, the blocked verdict, test
-  credentials, and the verdict markers. Part B is orchestrator-facing — skip
-  it. If neither path
+  credentials, and the verdict markers. Part B (orchestration) is in another file;
+  do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 

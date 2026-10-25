@@ -5,7 +5,7 @@
 #   --init-config <project-root>   create .agentic-dev-team/config.yaml (all commands, install.sh)
 #   every other mode               external runs of /build-auto-reviewed (RUNS on)
 #
-# Reference: AGENTIC_DEV_TEAM_PIPELINE.md Part B, "Agent Configuration" and
+# Reference: AGENTIC_DEV_TEAM_CONFIG.md, "Agent Configuration" and
 # "Configured Runs (/build-auto-reviewed only)".
 #
 # Usage:

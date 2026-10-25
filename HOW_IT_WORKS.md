@@ -981,7 +981,7 @@ and sets two switches:
 | Switch | On when | Effect |
 |---|---|---|
 | `MODELS` | A model is set for a role the command starts | Claude Code passes that model when it starts the agent |
-| `RUNS` | `/build-auto-reviewed` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as the pipeline doc's "Configured Runs" section says |
+| `RUNS` | `/build-auto-reviewed` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as `AGENTIC_DEV_TEAM_CONFIG.md`, "Configured Runs", says |
 
 With both switches off, a command runs exactly as it would without the file.
 
@@ -1134,7 +1134,7 @@ Each Android project that wants the pipeline links this repo's files into its ow
    identical persona. No `agents.md` inlining is needed, because the per-file
    definitions are the discovery mechanism.
 5. **One source of truth across all three.** Every tool ends up reading the same
-   agent prompts and the same `AGENTIC_DEV_TEAM_PIPELINE.md`. Edit those in the
+   agent prompts and the same pipeline docs (`AGENTIC_DEV_TEAM_*.md`). Edit those in the
    clone and every consuming project picks the change up on the next file read,
    with no re-install required for in-place edits.
 6. **A managed `.gitignore` block.** Symlink targets are per-developer absolute
@@ -1162,6 +1162,8 @@ path inside your project.
 | `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
 | `.claude/agents/adt-android-review-judge.md` | `<clone>/.claude/agents/adt-android-review-judge.md` |
 | `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
+| `.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` |
+| `.claude/AGENTIC_DEV_TEAM_CONFIG.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_CONFIG.md` |
 | `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
 | `.claude/adt/scripts/adt-run-agent.sh` | `<clone>/.claude/adt/scripts/adt-run-agent.sh` |
 | `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
@@ -1185,12 +1187,14 @@ path inside your project.
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 | `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` |
 
-The canonical `AGENTIC_DEV_TEAM_PIPELINE.md`, `scripts/adt.sh` and `drivers/`
-live in `plugins/agentic-dev-team/` so the Claude Code plugin can package them;
-the clone's `.claude/adt/scripts` and `.claude/adt/drivers` are symlinks to
-those directories. The clone's
-`.claude/AGENTIC_DEV_TEAM_PIPELINE.md` is a symlink to it, which leaves the
-project-side path above unchanged, so installed projects need no re-install.
+The canonical pipeline docs (`AGENTIC_DEV_TEAM_PIPELINE.md`,
+`AGENTIC_DEV_TEAM_ORCHESTRATION.md` and `AGENTIC_DEV_TEAM_CONFIG.md`),
+`scripts/` and `drivers/` live in `plugins/agentic-dev-team/` so the Claude
+Code plugin can package them; the clone's `.claude/adt/scripts` and
+`.claude/adt/drivers` are symlinks to those directories, and the clone's
+`.claude/AGENTIC_DEV_TEAM_*.md` are symlinks to the docs. A project installed
+before a doc was added gets its link at the next `install.sh` run; until then,
+the commands stop and say so.
 
 Three further changes happen outside symlinks: two marker-fenced managed
 blocks, and three permission rules.
@@ -1248,11 +1252,13 @@ prompt, then create `.agents/workflows/<name>.md` and
 the command, which orchestrates the two reviewers between the existing phases.
 
 **Changing shared orchestration rules.** Edit the canonical
-`plugins/agentic-dev-team/AGENTIC_DEV_TEAM_PIPELINE.md`. Agent prompts reference
-it by path and the project copy is a symlink, so edits propagate the next time an
-agent reads the file, with no install needed. Agent-facing rules go in Part A and
-orchestrator-only rules in Part B, since agents are told to read Part A and stop
-there.
+pipeline docs in `plugins/agentic-dev-team/`. Agent prompts and commands
+reference them by path and the project copies are symlinks, so edits propagate
+the next time an agent reads the file, with no install needed. Agent-facing
+rules go in `AGENTIC_DEV_TEAM_PIPELINE.md` (Part A), which every agent reads.
+Orchestrator-only rules go in `AGENTIC_DEV_TEAM_ORCHESTRATION.md` (Part B), and
+the config file's rules in `AGENTIC_DEV_TEAM_CONFIG.md`. Agents never read
+those two, so a rule there costs agents nothing.
 
 **Removing or renaming files.** Just do it in the repo. The sync logic in
 `install.sh` removes stale symlinks from consuming projects on the next run.
@@ -1269,7 +1275,8 @@ instructions. What they need from you is what makes your codebase specific.
 **install.sh refused with "real file at X".** You have your own file at one of our
 install paths. Rename or delete one side, then re-run.
 
-**I pulled the repo but new commands are not showing up.** Run `install.sh` in the
+**I pulled the repo but new commands are not showing up**, or a command stops
+and says the installed files are older than the command. Run `install.sh` in the
 project again. `git pull` refreshes files that are already symlinked, but it
 cannot materialize symlinks for newly added ones.
 

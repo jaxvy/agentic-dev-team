@@ -129,7 +129,7 @@ Fixing:
 - The consuming project's `AGENTS.md` (or `CLAUDE.md`), for its conventions.
 - **Part A (Agent Protocol)** of the pipeline doc — at the PIPELINE_DOC path
   the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` if none
-  was given — for the artifact layout. Part B is orchestrator-facing; skip it.
+  was given — for the artifact layout. Part B (orchestration) is in another file; do not read it.
 
 ## Writing
 

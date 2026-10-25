@@ -73,7 +73,7 @@ recommendation you make is grounded in Android platform conventions:
   path the orchestrator gave you, or `.claude/AGENTIC_DEV_TEAM_PIPELINE.md`
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, the build gate, and the verdict
-  markers. Part B is orchestrator-facing — skip it. If neither path
+  markers. Part B (orchestration) is in another file; do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 

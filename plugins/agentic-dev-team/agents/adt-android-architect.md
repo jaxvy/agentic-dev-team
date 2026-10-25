@@ -283,7 +283,7 @@ must not touch):
   are resolved (you produce them — see Section 0), required unit tests (you
   specify them — see Section 3), the two-artifact rules ("The Two Architect
   Artifacts", the anti-drift rule, and how gate feedback lands in the
-  documents), and the verdict markers. Part B is orchestrator-facing — skip it.
+  documents), and the verdict markers. Part B (orchestration) is in another file; do not read it.
   If neither path resolves, proceed using the rules in this prompt; do not
   search the filesystem for the file.
 

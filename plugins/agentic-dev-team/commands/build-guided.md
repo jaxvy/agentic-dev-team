@@ -11,111 +11,20 @@ allowed-tools:
 You will run the full Android pipeline with human approval gates for:
 $ARGUMENTS
 
-Before executing, read `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` for the shared
-orchestration rules (handoff protocol, subagent mappings, approval gates,
-build/lint gates) and read the consuming project's `AGENTS.md` (or `CLAUDE.md`)
-for local
-conventions (architecture, libraries, verification requirements). Both files
-are the source of truth — do not duplicate their content here.
+Before executing, find and read two files in full. PIPELINE_DOC is
+`AGENTIC_DEV_TEAM_PIPELINE.md` (Part A: the rules every agent obeys).
+ORCHESTRATION_DOC is `AGENTIC_DEV_TEAM_ORCHESTRATION.md` (Part B: your rules
+as the orchestrator). Find each one at `.claude/<file>` in the project, or else
+at `${CLAUDE_PLUGIN_ROOT}/<file>` (a plugin-only install). If ORCHESTRATION_DOC
+is in neither place, STOP: the installed files are older than this command, so
+tell the user to re-run `install.sh` (or update the plugin). Also read the
+consuming project's `AGENTS.md` (or `CLAUDE.md`) for local conventions
+(architecture, libraries, verification requirements). These files are the
+source of truth; do not duplicate their content here.
 
-If `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` does not exist in the project
-(plugin-only install), read `${CLAUDE_PLUGIN_ROOT}/AGENTIC_DEV_TEAM_PIPELINE.md`
-instead. Store the path that worked as PIPELINE_DOC and pass it to every
-subagent you spawn, alongside the artifact paths you already pass.
-
-Resolve the test driver now, before any agent runs. Read the `Test driver:`
-line in the project's `AGENTS.md` (or `CLAUDE.md`): `auto-mobile` or
-`maestro`, and `auto-mobile` when there is no such line. Any other value is a
-STOP — report it and name the two valid values. Then find the driver's adapter
-the way PIPELINE_DOC was found — `.claude/adt/drivers/<driver>.md` if it exists,
-otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md` — and store that path as
-DRIVER_DOC. The test phase passes it on (pipeline doc Part A, "The Test
-Driver").
-
-Then resolve the device script the same way and store it as ADT_SH: the
-relative path `.claude/adt/scripts/adt.sh`, written exactly like that, if it
-exists, otherwise `${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh`. Run it only as one
-plain command, `bash <ADT_SH> …`, from the project root: no `cd`, no `&&`, no
-variables in front, and no absolute form of the relative path — that is what
-the pre-approved permission rule matches, so the run is not stopped to ask.
-
-Preflight — still before any agent runs (pipeline doc Part B, "Before the
-Run"):
-  1. Run `bash <ADT_SH> preflight --driver <driver>`. It checks the Android
-     SDK, the AVDs, and the driver's command line and background service. On
-     exit 16, STOP and report its FAIL lines; each says how to fix it. Keep its
-     warn lines for the final summary.
-  2. Check your own tool list for the driver's MCP tools (`mcp__auto-mobile__…`
-     or `mcp__maestro__…`). None at all: STOP — the driver's MCP server is not
-     registered (HOW_IT_WORKS, "Setting up device testing"). For auto-mobile, if
-     `mcp__auto-mobile__rotate`, `mcp__auto-mobile__setDeviceState` or
-     `mcp__auto-mobile__executePlan` is missing, its hidden tools are not
-     switched on: say so now and in the final summary, because rotation,
-     offline and permission cases will come back INCONCLUSIVE and the Test
-     Writer cannot check its flows.
-
-Agent configuration: set PROJECT_ROOT to the absolute path of the
-directory this command started in (your working directory at the start;
-your tool shows it, no shell command is needed). All paths below are
-relative to PROJECT_ROOT, whatever the shell's current directory is later.
-If PROJECT_ROOT/.claude/adt/scripts/adt-run-agent.sh exists, set ADT_ROOT
-to PROJECT_ROOT/.claude and ADT_RUN to that script path; otherwise, if
-`${CLAUDE_PLUGIN_ROOT}/scripts/adt-run-agent.sh` exists, set ADT_ROOT to
-`${CLAUDE_PLUGIN_ROOT}` and ADT_RUN to that script path; otherwise leave
-both empty. For every "exists" check in this
-paragraph, read that exact path with your file-read tool, only its first
-line (for example a line limit of 1). Never use a file-search tool:
-search tools skip git-ignored files, and both the script link in an
-`install.sh` project and the config file are git-ignored. Never use a
-shell command for these checks.
-Then read PROJECT_ROOT/.agentic-dev-team/config.yaml the same way. There
-are exactly three outcomes:
-(a) The read succeeds (an empty file counts as success): the file exists.
-    Skip the init step.
-(b) The read reports that the file does not exist, in any wording (for
-    example "File does not exist.", "file not found", "no such file"):
-    treat the file as missing. If ADT_ROOT is set, run
-    `bash "ADT_RUN" --init-config "PROJECT_ROOT"`
-    (with the real paths in place of the names, each in double quotes);
-    if ADT_ROOT is empty, skip it. (A broken link is also reported as "not
-    found"; the script then prints `ADT_INIT status=unreadable`, see
-    below.)
-(c) The read fails for a reason other than "the file does not exist"
-    (the path is a directory, or no permission):
-    a config error. Do not run the init step. STOP the command before the
-    first agent and say: "agentic-dev-team:
-    .agentic-dev-team/config.yaml exists but cannot be read; fix or
-    delete it."
-The init step creates the optional, git-ignored config once. After it:
-- `ADT_INIT status=created` or `status=exists`: continue.
-- `ADT_INIT status=unreadable`: a config error; STOP the command before
-  the first agent and show the script's message.
-- The permission was declined, the tool reported an error, or
-  `ADT_INIT status=failed`: print this line once and continue. (When the
-  init step was skipped, print nothing.)
-"The optional config file .agentic-dev-team/config.yaml was not created. To
-stop this question, allow the command, or create two files yourself:
-.agentic-dev-team/.gitignore with the single line *, and
-.agentic-dev-team/config.yaml copied from <TEMPLATE>."
-where <TEMPLATE> is only the one that applies: in a plugin install
-(ADT_ROOT is not PROJECT_ROOT/.claude), the real path of
-ADT_ROOT/config.example.yaml; in an install.sh install (ADT_ROOT is
-PROJECT_ROOT/.claude), the text "plugins/agentic-dev-team/config.example.yaml
-in your agentic-dev-team clone".
-Then follow PIPELINE_DOC Part B, "Agent Configuration": read and validate
-that file, and set MODELS. If PIPELINE_DOC has no "Agent Configuration"
-section (an older install) and ADT_ROOT is set, read that section, and
-"Configured Runs", from ADT_ROOT/AGENTIC_DEV_TEAM_PIPELINE.md instead, so
-the rules and the scripts are the same version. If neither file has the
-section, do not use the config file at all, and, only when the file has
-an active setting, print one line: "agentic-dev-team: the installed
-pipeline doc is older than the config file support, so
-.agentic-dev-team/config.yaml was not used." When the config file has no
-active setting, none of this changes anything. When MODELS is on, follow Part B, "Agent
-Configuration", every time you start an `adt-*` subagent in this command:
-it says which model to pass, and when to pass none (it can turn model
-passing off). When MODELS is off, ignore every rule that names MODELS: the
-run is exactly as it would be without this paragraph.
+Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
+driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
+file (MODELS). Do all of them before any agent runs.
 
 This is the /build-guided flow — starts with the PM to refine the idea.
 After each phase, pause and ask the user to type one of:
@@ -236,7 +145,7 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     "Approve the implementation to proceed to Tester, or revise?"
 
 Phase 4 — Tester (after approval):
-  Run the test phase exactly as the pipeline doc's Part B, "The Test Phase",
+  Run the test phase exactly as ORCHESTRATION_DOC, "The Test Phase",
   defines it:
     1. lease this run's device with `adt.sh device-acquire` (DEVICE);
     2. install the build on it with `adt.sh install` (BUILD_INSTALLED;
@@ -284,7 +193,7 @@ Phase 4 — Tester (after approval):
     the user explicitly asked for in their `revise:` feedback is fair game —
     that is the user creating a requirement, which is allowed; the Tester
     doing it on its own is not. Wait for ✅ CODER DONE.
-    Re-run the test phase (Part B, "The Test Phase") on the same device —
+    Re-run the test phase (ORCHESTRATION_DOC, "The Test Phase") on the same device —
     install included, so the re-test sees the fixed build. The Test Writer runs
     again only if the previous `test-results.md` lists Flow Defects (pass
     those flows and the Tester's notes as FIX), and `adt.sh run` re-runs every
@@ -302,7 +211,7 @@ Phase 4 — Tester (after approval):
 Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   A gate stopped the Tester before it could finish — one it had no credential
   for, or a device that would not accept input. Follow "The Blocked Path" in
-  the pipeline doc's Part B: it defines the whole procedure — what to show the
+  ORCHESTRATION_DOC: it defines the whole procedure — what to show the
   user, why no Coder is spawned, the `resume` / `stop` vocabulary, how a
   supplied credential reaches the Tester, and the 2-resume budget.
 
@@ -326,15 +235,15 @@ Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes):
   untested until a Tester run executes the cases.
 
 Keep the passing flows — when the user answers `approve` at Phase 4 and the
-last verdict was READY TO MERGE: run the promote step of the pipeline doc's
-Part B, "The Test Phase" (`adt.sh promote`, with one `--remove` per Flows
+last verdict was READY TO MERGE: run the promote step of ORCHESTRATION_DOC,
+"The Test Phase" (`adt.sh promote`, with one `--remove` per Flows
 Retired row and per "Suite Flows to Remove" entry in the last test-results.md),
 before releasing the device. Never on `stop`, after NEEDS FIXES, or on a STOP.
 
 Release the device — whenever the run ends from Phase 3 on, since the early
 boot may already have leased one: on `approve` at Phase 4, on `stop` at any
 gate, and on a STOP of your own. Run the
-release step of the pipeline doc's Part B, "The Test Phase", before anything
+release step of ORCHESTRATION_DOC, "The Test Phase", before anything
 else in Phase 5. It is separate from Phase 5, which is skipped when there is no
 design doc.
 
@@ -354,6 +263,6 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
 
 Whenever the run ends, include the test driver, the device the run tested on,
 any preflight warnings, and for each test phase how long the Test Writer, the flow run and the Tester
-took (Part B, "The Test Phase") in what you report — plus the regression
+took (ORCHESTRATION_DOC, "The Test Phase") in what you report — plus the regression
 counts, any P0 warning, and the suite flows promote added, replaced and
 removed, with a reminder to commit `e2e/flows/` alongside the feature.

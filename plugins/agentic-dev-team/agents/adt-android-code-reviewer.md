@@ -93,7 +93,7 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    covers when judging API usage.
 
 **Blocks from a configured run.** In a configured `/build-auto-reviewed`
-run (Part B, "Configured Runs"), your prompt can contain two extra blocks:
+run (the orchestrator's "Configured Runs" rules), your prompt can contain two extra blocks:
 
 - `BUILD GATE OUTPUT`: the orchestrator already ran the build gate. Use
   that output for item 6. If it failed, the orchestrator already reports
@@ -173,7 +173,7 @@ the gate, approve it — needless re-runs waste tokens and time.
   if none was given. It is the source of truth for the artifact layout,
   read-before-write, the no-commit rule, the changed-file manifest, how the
   named verification commands are resolved, required unit tests, review
-  currency, review-driven fixes, and the verdict markers. Part B is orchestrator-facing — skip it. If neither path
+  currency, review-driven fixes, and the verdict markers. Part B (orchestration) is in another file; do not read it. If neither path
   resolves, proceed using the rules in this prompt; do not search the
   filesystem for the file.
 
