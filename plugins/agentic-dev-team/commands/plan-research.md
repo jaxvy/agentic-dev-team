@@ -39,6 +39,8 @@ PM Phase:
 When complete, show the user a summary of FEATURE_DIR/feature.md and STOP.
 Tell the user the `feature.md` path and that they can feed it to:
 - `/plan-design <FEATURE_DIR/feature.md>` to produce an implementation plan, or
-- `/build-auto` / `/build-guided` to run the rest of the pipeline.
+- `/build-guided <FEATURE_DIR/feature.md>`, `/build-auto <FEATURE_DIR/feature.md>`
+  or `/build-auto-reviewed <FEATURE_DIR/feature.md>` to run the rest of the
+  pipeline from this spec, with no second interview.
 
 Do not proceed to any other phase — this command ends at the feature spec.

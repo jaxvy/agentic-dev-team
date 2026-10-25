@@ -50,6 +50,21 @@ when it needs it, at the Phase 3B gate, and the user's reply carries the value.
 See the pipeline doc's Part A, "Test Credentials". Whatever they supply there
 goes to the `adt-android-tester` subagent and nowhere else.
 
+Input — before Phase 1, look at the feature request (`$ARGUMENTS` with the
+`doc:` token removed). It may be a file another command wrote:
+  - **An existing `implementation-plan.md`** (from `/plan-design`, say): set
+    PLAN_PATH to it, and DOC_PATH to the `design-doc.md` beside it when one
+    exists (DESIGN_DOC on), else DESIGN_DOC off; a `doc:` token changes
+    nothing here. Skip Phase 1: the plan is already written. Start at Phase 2.
+  - **An existing `design-doc.md`** with no plan beside it: in Phase 1, pass
+    the Architect `DESIGN_DOC: from-design-doc` and that path instead of a
+    feature request. DOC_PATH is that path.
+  - **An existing `feature.md`** (from `/plan-research`): in Phase 1, pass the
+    Architect that path as the feature spec. It writes into that directory.
+  - **Anything else** is the feature request, as below.
+  A path ending in one of those names that does not exist is a STOP: name the
+  path you tried.
+
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request
   (with the `doc:` token removed), PIPELINE_DOC, and the line `DESIGN_DOC: off`

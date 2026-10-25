@@ -361,6 +361,9 @@ Coder can re-invoke the same ones.
      path (e.g. `pipeline_artifacts/background-link-checks/`). Read
      `{dir}/feature.md` completely. If neither the path nor the file
      exists, STOP and tell the user.
+   - **Feature spec run** (any flow; the prompt gives a path to a
+     `feature.md`, from `/plan-research`): read it completely and write into
+     its directory, keeping its slug. Do not derive a new one.
    - In /build-auto flow: derive a short feature slug from the feature request
      (lowercase, hyphens, no special chars — e.g. `recently-played-carousel`),
      then `mkdir -p pipeline_artifacts/{slug}`. Use `pipeline_artifacts/{slug}/`

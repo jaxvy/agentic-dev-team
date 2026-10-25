@@ -131,7 +131,9 @@ Step 4 — Report.
   Cases C and D, with `doc: off`:
     Show the user the section headings of PLAN_PATH and report that path.
 
-Then STOP. Tell the user they can feed the plan to `/build-auto` or
-`/build-guided` to implement and verify it.
+Then STOP. Tell the user they can pass the plan's path to a build command to
+implement and verify it, without planning again: `/build-auto <PLAN_PATH>`,
+`/build-auto-reviewed <PLAN_PATH>` (which still reviews the plan first), or
+`/build-guided <PLAN_PATH>` (which shows it at the plan gate first).
 
 Do not proceed to any other phase — this command ends at the design phase.

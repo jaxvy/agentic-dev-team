@@ -57,6 +57,23 @@ the pipeline doc's Part A, "Test Credentials". Whatever they supply there goes
 to the `adt-android-tester` subagent and nowhere else: not to another agent, not
 into `pipeline_artifacts/`, not into the code, not into your summary.
 
+Input — before Phase 1, look at the user's idea (`$ARGUMENTS` with the `doc:`
+token removed). It may be a file another command wrote:
+  - **An existing `feature.md`** (from `/plan-research`, where the user
+    already approved it): set FEATURE_DIR to its directory, skip Phase 1, and
+    start at Phase 2.
+  - **An existing `design-doc.md`** with no plan beside it: skip Phase 1. In
+    Phase 2, pass the Architect `DESIGN_DOC: from-design-doc` and that path
+    instead of a feature.md; DOC_PATH is that path. Then the plan gate.
+  - **An existing `implementation-plan.md`** (from `/plan-design`): set
+    PLAN_PATH to it, and DOC_PATH to the `design-doc.md` beside it when one
+    exists (DESIGN_DOC on), else DESIGN_DOC off. Skip Phase 1 and the
+    Architect run of Phase 2, and go straight to the plan gate with these
+    documents: the user approves the plan in this run before any code.
+  - **Anything else** is the user's idea, as below.
+  A path ending in one of those names that does not exist is a STOP: name the
+  path you tried.
+
 Phase 1 — PM (kickoff):
   Delegate to the `adt-android-pm` subagent with the user's idea.
   The PM will ask clarifying questions iteratively. Pass each user response
