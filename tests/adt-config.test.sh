@@ -184,6 +184,37 @@ else
   echo "SKIP 7: python3 with PyYAML is not available"
 fi
 
+# ---------- 8. install.sh sets up Codex too ----------
+
+export ADT_HOME="$T/adt-home" CODEX_HOME="$T/codex-home" CLAUDE_CONFIG_DIR="$T/claude-config"
+P="$T/p8"; new_repo "$P"
+bash "$REPO_DIR/install.sh" "$P" > "$T/install8.txt" 2>&1; rc=$?
+eq "8 install exit" 0 "$rc"
+for skill in "$PLUGIN"/codex/skills/*/; do
+  name="$(basename "$skill")"
+  check "8 skill $name is one link to its folder" test -L "$P/.agents/skills/$name"
+  check "8   (and Codex finds its SKILL.md through it)" test -f "$P/.agents/skills/$name/SKILL.md"
+done
+for agent in "$REPO_DIR"/.codex/agents/*.toml; do
+  check "8 Codex agent $(basename "$agent") is linked" test -L "$P/.codex/agents/$(basename "$agent")"
+done
+check "8 the Codex rules file allows adt.sh" grep -qF 'prefix_rule(pattern = ["bash", ".claude/adt/scripts/adt.sh"], decision = "allow")' "$P/.codex/rules/agentic-dev-team.rules"
+check "8 git sees none of it" test -z "$(git -C "$P" status --porcelain --untracked-files=all -- .agents/skills .codex)"
+bash "$REPO_DIR/install.sh" --uninstall "$P" > /dev/null 2>&1
+check "8 uninstall removes .codex" test ! -e "$P/.codex"
+check "8 uninstall removes .agents/skills" test ! -e "$P/.agents/skills"
+
+P="$T/p8b"; new_repo "$P"
+bash "$REPO_DIR/install.sh" --no-allow "$P" > /dev/null 2>&1
+check "8 --no-allow writes no Codex rules" test ! -e "$P/.codex/rules"
+bash "$REPO_DIR/install.sh" --uninstall "$P" > /dev/null 2>&1
+
+P="$T/p8c"; new_repo "$P"; mkdir -p "$P/.agents/skills/build-auto"
+bash "$REPO_DIR/install.sh" "$P" > "$T/install8c.txt" 2>&1; rc=$?
+eq "8 a skill folder of your own at our path: refused" 1 "$rc"
+check "8   (named in the refusal)" grep -q "refuse: .agents/skills/build-auto" "$T/install8c.txt"
+check "8   (and nothing was linked)" test ! -e "$P/.codex"
+
 echo
 echo "adt-config.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

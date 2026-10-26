@@ -250,6 +250,15 @@ over the main model. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` overrides all of them.
 3. No value: pass no `model` parameter, so the agent file's frontmatter
    applies (today's behavior).
 
+**Native agents in Codex.** Pass the value as the `model` of Codex's spawn
+tool (ORCHESTRATION_DOC, "Orchestration Workflow (Codex)"). It is a model
+name that Codex accepts, as in its `/model` list; without a value, the agent
+runs on your session's model. A Claude alias (`opus`, `sonnet`, `haiku`,
+`fable`) means nothing to Codex: never pass one there, and report it as not
+applied ("When `MODELS` is on"). Validation rule 8 does not apply there. In
+Claude Code, rule 8 refuses a Codex model name, so a file with Codex names is
+for a project that runs in Codex.
+
 **Native agents in Antigravity and opencode.** These tools cannot select a
 model per subagent. Pass nothing, do not fail, and report once in the final
 summary: `Model settings were not applied: <tool> runs every subagent on its
@@ -273,7 +282,8 @@ slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
 4. If `MODELS` is off: skip the rest of this section and continue with the
    command's first phase as usual. No `printenv`, no model passing, no summary
    line about models.
-5. If `MODELS` is on and the tool is Claude Code: do the start check below.
+5. If `MODELS` is on and the tool is Claude Code or Codex: do the start check
+   below.
 
 ### When `MODELS` is on
 
@@ -301,12 +311,25 @@ slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
 4. **While model passing is off:** pass no `model` to any subagent, and put
    `Model settings were not applied: <REASON>.` in the final summary. The run
    continues normally.
-5. **Antigravity, opencode:** pass nothing, and report as in "Model values".
-6. **Summary line:** `Models requested: <role>=<value> ...` for each role
+5. **Codex.** The same as steps 1 to 4, with the spawn tool's `model`
+   parameter in place of the Agent tool's, and these changes:
+   - The start check has one reason only: the spawn tool has no `model`
+     parameter. REASON: `the Codex spawn tool has no model parameter`. Skip
+     the `printenv` checks of steps 2 and 8; those variables are Claude
+     Code's.
+   - A resolved value that is a Claude alias (`opus`, `sonnet`, `haiku`,
+     `fable`) is never passed. Start that agent without it, keep model
+     passing on for the other roles, and add to the summary once per role:
+     `Model setting <role>=<value> was not applied: Codex does not run Claude
+     models.`
+   - A start that Codex rejects for its `model` (step 3): REASON
+     `Codex rejected the model: <error message>`.
+6. **Antigravity, opencode:** pass nothing, and report as in "Model values".
+7. **Summary line:** `Models requested: <role>=<value> ...` for each role
    whose configured model was passed. Say "requested", never "ran": an
    organization `availableModels` allowlist or alias case 1 above can still
    change the model that runs.
-7. **`CLAUDE_CODE_SUBAGENT_MODEL` note (Claude Code).** In the start check,
+8. **`CLAUDE_CODE_SUBAGENT_MODEL` note (Claude Code).** In the start check,
    also run `printenv CLAUDE_CODE_SUBAGENT_MODEL`. If it prints a value, add
    to the summary: `Note: CLAUDE_CODE_SUBAGENT_MODEL is set to <value>.
    Claude Code older than v2.1.251 lets it override the requested models
@@ -487,11 +510,11 @@ with X.
    Always pass `--timeout-minutes`: the slot's `timeout_minutes`, else 30 for a
    reviewer and 120 for `architect`, `coder` and `tester`.
 4. **Wait** with `bash "RUNNER" --wait "O" --max-seconds <W>`. In Claude Code
-   use `--max-seconds 240` and set the Bash tool's timeout to 330000 ms; in a
-   tool whose shell timeout is unknown or short, use 60. Repeat the call until
-   its exit code is not 10. For several jobs started together, pass all their
-   output files to **one** `--wait` call and read each run's `code` from its
-   block.
+   use `--max-seconds 240` and set the Bash tool's timeout to 330000 ms; in
+   Codex, the same with `timeout_ms: 330000`; in a tool whose shell timeout is
+   unknown or short, use 60. Repeat the call until its exit code is not 10.
+   For several jobs started together, pass all their output files to **one**
+   `--wait` call and read each run's `code` from its block.
 5. **Access:** `read-only` for reviewers, `write` for architect and coder,
    and `no-shell` for the tester. `write` keeps `git add`, `git commit`,
    `git push` and `git stash` from a `claude` agent; `no-shell` gives it no
@@ -787,9 +810,10 @@ Add a "Configured run" section to the final summary:
    optional reviewers.
 3. A warning when two reviewers of one gate are in the same model family.
    Family is decided from **what actually runs**:
-   - A native reviewer whose model was not applied (Antigravity, opencode, or
-     model passing turned off before it started) has the orchestrator tool's
-     current model family when known, else unknown.
+   - A native reviewer whose model was not applied (Antigravity, opencode, a
+     Claude alias in Codex, or model passing turned off before it started)
+     has the orchestrator tool's current model family when known, else
+     unknown.
    - Otherwise use the model value (case-insensitive): for an `opencode`
      value `provider/model`, the provider (`anthropic` is Anthropic, `openai`
      is OpenAI, `google` is Google, any other is unknown); `claude-*`, `opus`,

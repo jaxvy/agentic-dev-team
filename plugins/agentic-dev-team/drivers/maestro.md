@@ -11,7 +11,8 @@ overrides an agent's rules.
 - The [Maestro](https://maestro.dev) CLI, version 2.11.0 or later, which needs
   Java 17 or later. Its MCP server ships inside the CLI.
 - Registered as an MCP server named `maestro`. In Claude Code:
-  `claude mcp add maestro -- maestro mcp`.
+  `claude mcp add maestro -- maestro mcp`; in Codex:
+  `codex mcp add maestro -- maestro mcp`.
 - Its tools appear as `mcp__maestro__<name>`. You use three of them:
   `run`, `inspect_screen` and `take_screenshot`. If they are missing from your
   tool list, the server is not registered: STOP and say so.

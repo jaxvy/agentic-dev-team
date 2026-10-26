@@ -22,6 +22,9 @@ version: 1
 #   the Anthropic API), or the model in ANTHROPIC_DEFAULT_OPUS_MODEL
 #   (or _SONNET_, _HAIKU_, _FABLE_) when you set it. You cannot pin an exact
 #   version here; see HOW_IT_WORKS.md, "Configuration".
+# Codex: use a Codex model name, as in its /model list. Codex ignores a
+#   Claude alias (the agent then runs on your session's model), and Claude
+#   Code stops at a Codex model name: use the names of the tool you run.
 # Antigravity and opencode: ignored. These tools run every subagent on the
 #   model that you selected in the tool.
 #

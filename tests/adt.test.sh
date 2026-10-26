@@ -56,6 +56,9 @@ setup() {
   export ADT_HOME="$SANDBOX/adt-home"
   export ANDROID_HOME="$SANDBOX/sdk"
   export CLAUDE_CONFIG_DIR="$SANDBOX/claude-config"
+  # Tests may run inside Codex: keep its session and rules out of them.
+  export CODEX_HOME="$SANDBOX/codex-home"
+  unset CODEX_THREAD_ID CODEX_SANDBOX CODEX_SANDBOX_NETWORK_DISABLED
   # Keep the developer's own git config and global ignores out of the tests.
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME="$SANDBOX/xdg"
   unset ANDROID_SDK_ROOT ADT_AVD ADT_DEVICE_MODE ADT_HEADLESS ANDROID_SERIAL ADT_MEM_TOTAL_MB ADT_MEM_AVAILABLE_MB
@@ -1036,6 +1039,31 @@ expect_true "after allow, that warning is gone" sh -c "! grep -q 'not pre-approv
 $(preflight "$SANDBOX/proj1" maestro)
 EOF"
 serial="$(adt "$SANDBOX/proj1" device-acquire --slug old 2>/dev/null | tail -n 1)"
+out="$(CODEX_THREAD_ID=t1 preflight "$SANDBOX/proj2" maestro)"
+expect_true "in Codex, with no Codex rule, preflight says how to add one" grep -q "^warn  in Codex, the pipeline's own commands are not pre-approved.*allow --project $SANDBOX/proj2, then start a new Codex session\$" <<EOF
+$out
+EOF
+expect_true "  (and not the Claude Code warning)" sh -c "! grep -q 'in Claude Code' <<EOF
+$out
+EOF"
+adt "$SANDBOX/proj2" allow >/dev/null 2>&1
+expect_true "after allow, that warning is gone" sh -c "! grep -q 'not pre-approved' <<EOF
+$(CODEX_THREAD_ID=t1 preflight "$SANDBOX/proj2" maestro)
+EOF"
+adt "$SANDBOX/proj2" allow --remove >/dev/null 2>&1
+mkdir -p "$CODEX_HOME/rules"
+printf 'prefix_rule(pattern = ["bash", ".claude/adt/scripts/adt.sh"], decision = "allow")\n' > "$CODEX_HOME/rules/default.rules"
+expect_true "  (a rule in the user's own Codex rules counts too)" sh -c "! grep -q 'not pre-approved' <<EOF
+$(CODEX_THREAD_ID=t1 preflight "$SANDBOX/proj2" maestro)
+EOF"
+rm -rf "$CODEX_HOME/rules"
+out="$(CODEX_THREAD_ID=t1 CODEX_SANDBOX_NETWORK_DISABLED=1 preflight "$SANDBOX/proj1" maestro)"; rc=$?
+expect_code "run inside Codex's sandbox, preflight fails" 16 $rc
+expect_true "  (and says how to approve the script, or give Codex full access)" grep -q "^FAIL  Codex runs this script in its sandbox.*allow --project $SANDBOX/proj1, then start a new Codex session. Or give Codex full access" <<EOF
+$out
+EOF
+CODEX_SANDBOX=seatbelt preflight "$SANDBOX/proj1" maestro > /dev/null
+expect_code "  (macOS's Codex sandbox too)" 16 $?
 expect_eq "a device leased minutes ago is not called a leftover" "0" "$(preflight "$SANDBOX/proj1" maestro | grep -c 'has been running for')"
 echo $(( $(date +%s) - 4 * 3600 )) > "$ADT_HOME/leases/$serial/created"
 expect_true "one leased hours ago is, with the command that stops it" grep -q "^warn  $serial has been running for 4h for 'old'.*device-release --serial $serial\$" <<EOF
@@ -1075,6 +1103,32 @@ expect_eq "--remove leaves the developer's own settings and rules, even one it w
 printf 'not json' > "$SANDBOX/proj2/.claude/settings.local.json"
 adt "$SANDBOX/proj2" allow >/dev/null 2>&1
 expect_eq "a settings file that is not valid JSON is left alone" "not json" "$(cat "$SANDBOX/proj2/.claude/settings.local.json")"
+
+# The Codex half: a rules file that belongs to allow as a whole.
+setup
+rules="$SANDBOX/proj1/.codex/rules/agentic-dev-team.rules"
+adt "$SANDBOX/proj1" allow >/dev/null 2>&1
+expect_eq "allow writes a Codex rule that runs adt.sh outside the sandbox" \
+  'prefix_rule(pattern = ["bash", ".claude/adt/scripts/adt.sh"], decision = "allow")' "$(grep '^prefix_rule' "$rules")"
+expect_true "  (marked as its own on the first line)" grep -q '^# agentic-dev-team: written by adt.sh allow' "$rules"
+expect_true "  (and kept out of git without touching .gitignore)" git -C "$SANDBOX/proj1" check-ignore -q "$rules"
+before="$(cksum < "$rules")"
+adt "$SANDBOX/proj1" allow >/dev/null 2>&1
+expect_eq "running it again changes nothing" "$before" "$(cksum < "$rules")"
+adt "$SANDBOX/proj1" allow --remove >/dev/null 2>&1
+expect_true "--remove deletes it, and the empty .codex/ it made" [ ! -e "$SANDBOX/proj1/.codex" ]
+mkdir -p "$SANDBOX/proj2/.codex/rules"
+printf 'prefix_rule(pattern = ["make"], decision = "allow")\n' > "$SANDBOX/proj2/.codex/rules/agentic-dev-team.rules"
+adt "$SANDBOX/proj2" allow >/dev/null 2>&1
+adt "$SANDBOX/proj2" allow --remove >/dev/null 2>&1
+expect_eq "a rules file of that name that is not its own is left alone" \
+  'prefix_rule(pattern = ["make"], decision = "allow")' "$(cat "$SANDBOX/proj2/.codex/rules/agentic-dev-team.rules")"
+# A Codex plugin install runs its own copy of the script, by its absolute path.
+cached="$CODEX_HOME/plugins/cache/adt-pipeline/agentic-dev-team/local/scripts"
+mkdir -p "$cached" && cp "$SCRIPT" "$cached/adt.sh"
+(cd "$SANDBOX/proj1" && /bin/bash "$cached/adt.sh" allow >/dev/null 2>&1)
+expect_true "from the Codex plugin, allow also allows that path" \
+  grep -qF "prefix_rule(pattern = [\"bash\", \"$cached/adt.sh\"], decision = \"allow\")" "$rules"
 
 # ---------- summary ----------
 

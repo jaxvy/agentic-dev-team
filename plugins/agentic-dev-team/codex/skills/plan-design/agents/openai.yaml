@@ -1,0 +1,3 @@
+# Run this command only when the user types it, as in the other tools.
+policy:
+  allow_implicit_invocation: false

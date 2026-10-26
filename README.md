@@ -8,6 +8,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
   <img alt="Android" src="https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white">
   <img alt="Claude Code" src="https://img.shields.io/badge/Claude_Code-supported-D97757">
+  <img alt="Codex" src="https://img.shields.io/badge/Codex-supported-10A37F">
   <img alt="Antigravity" src="https://img.shields.io/badge/Antigravity-supported-4285F4">
   <img alt="OpenCode" src="https://img.shields.io/badge/OpenCode-supported-555555">
 </p>
@@ -52,11 +53,19 @@ report, and new regression tests for your project.
 
 ## Quick start
 
-**1. Install** (Claude Code; for Antigravity and OpenCode, see [Installation](#installation)):
+**1. Install.** In Claude Code:
 
 ```text
 /plugin marketplace add jaxvy/agentic-dev-team
 /plugin install agentic-dev-team@adt-pipeline
+```
+
+In Codex, add the marketplace, then install `agentic-dev-team` from
+`/plugins` in a new session. For Antigravity and OpenCode, see
+[Installation](#installation).
+
+```bash
+codex plugin marketplace add jaxvy/agentic-dev-team
 ```
 
 **2. Register a test driver.** The agents drive your app through
@@ -67,6 +76,9 @@ report, and new regression tests for your project.
 claude mcp add auto-mobile -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setAppPermissions,setDeviceState,getDeviceState,openLink,executePlan -- bunx @kaeawc/auto-mobile@0.0.84
 ```
 
+In Codex, use `codex mcp add` with the same name, `--env` and command
+([Setting up device testing](HOW_IT_WORKS.md#setting-up-device-testing)).
+
 **3. Describe your project** in an `AGENTS.md` or `CLAUDE.md` at its root: the
 stack, the architecture, the conventions, and how to verify a change.
 
@@ -75,6 +87,10 @@ stack, the architecture, the conventions, and how to verify a change.
 ```text
 /build-guided add a recently-played carousel to the home screen
 ```
+
+In Codex, the commands are skills: type `$build-guided` and the rest of the
+line. Give Codex the access the run needs first
+([Codex](HOW_IT_WORKS.md#codex)).
 
 Every build command checks your setup first, and if something is missing, it
 stops and tells you how to fix it. The full checklist is in
@@ -330,6 +346,7 @@ when you are ready.
   is not supported.
 * `git`
 * [Claude Code](https://claude.com/claude-code),
+  [Codex](https://developers.openai.com/codex),
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)
 * An Android project with an `AGENTS.md` or `CLAUDE.md` that describes its stack,
   architecture, conventions, and verification rules
@@ -344,11 +361,12 @@ when you are ready.
 
 ## Installation
 
-There are two paths. You can use both.
+There are two paths: a plugin, for Claude Code or Codex, and `install.sh`,
+for each project and every tool. You can use both.
 
 ### Claude Code plugin
 
-The fastest path if you use only Claude Code. In the CLI:
+The fastest path if you use Claude Code. In the CLI:
 
 ```text
 /plugin marketplace add jaxvy/agentic-dev-team
@@ -356,14 +374,31 @@ The fastest path if you use only Claude Code. In the CLI:
 ```
 
 This installs all eight agents and five commands, with no setup for each
-project. It does not set up Antigravity or OpenCode. The first command you run
-in a project creates the optional config file. Claude Code asks your
-permission for that one command.
+project. It does not set up the other tools. The first command you run in a
+project creates the optional config file. Claude Code asks your permission for
+that one command.
+
+### Codex plugin
+
+The fastest path if you use Codex. Add the marketplace:
+
+```bash
+codex plugin marketplace add jaxvy/agentic-dev-team
+```
+
+Then start `codex`, open `/plugins`, install `agentic-dev-team` from the
+`adt-pipeline` marketplace, and start a new session. The five commands are
+skills: `$agentic-dev-team:build-auto` and so on (type `$` to pick one). The
+plugin has no agent files, because a Codex plugin cannot carry them: the
+commands start Codex's default agent with each role's prompt. `install.sh`
+adds named agents. Before the first build, in each project, approve the device
+script for Codex once; the preflight prints the exact command, and
+[Codex](HOW_IT_WORKS.md#codex) explains it.
 
 ### install.sh, for each project
 
-Use this for Antigravity and OpenCode. It also works together with the Claude
-Code plugin.
+Use this for Antigravity and OpenCode, and for Codex when you want its named
+agents. It also works together with either plugin.
 
 ```bash
 git clone https://github.com/jaxvy/agentic-dev-team.git ~/code/agentic-dev-team
@@ -372,13 +407,14 @@ cd /path/to/your-android-project
 ```
 
 It links the agents, commands and scripts into `.claude/`,
-`.agents/workflows/` and `.opencode/`, and creates the optional config file
-`.agentic-dev-team/config.yaml`. It does not change your files in those
-directories, with one exception: it adds the pipeline's three permission rules
-to `.claude/settings.local.json` and keeps all your other settings, so a run
-does not stop to ask (see
-[Permissions](HOW_IT_WORKS.md#before-a-run-preflight-and-permissions)). Pass
-`--no-allow` to skip this.
+`.agents/workflows/`, `.agents/skills/`, `.codex/agents/` and `.opencode/`,
+and creates the optional config file `.agentic-dev-team/config.yaml`. It does
+not change your files in those directories, with one exception: it adds the
+pipeline's three permission rules to `.claude/settings.local.json` and keeps
+all your other settings. It also writes its own Codex rules file,
+`.codex/rules/agentic-dev-team.rules`. With these, a run does not stop to ask
+(see [Permissions](HOW_IT_WORKS.md#before-a-run-preflight-and-permissions)).
+Pass `--no-allow` to skip both.
 
 <details>
 <summary><b>Update and uninstall</b></summary>
@@ -401,11 +437,11 @@ To uninstall:
 ```
 
 This removes only what the installer created: its symlinks, its marked blocks
-in `.gitignore` and `.agents/agents.md`, and the permission rules it added to
-`.claude/settings.local.json`. It keeps `.agentic-dev-team/`, because that is
-your configuration. Delete it yourself if you do not need it. Uninstalling the
-Claude Code plugin does not change your project, so delete that folder
-yourself there too.
+in `.gitignore` and `.agents/agents.md`, the permission rules it added to
+`.claude/settings.local.json`, and its Codex rules file. It keeps
+`.agentic-dev-team/`, because that is your configuration. Delete it yourself if
+you do not need it. Uninstalling the Claude Code or Codex plugin does not
+change your project, so delete that folder yourself there too.
 
 </details>
 
@@ -415,9 +451,9 @@ All settings are optional. Until you edit `.agentic-dev-team/config.yaml`,
 every command works as it does without the file. The file is created with every
 setting commented out, and it is kept out of git.
 
-* **`agents:`** sets the model of each agent, in every command. Only Claude Code
-  uses it. Antigravity and OpenCode run every agent on the model you select in
-  the tool.
+* **`agents:`** sets the model of each agent, in every command. Claude Code and
+  Codex use it, each with its own model names. Antigravity and OpenCode run
+  every agent on the model you select in the tool.
 * **`build_auto_reviewed:`** applies only to `/build-auto-reviewed`. An agent can
   run through another CLI you are logged in to (`claude`, `codex`, `agy`,
   `opencode`, or your own command). A review with 2 to 5 reviewers becomes a
@@ -441,7 +477,7 @@ runners, how a panel runs, and what to know before you use another CLI.
 ## Further reading
 
 [HOW_IT_WORKS.md](HOW_IT_WORKS.md) explains each phase of the pipeline, its
-[safeguards](HOW_IT_WORKS.md#safeguards), the emulator settings, how the three
+[safeguards](HOW_IT_WORKS.md#safeguards), the emulator settings, how the four
 tools find the same files, what `install.sh` creates, how to add your own agents
 and commands, and troubleshooting.
 

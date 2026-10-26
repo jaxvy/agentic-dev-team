@@ -1,0 +1,17 @@
+{
+  "name": "agentic-dev-team",
+  "description": "PM → Architect → Coder → Tester pipeline for Android, working in Claude Code, Codex, Antigravity, and opencode.",
+  "author": { "name": "jaxvy" },
+  "homepage": "https://github.com/jaxvy/agentic-dev-team",
+  "repository": "https://github.com/jaxvy/agentic-dev-team",
+  "license": "MIT",
+  "keywords": ["android", "agents", "pipeline", "testing"],
+  "skills": "./codex/skills",
+  "interface": {
+    "displayName": "Agentic Android Dev Team",
+    "shortDescription": "Plan, build, review and device-test an Android feature from one prompt.",
+    "developerName": "jaxvy",
+    "category": "Coding",
+    "websiteURL": "https://github.com/jaxvy/agentic-dev-team"
+  }
+}
