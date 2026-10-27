@@ -37,7 +37,7 @@ the device session is gone, bind to the same serial again and carry on.
 
 | Case needs | auto-mobile tool |
 |---|---|
-| Rotation | `rotate` with `orientation: portrait` or `landscape` |
+| Rotation | `rotate` with `orientation: portrait` or `landscape`, and `lockOrientation: true` (below) |
 | Dark mode | `displayConfig` with `theme: dark` or `light` |
 | Font scale | `displayConfig` with `fontScale` (a number, or `"default"`) |
 | Grant, revoke or reset a permission | `setAppPermissions` |
@@ -55,19 +55,33 @@ never actually offline. Afterwards switch it off again with
 Use the Airplane mode switch rather than the network-condition setting, which
 auto-mobile documents as best-effort on emulators.
 
+**Rotation is locked.** Without `lockOrientation: true`, the emulator's
+auto-rotate can turn the screen straight back, and the `rotate` step fails. The
+reset steps' turn to portrait needs no lock, since an emulator stands in
+portrait.
+
 ## 4. Driving the app and looking at the screen
 
 | To | Use |
 |---|---|
 | Launch the app | `launchApp` with `appId` (add `clearAppData: true` for a clean start) |
-| Tap | `tapOn` with `selector: {testTag: …}`, `{elementId: …}` or `{text: …}` |
-| Type | `sendKeys` with `selector` naming the field and `commands: [{action: type, text: "…"}]` |
+| Tap | `tapOn` with `selector: {testTag: …}`, `{elementId: …}` or `{text: …}`; add `searchUntil: {duration: …}` (milliseconds, at most 12000) to wait for an element that appears after the previous step, such as a list row after a save |
+| Type | `sendKeys` with `selector` naming the field and `commands: [{action: type, operation: replace, mode: a11y, text: "…"}]` (below) |
 | Scroll, swipe | `swipeOn` with `direction`, and `lookFor` to scroll until an element appears |
 | Press Back or Home | `pressButton` |
 | Look at the screen | `observe`, as below |
 
 `tapOn` and `sendKeys` accept a Compose test tag directly as
-`selector: {testTag: …}`.
+`selector: {testTag: …}`. `searchUntil` only waits: to reach an element further
+down a list, scroll to it with `swipeOn` and `lookFor` first.
+
+**Typing sets the whole text at once.** `operation: replace` with `mode: a11y`
+puts the text into the field in one accessibility call, so the field ends up
+holding exactly that text even when the app changes it as keys arrive — adding
+`https://` to a URL, say, or formatting a phone number. `replace` alone is not
+enough: its default mode types through auto-mobile's own keyboard, and the app
+can see part of the text first. Type key by key (leave out `operation` and
+`mode`) only when the case is about what the field does as you type.
 
 **Looking at the screen.** Call `observe` with `screenshot: "none"` and
 nothing else. It returns a compact list of what is on screen: every tappable
