@@ -663,16 +663,19 @@ and Java. A problem stops the run in its first minute, with the fix, instead of
 at the test phase after the planning and coding are paid for. The command also
 checks its own tool list for the driver's MCP tools.
 
-So that a run is not stopped to ask permission, `install.sh` adds three rules
-to the project's `.claude/settings.local.json` — the device script and the two
-drivers' MCP tools — and the build commands list the same rules under
-`allowed-tools`. For Codex it writes `.codex/rules/agentic-dev-team.rules`,
-which lets Codex run the device script outside its sandbox without asking
+So that a run is not stopped to ask permission, an install for Claude Code
+(`install.sh`, or `install.sh claude`) adds three rules to the project's
+`.claude/settings.local.json` — the device script and the two drivers' MCP
+tools — and the build commands list the same rules under `allowed-tools`. An
+install for Codex writes `.codex/rules/agentic-dev-team.rules`, which lets
+Codex run the device script outside its sandbox without asking
 ([Codex](#codex)). Only a person grants these, by running `install.sh` or
 `adt.sh allow`; no agent changes its own permissions. `install.sh --no-allow`
 skips this, and uninstalling removes exactly the rules it added. With a
-plugin and no per-project install, the preflight notices the missing rules and
-prints the one command that adds them. You can run the preflight yourself at
+plugin and no per-project install, the preflight in Claude Code or Codex
+notices the missing rules and prints the one command that adds them. In
+Antigravity and OpenCode, the rules mean nothing, so the preflight does not
+check them. You can run the preflight yourself at
 any time: `bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile`.
 
 ### Codex
@@ -689,8 +692,8 @@ different:
 * **The sandbox.** In Codex's default sandbox, a command has no network and
   cannot write outside the project. adb, the emulator and Gradle need both.
   There are two ways to give them what they need:
-  * Approve the device script once. `install.sh` does it, or run the
-    `adt.sh allow` command that the preflight prints. It writes
+  * Approve the device script once. `install.sh` does it when it installs for
+    Codex, or run the `adt.sh allow` command that the preflight prints. It writes
     `.codex/rules/agentic-dev-team.rules`, a rule that lets Codex run
     `adt.sh` outside its sandbox without asking. Start a new Codex session
     after it. The Coder's build gate (Gradle) still runs in the sandbox, so
@@ -1365,61 +1368,72 @@ work.
 ### What install.sh creates
 
 For every file this repo owns, `install.sh` creates a symlink at the matching
-path inside your project.
+path inside your project. Name the tools you use to get only their links:
+`install.sh claude`, or `install.sh claude,codex`. The tools are `claude`,
+`codex`, `antigravity` and `opencode`; with none, `install.sh` installs for all
+four. The "Installed for" column says which tool needs each link. Every tool
+reads the agent prompts, the pipeline docs, the scripts and the driver adapters
+from `.claude/`, so those are always installed. The Codex skills find their
+command file in `.claude/commands/`, so Codex gets those links too.
 
-| Project path | Symlink target in your clone |
-|---|---|
-| `.claude/commands/build-guided.md` | `<clone>/.claude/commands/build-guided.md` |
-| `.claude/commands/build-auto-fast.md` | `<clone>/.claude/commands/build-auto-fast.md` |
-| `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
-| `.claude/commands/plan-spec.md` | `<clone>/.claude/commands/plan-spec.md` |
-| `.claude/commands/plan-design.md` | `<clone>/.claude/commands/plan-design.md` |
-| `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` |
-| `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` |
-| `.claude/agents/adt-android-architect-reviewer.md` | `<clone>/.claude/agents/adt-android-architect-reviewer.md` |
-| `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` |
-| `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` |
-| `.claude/agents/adt-android-test-writer.md` | `<clone>/.claude/agents/adt-android-test-writer.md` |
-| `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` |
-| `.claude/agents/adt-android-review-judge.md` | `<clone>/.claude/agents/adt-android-review-judge.md` |
-| `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` |
-| `.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` |
-| `.claude/AGENTIC_DEV_TEAM_CONFIG.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_CONFIG.md` |
-| `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` |
-| `.claude/adt/scripts/adt-run-agent.sh` | `<clone>/.claude/adt/scripts/adt-run-agent.sh` |
-| `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
-| `.claude/adt/drivers/maestro.md` | `<clone>/.claude/adt/drivers/maestro.md` |
-| `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
-| `.agents/workflows/build-auto-fast.md` | `<clone>/.agents/workflows/build-auto-fast.md` |
-| `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
-| `.agents/workflows/plan-spec.md` | `<clone>/.agents/workflows/plan-spec.md` |
-| `.agents/workflows/plan-design.md` | `<clone>/.agents/workflows/plan-design.md` |
-| `.opencode/commands/build-guided.md` | `<clone>/.opencode/commands/build-guided.md` |
-| `.opencode/commands/build-auto-fast.md` | `<clone>/.opencode/commands/build-auto-fast.md` |
-| `.opencode/commands/build-auto.md` | `<clone>/.opencode/commands/build-auto.md` |
-| `.opencode/commands/plan-spec.md` | `<clone>/.opencode/commands/plan-spec.md` |
-| `.opencode/commands/plan-design.md` | `<clone>/.opencode/commands/plan-design.md` |
-| `.opencode/agents/adt-android-pm.md` | `<clone>/.opencode/agents/adt-android-pm.md` |
-| `.opencode/agents/adt-android-architect.md` | `<clone>/.opencode/agents/adt-android-architect.md` |
-| `.opencode/agents/adt-android-architect-reviewer.md` | `<clone>/.opencode/agents/adt-android-architect-reviewer.md` |
-| `.opencode/agents/adt-android-coder.md` | `<clone>/.opencode/agents/adt-android-coder.md` |
-| `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` |
-| `.opencode/agents/adt-android-test-writer.md` | `<clone>/.opencode/agents/adt-android-test-writer.md` |
-| `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
-| `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` |
-| `.agents/skills/build-guided/` | `<clone>/.agents/skills/build-guided/` |
-| `.agents/skills/build-auto-fast/` | `<clone>/.agents/skills/build-auto-fast/` |
-| `.agents/skills/build-auto/` | `<clone>/.agents/skills/build-auto/` |
-| `.agents/skills/plan-spec/` | `<clone>/.agents/skills/plan-spec/` |
-| `.agents/skills/plan-design/` | `<clone>/.agents/skills/plan-design/` |
-| `.codex/agents/adt-android-pm.toml` | `<clone>/.codex/agents/adt-android-pm.toml` |
-| `.codex/agents/adt-android-architect.toml` | `<clone>/.codex/agents/adt-android-architect.toml` |
-| `.codex/agents/adt-android-architect-reviewer.toml` | `<clone>/.codex/agents/adt-android-architect-reviewer.toml` |
-| `.codex/agents/adt-android-coder.toml` | `<clone>/.codex/agents/adt-android-coder.toml` |
-| `.codex/agents/adt-android-code-reviewer.toml` | `<clone>/.codex/agents/adt-android-code-reviewer.toml` |
-| `.codex/agents/adt-android-test-writer.toml` | `<clone>/.codex/agents/adt-android-test-writer.toml` |
-| `.codex/agents/adt-android-tester.toml` | `<clone>/.codex/agents/adt-android-tester.toml` |
-| `.codex/agents/adt-android-review-judge.toml` | `<clone>/.codex/agents/adt-android-review-judge.toml` |
+| Project path | Symlink target in your clone | Installed for |
+|---|---|---|
+| `.claude/commands/build-guided.md` | `<clone>/.claude/commands/build-guided.md` | claude, codex |
+| `.claude/commands/build-auto-fast.md` | `<clone>/.claude/commands/build-auto-fast.md` | claude, codex |
+| `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` | claude, codex |
+| `.claude/commands/plan-spec.md` | `<clone>/.claude/commands/plan-spec.md` | claude, codex |
+| `.claude/commands/plan-design.md` | `<clone>/.claude/commands/plan-design.md` | claude, codex |
+| `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` | every tool |
+| `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` | every tool |
+| `.claude/agents/adt-android-architect-reviewer.md` | `<clone>/.claude/agents/adt-android-architect-reviewer.md` | every tool |
+| `.claude/agents/adt-android-coder.md` | `<clone>/.claude/agents/adt-android-coder.md` | every tool |
+| `.claude/agents/adt-android-code-reviewer.md` | `<clone>/.claude/agents/adt-android-code-reviewer.md` | every tool |
+| `.claude/agents/adt-android-test-writer.md` | `<clone>/.claude/agents/adt-android-test-writer.md` | every tool |
+| `.claude/agents/adt-android-tester.md` | `<clone>/.claude/agents/adt-android-tester.md` | every tool |
+| `.claude/agents/adt-android-review-judge.md` | `<clone>/.claude/agents/adt-android-review-judge.md` | every tool |
+| `.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_PIPELINE.md` | every tool |
+| `.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_ORCHESTRATION.md` | every tool |
+| `.claude/AGENTIC_DEV_TEAM_CONFIG.md` | `<clone>/.claude/AGENTIC_DEV_TEAM_CONFIG.md` | every tool |
+| `.claude/adt/scripts/adt.sh` | `<clone>/.claude/adt/scripts/adt.sh` | every tool |
+| `.claude/adt/scripts/adt-run-agent.sh` | `<clone>/.claude/adt/scripts/adt-run-agent.sh` | every tool |
+| `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` | every tool |
+| `.claude/adt/drivers/maestro.md` | `<clone>/.claude/adt/drivers/maestro.md` | every tool |
+| `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` | antigravity |
+| `.agents/workflows/build-auto-fast.md` | `<clone>/.agents/workflows/build-auto-fast.md` | antigravity |
+| `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` | antigravity |
+| `.agents/workflows/plan-spec.md` | `<clone>/.agents/workflows/plan-spec.md` | antigravity |
+| `.agents/workflows/plan-design.md` | `<clone>/.agents/workflows/plan-design.md` | antigravity |
+| `.opencode/commands/build-guided.md` | `<clone>/.opencode/commands/build-guided.md` | opencode |
+| `.opencode/commands/build-auto-fast.md` | `<clone>/.opencode/commands/build-auto-fast.md` | opencode |
+| `.opencode/commands/build-auto.md` | `<clone>/.opencode/commands/build-auto.md` | opencode |
+| `.opencode/commands/plan-spec.md` | `<clone>/.opencode/commands/plan-spec.md` | opencode |
+| `.opencode/commands/plan-design.md` | `<clone>/.opencode/commands/plan-design.md` | opencode |
+| `.opencode/agents/adt-android-pm.md` | `<clone>/.opencode/agents/adt-android-pm.md` | opencode |
+| `.opencode/agents/adt-android-architect.md` | `<clone>/.opencode/agents/adt-android-architect.md` | opencode |
+| `.opencode/agents/adt-android-architect-reviewer.md` | `<clone>/.opencode/agents/adt-android-architect-reviewer.md` | opencode |
+| `.opencode/agents/adt-android-coder.md` | `<clone>/.opencode/agents/adt-android-coder.md` | opencode |
+| `.opencode/agents/adt-android-code-reviewer.md` | `<clone>/.opencode/agents/adt-android-code-reviewer.md` | opencode |
+| `.opencode/agents/adt-android-test-writer.md` | `<clone>/.opencode/agents/adt-android-test-writer.md` | opencode |
+| `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` | opencode |
+| `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` | opencode |
+| `.agents/skills/build-guided/` | `<clone>/.agents/skills/build-guided/` | codex |
+| `.agents/skills/build-auto-fast/` | `<clone>/.agents/skills/build-auto-fast/` | codex |
+| `.agents/skills/build-auto/` | `<clone>/.agents/skills/build-auto/` | codex |
+| `.agents/skills/plan-spec/` | `<clone>/.agents/skills/plan-spec/` | codex |
+| `.agents/skills/plan-design/` | `<clone>/.agents/skills/plan-design/` | codex |
+| `.codex/agents/adt-android-pm.toml` | `<clone>/.codex/agents/adt-android-pm.toml` | codex |
+| `.codex/agents/adt-android-architect.toml` | `<clone>/.codex/agents/adt-android-architect.toml` | codex |
+| `.codex/agents/adt-android-architect-reviewer.toml` | `<clone>/.codex/agents/adt-android-architect-reviewer.toml` | codex |
+| `.codex/agents/adt-android-coder.toml` | `<clone>/.codex/agents/adt-android-coder.toml` | codex |
+| `.codex/agents/adt-android-code-reviewer.toml` | `<clone>/.codex/agents/adt-android-code-reviewer.toml` | codex |
+| `.codex/agents/adt-android-test-writer.toml` | `<clone>/.codex/agents/adt-android-test-writer.toml` | codex |
+| `.codex/agents/adt-android-tester.toml` | `<clone>/.codex/agents/adt-android-tester.toml` | codex |
+| `.codex/agents/adt-android-review-judge.toml` | `<clone>/.codex/agents/adt-android-review-judge.toml` | codex |
+
+Each run installs exactly the tools it names. A later run with fewer tools
+removes the links of the others, and the `.agents/agents.md` block when
+Antigravity is not among them, so give it the same tools each time you update.
+`--uninstall` always removes every tool's links.
 
 The canonical pipeline docs (`AGENTIC_DEV_TEAM_PIPELINE.md`,
 `AGENTIC_DEV_TEAM_ORCHESTRATION.md` and `AGENTIC_DEV_TEAM_CONFIG.md`),
@@ -1440,25 +1454,28 @@ blocks, three permission rules, and a Codex rules file.
 "Handoff rules" above for what covers a plugin-only install.
 
 **`.agents/agents.md`** gains a block containing the inlined persona stubs from
-this repo's `.agents/AGENTIC_DEV_TEAM.md`. The file is created if it does not
-exist, and your content outside the markers is left untouched.
+this repo's `.agents/AGENTIC_DEV_TEAM.md`, for Antigravity only. The file is
+created if it does not exist, and your content outside the markers is left
+untouched.
 
 **`.claude/settings.local.json`** gains three permission rules, so Claude Code
 does not stop a run to ask: `Bash(bash .claude/adt/scripts/adt.sh *)`,
-`mcp__auto-mobile__*` and `mcp__maestro__*`. Every other setting in the file
-stays as it was, a file that is not valid JSON is left alone, and a rule you
-already had is not counted as ours. If the file is new, it is kept out of git
-through `.git/info/exclude`, not your `.gitignore`. `install.sh --uninstall`
-removes exactly the rules it added; `install.sh --no-allow` skips this step.
+`mcp__auto-mobile__*` and `mcp__maestro__*`. Only an install for `claude` adds
+them; a later run without `claude` keeps the rules an earlier run added. Every
+other setting in the file stays as it was, a file that is not valid JSON is
+left alone, and a rule you already had is not counted as ours. If the file is
+new, it is kept out of git through `.git/info/exclude`, not your `.gitignore`.
+`install.sh --uninstall` removes exactly the rules it added;
+`install.sh --no-allow` skips this step.
 
-**`.codex/rules/agentic-dev-team.rules`** is written whole, with a first line
-that marks it as ours. Its one rule,
+**`.codex/rules/agentic-dev-team.rules`** is written whole, for Codex only,
+with a first line that marks it as ours. Its one rule,
 `prefix_rule(pattern = ["bash", ".claude/adt/scripts/adt.sh"], decision = "allow")`,
 lets Codex run the device script outside its sandbox without asking (with the
 Codex plugin, `adt.sh allow` adds the script's own absolute path too). A file
 of that name that is not ours is left alone. It is kept out of git through
-`.git/info/exclude`. `install.sh --uninstall` deletes it; `--no-allow` skips
-it.
+`.git/info/exclude`. A later run without `codex` keeps a file an earlier run
+wrote. `install.sh --uninstall` deletes it; `--no-allow` skips it.
 
 **`.agentic-dev-team/`** gets `config.yaml` (a copy of
 `plugins/agentic-dev-team/config.example.yaml`) and a `.gitignore` with `*`,
@@ -1632,9 +1649,10 @@ mv ~/.auto-mobile/auto-mobile.db ~/.auto-mobile/auto-mobile.db.bak
 ```
 
 **Claude Code still asks for permission during a run.** Re-run `install.sh` in
-the project, or `bash .claude/adt/scripts/adt.sh allow`, then start a new
-session. A rule only matches the script run as one plain command,
-`bash .claude/adt/scripts/adt.sh …`, which is how the commands run it.
+the project, with `claude` among its tools, or
+`bash .claude/adt/scripts/adt.sh allow`, then start a new session. A rule only
+matches the script run as one plain command, `bash .claude/adt/scripts/adt.sh …`,
+which is how the commands run it.
 
 **The flow run fails with "Timed out waiting for concurrent daemon restart".**
 An older auto-mobile background service is still running, and the pinned

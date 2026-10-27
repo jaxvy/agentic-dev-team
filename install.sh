@@ -3,25 +3,35 @@
 # agentic-dev-team installer
 #
 # Usage:
-#   <repo-clone>/install.sh                # install into current working directory
+#   <repo-clone>/install.sh                # install for all tools into current working directory
+#   <repo-clone>/install.sh <tools>        # install only for these tools, e.g. claude or claude,codex
 #   <repo-clone>/install.sh <project-dir>  # install into the given project directory
 #   <repo-clone>/install.sh --uninstall    # uninstall from current working directory
 #   <repo-clone>/install.sh --no-allow     # install, but add no permission rules
 #
+# Tools: claude (Claude Code), codex, antigravity, opencode. Separate them
+# with commas or spaces; with none, all four are installed. Each run installs
+# exactly the tools it names and removes the links of the others, so re-run
+# with the same tools to update. To install into a directory with one of
+# these names, write it as a path (./claude).
+#
 # What it does:
 #   - For each agent, command, workflow, pipeline script and driver adapter in
 #     this repo, creates a per-file symlink at the matching path in the
-#     consuming project, and one symlink per Codex skill folder.
+#     consuming project, and one symlink per Codex skill folder. The agent
+#     prompts, pipeline docs, scripts and driver adapters in .claude/ are
+#     installed for every tool, because every tool reads them; the commands,
+#     workflows, skills and agent stubs only for the tools that use them.
 #   - Manages a marker-fenced block in the project's .gitignore listing the
 #     installed paths (so per-developer absolute symlink targets aren't
 #     committed).
-#   - Manages a marker-fenced block in the project's .agents/agents.md
-#     containing the inlined persona stubs from this repo's
+#   - For antigravity, manages a marker-fenced block in the project's
+#     .agents/agents.md containing the inlined persona stubs from this repo's
 #     .agents/AGENTIC_DEV_TEAM.md (Antigravity auto-loads agents.md into
 #     user_rules).
-#   - Adds the pipeline's own permission rules (its script and the test
-#     drivers' MCP tools) to the project's .claude/settings.local.json, so
-#     Claude Code does not stop to ask mid-run, and a Codex rules file,
+#   - Adds the pipeline's own permission rules: for claude, its script and the
+#     test drivers' MCP tools in the project's .claude/settings.local.json, so
+#     Claude Code does not stop to ask mid-run; for codex, a rules file,
 #     .codex/rules/agentic-dev-team.rules, that lets Codex run the script
 #     outside its sandbox. --no-allow skips this, and --uninstall removes
 #     exactly the rules it added.
@@ -43,10 +53,26 @@ set -euo pipefail
 # ---------- paths ----------
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Parse args: first non-flag arg is project dir; --uninstall switches mode.
+ALL_TOOLS="claude codex antigravity opencode"
+
+# True if the arg is a comma-separated list of one or more known tool names.
+is_tool_list() {
+  local item found=1
+  for item in ${1//,/ }; do
+    case " $ALL_TOOLS " in
+      *" $item "*) found=0 ;;
+      *) return 1 ;;
+    esac
+  done
+  return "$found"
+}
+
+# Parse args: a tool list selects tools, any other non-flag arg is the
+# project dir; --uninstall switches mode.
 MODE="install"
 PROJECT_DIR=""
 ALLOW=1
+TOOLS=""
 for arg in "$@"; do
   case "$arg" in
     --uninstall) MODE="uninstall" ;;
@@ -56,9 +82,32 @@ for arg in "$@"; do
       exit 0
       ;;
     --*) echo "Unknown flag: $arg" >&2; exit 2 ;;
-    *) PROJECT_DIR="$arg" ;;
+    *)
+      if is_tool_list "$arg"; then
+        TOOLS="$TOOLS ${arg//,/ }"
+      elif [ -d "$arg" ]; then
+        PROJECT_DIR="$arg"
+      else
+        echo "Not a tool or a directory: $arg" >&2
+        echo "Tools: ${ALL_TOOLS// /, } (separate them with commas; none means all)." >&2
+        exit 2
+      fi
+      ;;
   esac
 done
+if [ "$MODE" = "uninstall" ] && [ -n "$TOOLS" ]; then
+  echo "--uninstall removes every tool. To remove only some, run install.sh with the tools you keep." >&2
+  exit 2
+fi
+# Keep the canonical order and drop duplicates; no tools means all of them.
+SELECTED=""
+for tool in $ALL_TOOLS; do
+  case " $TOOLS " in
+    *" $tool "*) SELECTED="$SELECTED $tool" ;;
+  esac
+done
+TOOLS="${SELECTED# }"
+TOOLS="${TOOLS:-$ALL_TOOLS}"
 PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
@@ -72,20 +121,51 @@ PIPELINE_ARTIFACTS_PATH="/pipeline_artifacts/"
 
 # ---------- helpers ----------
 
+# True if the tool is selected.
+has_tool() {
+  case " $TOOLS " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The display names of the selected tools that run the commands as slash
+# commands, e.g. "Claude Code or OpenCode". Codex runs them as skills.
+tool_names() {
+  local tool names=() i
+  for tool in $TOOLS; do
+    case "$tool" in
+      claude) names+=("Claude Code") ;;
+      antigravity) names+=("Antigravity") ;;
+      opencode) names+=("OpenCode") ;;
+    esac
+  done
+  case "${#names[@]}" in
+    0) ;;
+    1) echo "${names[0]}" ;;
+    2) echo "${names[0]} or ${names[1]}" ;;
+    *)
+      for ((i = 0; i < ${#names[@]} - 1; i++)); do printf '%s, ' "${names[$i]}"; done
+      echo "or ${names[${#names[@]} - 1]}"
+      ;;
+  esac
+}
+
 # Print the desired (src, dest) pairs by walking source dirs.
 # Output format: "<abs-src>|<rel-dest>" one per line.
 build_desired_pairs() {
-  local f rel
+  local f rel files=()
   shopt -s nullglob
-  for f in "$REPO_DIR"/.claude/commands/*.md \
-           "$REPO_DIR"/.claude/agents/*.md \
-           "$REPO_DIR"/.agents/workflows/*.md \
-           "$REPO_DIR"/.opencode/agents/*.md \
-           "$REPO_DIR"/.opencode/commands/*.md \
-           "$REPO_DIR"/.agents/skills/*/ \
-           "$REPO_DIR"/.codex/agents/*.toml \
-           "$REPO_DIR"/.claude/adt/scripts/*.sh \
-           "$REPO_DIR"/.claude/adt/drivers/*.md; do
+  # The agent prompts, scripts and driver adapters are read by every tool;
+  # the rest only by the tools that use it. The Codex skills find their
+  # command file in .claude/commands/, so codex needs those links too.
+  if has_tool claude || has_tool codex; then files+=("$REPO_DIR"/.claude/commands/*.md); fi
+  files+=("$REPO_DIR"/.claude/agents/*.md)
+  if has_tool antigravity; then files+=("$REPO_DIR"/.agents/workflows/*.md); fi
+  if has_tool opencode; then files+=("$REPO_DIR"/.opencode/agents/*.md "$REPO_DIR"/.opencode/commands/*.md); fi
+  if has_tool codex; then files+=("$REPO_DIR"/.agents/skills/*/ "$REPO_DIR"/.codex/agents/*.toml); fi
+  files+=("$REPO_DIR"/.claude/adt/scripts/*.sh "$REPO_DIR"/.claude/adt/drivers/*.md)
+  for f in ${files[@]+"${files[@]}"}; do
     # A Codex skill is a folder, linked whole (Codex follows a linked skill
     # folder), so the glob above ends in a slash: drop it.
     f="${f%/}"
@@ -280,9 +360,16 @@ rewrite_agents_block() {
     install_tmp_over "$tmp" "$af"
   else
     rm -f "$tmp"
-    [ -f "$af" ] && rm -f "$af"
-    [ -d "$(dirname "$af")" ] && prune_empty_dirs "$(dirname "$af")"
+    rm -f "$af"
+    if [ -d "$(dirname "$af")" ]; then
+      prune_empty_dirs "$(dirname "$af")"
+    fi
   fi
+}
+
+# True if .agents/agents.md has our marker block.
+has_agents_block() {
+  [ -f "$PROJECT_DIR/.agents/agents.md" ] && grep -qxF "$AGENTS_MARK_START" "$PROJECT_DIR/.agents/agents.md"
 }
 
 
@@ -291,6 +378,7 @@ do_install() {
   echo "agentic-dev-team install"
   echo "  repo:    $REPO_DIR"
   echo "  project: $PROJECT_DIR"
+  echo "  tools:   ${TOOLS// /, }"
   echo ""
 
   # Build desired pairs.
@@ -368,20 +456,31 @@ do_install() {
   # Rewrite .gitignore marker block.
   printf '%s\n' "$desired_dests" | rewrite_gitignore_block
 
-  # Rewrite .agents/agents.md marker block with persona stubs.
+  # Rewrite .agents/agents.md marker block with persona stubs, for
+  # Antigravity only. Without it, remove a block an earlier run added, and
+  # leave a file without our block alone.
   local persona_src="$REPO_DIR/.agents/AGENTIC_DEV_TEAM.md"
   local persona_content=""
-  if [ -f "$persona_src" ]; then
+  if has_tool antigravity && [ -f "$persona_src" ]; then
     persona_content="$(cat "$persona_src")"
   fi
-  rewrite_agents_block "$persona_content"
   if [ -n "$persona_content" ]; then
+    rewrite_agents_block "$persona_content"
     echo "  synced: .agents/agents.md (marker block)"
+  elif has_agents_block; then
+    rewrite_agents_block ""
+    echo "  removed: .agents/agents.md (marker block)"
   fi
 
-  # Pre-approve the pipeline's own commands in Claude Code and Codex.
-  if [ "$ALLOW" = 1 ] && [ -f "$REPO_DIR/.claude/adt/scripts/adt.sh" ]; then
-    bash "$REPO_DIR/.claude/adt/scripts/adt.sh" allow --project "$PROJECT_DIR" 2>&1 | sed 's/^adt: /  /'
+  # Pre-approve the pipeline's own commands in Claude Code and Codex, each
+  # only when it is installed. Rules an earlier run added for a tool not
+  # installed now stay: the script they allow is still installed, and that
+  # tool's plugin may use them.
+  local allow_args=(allow --project "$PROJECT_DIR")
+  if ! has_tool codex; then allow_args+=(--only claude); fi
+  if ! has_tool claude; then allow_args+=(--only codex); fi
+  if { has_tool claude || has_tool codex; } && [ "$ALLOW" = 1 ] && [ -f "$REPO_DIR/.claude/adt/scripts/adt.sh" ]; then
+    bash "$REPO_DIR/.claude/adt/scripts/adt.sh" "${allow_args[@]}" 2>&1 | sed 's/^adt: /  /'
   fi
 
   # Create the optional config once. It never overwrites an existing file,
@@ -395,8 +494,14 @@ do_install() {
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
-  echo "Done. Try /build-auto-fast, /build-auto, /build-guided, /plan-spec, or /plan-design in Claude Code, Antigravity, or opencode,"
-  echo "or \$build-auto-fast and the others in Codex."
+  local names
+  names="$(tool_names)"
+  if [ -n "$names" ]; then
+    echo "Done. Try /build-auto-fast, /build-auto, /build-guided, /plan-spec, or /plan-design in $names."
+    if has_tool codex; then echo "In Codex, type \$build-auto-fast and the others."; fi
+  else
+    echo "Done. Try \$build-auto-fast, \$build-auto, \$build-guided, \$plan-spec, or \$plan-design in Codex."
+  fi
   echo "Optional config: .agentic-dev-team/config.yaml (see HOW_IT_WORKS.md, \"Configuration\")."
 }
 

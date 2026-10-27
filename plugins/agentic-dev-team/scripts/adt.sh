@@ -20,7 +20,7 @@
 #                         | get <key> | bump <key> --max <n> | show
 #   adt.sh device-release --slug <slug> | --serial <serial>
 #   adt.sh device-list
-#   adt.sh allow          [--remove] [--project <dir>]
+#   adt.sh allow          [--remove] [--project <dir>] [--only claude|codex]
 #
 # preflight checks the machine before a run starts. The only thing it changes
 # is to start auto-mobile's background service when it is not running, which
@@ -53,7 +53,8 @@
 # stops the run's devices when it ends. allow adds the pipeline's permission
 # rules to the project's .claude/settings.local.json, and a Codex rule that
 # runs this script outside Codex's sandbox to .codex/rules/ (or, with
-# --remove, takes them out again).
+# --remove, takes them out again); --only claude or --only codex does one
+# of the two.
 #
 # The regression suite is e2e/flows/<area>/<name>.yaml in the project. A run
 # replays every P0 flow, plus the tiers each --area names (for example
@@ -2100,7 +2101,8 @@ script_path() {
 # from the directory it runs in, which is where the build commands run this.
 # Codex (it sets CODEX_THREAD_ID for its commands) reads .rules files, and
 # runs a command that no rule allows in its sandbox, where adb, the emulator
-# and Gradle cannot work. If not, say how to approve them once.
+# and Gradle cannot work. If not, say how to approve them once. Antigravity
+# and OpenCode read neither, so in them there is nothing to check.
 preflight_permissions() {
   local here file
   here="$(pwd -P)"
@@ -2115,6 +2117,8 @@ preflight_permissions() {
     pf_warn "in Codex, the pipeline's own commands are not pre-approved, so unless Codex has full access, a run may stop to ask. Approve them once with: bash $(script_path) allow --project $here, then start a new Codex session"
     return 0
   fi
+  # Claude Code sets CLAUDECODE for its commands.
+  [ -n "${CLAUDECODE:-}" ] || return 0
   for file in "$here/.claude/settings.local.json" "$here/.claude/settings.json" \
               "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
     [ -f "$file" ] && grep -q 'mcp__auto-mobile__\*\|mcp__auto-mobile"' "$file" && \
@@ -2233,14 +2237,16 @@ prefix_rule(pattern = [\"bash\", \"$(printf '%s' "$self" | sed 's/[\\"]/\\&/g')\
 }
 
 cmd_allow() {
-  local mode=add project="" settings state self rules py
+  local mode=add project="" only="" settings state self rules py
   while [ $# -gt 0 ]; do
     case "$1" in
       --remove) mode=remove; shift ;;
       --project) project="${2:-}"; shift 2 ;;
+      --only) [ $# -ge 2 ] || usage; only="$2"; shift 2 ;;
       *) usage ;;
     esac
   done
+  case "$only" in ''|claude|codex) ;; *) usage ;; esac
   # Claude Code and Codex read the project's rules from the directory they run in.
   [ -n "$project" ] || project="."
   project="$(cd "$project" 2>/dev/null && pwd -P)" || die 2 "no such project directory."
@@ -2254,7 +2260,8 @@ cmd_allow() {
     *) case "$self" in */.claude/plugins/*) rules="$rules
 Bash(bash $self *)" ;; esac ;;
   esac
-  codex_allow "$mode" "$project" "$self"
+  [ "$only" = claude ] || codex_allow "$mode" "$project" "$self"
+  [ "$only" = codex ] && return 0
 
   if command -v python3 > /dev/null 2>&1 && python3 -c 'import json' > /dev/null 2>&1; then
     py=python3

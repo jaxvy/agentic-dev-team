@@ -398,23 +398,32 @@ script for Codex once; the preflight prints the exact command, and
 ### install.sh, for each project
 
 Use this for Antigravity and OpenCode, and for Codex when you want its named
-agents. It also works together with either plugin.
+agents. It also works together with either plugin: with a plugin, install only
+the other tools, for example `install.sh opencode`.
 
 ```bash
 git clone https://github.com/jaxvy/agentic-dev-team.git ~/code/agentic-dev-team
 cd /path/to/your-android-project
-~/code/agentic-dev-team/install.sh
+~/code/agentic-dev-team/install.sh                   # all four tools
+~/code/agentic-dev-team/install.sh claude            # only Claude Code
+~/code/agentic-dev-team/install.sh claude,codex      # Claude Code and Codex
 ```
 
-It links the agents, commands and scripts into `.claude/`,
-`.agents/workflows/`, `.agents/skills/`, `.codex/agents/` and `.opencode/`,
-and creates the optional config file `.agentic-dev-team/config.yaml`. It does
-not change your files in those directories, with one exception: it adds the
-pipeline's three permission rules to `.claude/settings.local.json` and keeps
-all your other settings. It also writes its own Codex rules file,
-`.codex/rules/agentic-dev-team.rules`. With these, a run does not stop to ask
-(see [Permissions](HOW_IT_WORKS.md#before-a-run-preflight-and-permissions)).
-Pass `--no-allow` to skip both.
+The tools are `claude`, `codex`, `antigravity` and `opencode`. With no tool,
+it installs for all four. Every tool gets the agent prompts, the pipeline docs
+and the scripts in `.claude/`, because every tool reads them there. Each tool
+also gets its own files: `.claude/commands/` for Claude Code;
+`.claude/commands/`, `.agents/skills/` and `.codex/agents/` for Codex;
+`.agents/workflows/` for Antigravity; and `.opencode/` for OpenCode.
+
+It also creates the optional config file `.agentic-dev-team/config.yaml`. It
+does not change your files in those directories, with one exception: for
+Claude Code, it adds the pipeline's three permission rules to
+`.claude/settings.local.json` and keeps all your other settings. For Codex, it
+writes its own rules file, `.codex/rules/agentic-dev-team.rules`. With these, a
+run does not stop to ask (see
+[Permissions](HOW_IT_WORKS.md#before-a-run-preflight-and-permissions)). Pass
+`--no-allow` to skip both.
 
 <details>
 <summary><b>Update and uninstall</b></summary>
@@ -423,12 +432,13 @@ To update:
 
 ```bash
 cd ~/code/agentic-dev-team && git pull && cd /path/to/your-project
-~/code/agentic-dev-team/install.sh
+~/code/agentic-dev-team/install.sh claude   # the same tools as before
 ```
 
 `git pull` updates the agents and commands you have. The changes apply
 immediately, because your project links to them. Run `install.sh` again to add
-new files and remove old ones.
+new files and remove old ones. Give it the same tools as before: each run
+installs exactly the tools it names and removes the links of the others.
 
 To uninstall:
 

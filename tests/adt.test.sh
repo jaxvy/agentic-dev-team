@@ -1029,14 +1029,17 @@ expect_code "Maestro older than 2.11.0 fails preflight" 16 $?
 ADT_MAESTRO=/nonexistent/maestro preflight "$SANDBOX/proj1" maestro > /dev/null
 expect_code "a missing Maestro fails preflight" 16 $?
 expect_true "with no permission rules anywhere, preflight says how to add them" grep -q "^warn  in Claude Code, the pipeline's own commands are not pre-approved" <<EOF
-$(preflight "$SANDBOX/proj1" maestro)
+$(CLAUDECODE=1 preflight "$SANDBOX/proj1" maestro)
 EOF
 expect_true "  (for the folder it runs in)" grep -q "allow --project $SANDBOX/proj1\$" <<EOF
-$(preflight "$SANDBOX/proj1" maestro)
+$(CLAUDECODE=1 preflight "$SANDBOX/proj1" maestro)
 EOF
+expect_true "  (but not in another tool, where the rules mean nothing)" sh -c "! grep -q 'not pre-approved' <<EOF
+$(unset CLAUDECODE; preflight "$SANDBOX/proj1" maestro)
+EOF"
 adt "$SANDBOX/proj1" allow >/dev/null 2>&1
 expect_true "after allow, that warning is gone" sh -c "! grep -q 'not pre-approved' <<EOF
-$(preflight "$SANDBOX/proj1" maestro)
+$(CLAUDECODE=1 preflight "$SANDBOX/proj1" maestro)
 EOF"
 serial="$(adt "$SANDBOX/proj1" device-acquire --slug old 2>/dev/null | tail -n 1)"
 out="$(CODEX_THREAD_ID=t1 preflight "$SANDBOX/proj2" maestro)"
@@ -1129,6 +1132,23 @@ mkdir -p "$cached" && cp "$SCRIPT" "$cached/adt.sh"
 (cd "$SANDBOX/proj1" && /bin/bash "$cached/adt.sh" allow >/dev/null 2>&1)
 expect_true "from the Codex plugin, allow also allows that path" \
   grep -qF "prefix_rule(pattern = [\"bash\", \"$cached/adt.sh\"], decision = \"allow\")" "$rules"
+
+# --only: one tool's rules, for an install of that tool alone.
+setup
+settings="$SANDBOX/proj1/.claude/settings.local.json"
+rules="$SANDBOX/proj1/.codex/rules/agentic-dev-team.rules"
+adt "$SANDBOX/proj1" allow --only claude >/dev/null 2>&1
+expect_code "allow --only claude succeeds" 0 $?
+expect_true "  (it writes the Claude Code rules)" [ -f "$settings" ]
+expect_true "  (and no Codex rule)" [ ! -e "$SANDBOX/proj1/.codex" ]
+adt "$SANDBOX/proj1" allow --only codex >/dev/null 2>&1
+expect_true "allow --only codex writes the Codex rule" [ -f "$rules" ]
+adt "$SANDBOX/proj1" allow --remove --only codex >/dev/null 2>&1
+expect_true "--remove --only codex deletes only the Codex rule" sh -c "[ ! -e '$rules' ] && [ -f '$settings' ]"
+adt "$SANDBOX/proj2" allow --only codex >/dev/null 2>&1
+expect_true "allow --only codex writes no Claude Code rules" [ ! -e "$SANDBOX/proj2/.claude" ]
+adt "$SANDBOX/proj1" allow --only cursor >/dev/null 2>&1
+expect_code "allow --only with another name is a usage error" 2 $?
 
 # ---------- summary ----------
 
