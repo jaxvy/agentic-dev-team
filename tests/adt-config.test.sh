@@ -163,14 +163,14 @@ eq "6 judge frontmatter is inherit" "inherit" "$(sed -n '2,/^---$/p' "$PLUGIN/ag
 # ---------- 7. the template is valid YAML and inert ----------
 
 if python3 -c 'import yaml' 2>/dev/null; then
-  eq "7 template parses to null sections" "{'version': 1, 'agents': None, 'build_auto_reviewed': None}" \
+  eq "7 template parses to null sections" "{'version': 1, 'agents': None, 'build_auto': None}" \
     "$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])))' "$TEMPLATE")"
   eq "7 full fixture parses" "ok" "$(python3 - "$REPO_DIR/tests/fixtures/config.full.yaml" <<'EOF'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 assert d["version"] == 1
 assert set(d["agents"]) == {"pm", "architect", "architect_reviewer", "coder", "code_reviewer", "test_writer", "tester", "review_judge"}
-b = d["build_auto_reviewed"]
+b = d["build_auto"]
 assert set(b) == {"architect", "coder", "tester", "architect_reviewer", "code_reviewer"}
 assert len(b["code_reviewer"]["reviewers"]) == 4
 assert b["code_reviewer"]["reviewers"][1]["required"] is False
@@ -209,10 +209,10 @@ bash "$REPO_DIR/install.sh" --no-allow "$P" > /dev/null 2>&1
 check "8 --no-allow writes no Codex rules" test ! -e "$P/.codex/rules"
 bash "$REPO_DIR/install.sh" --uninstall "$P" > /dev/null 2>&1
 
-P="$T/p8c"; new_repo "$P"; mkdir -p "$P/.agents/skills/build-auto"
+P="$T/p8c"; new_repo "$P"; mkdir -p "$P/.agents/skills/build-auto-fast"
 bash "$REPO_DIR/install.sh" "$P" > "$T/install8c.txt" 2>&1; rc=$?
 eq "8 a skill folder of your own at our path: refused" 1 "$rc"
-check "8   (named in the refusal)" grep -q "refuse: .agents/skills/build-auto" "$T/install8c.txt"
+check "8   (named in the refusal)" grep -q "refuse: .agents/skills/build-auto-fast" "$T/install8c.txt"
 check "8   (and nothing was linked)" test ! -e "$P/.codex"
 
 echo

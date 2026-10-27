@@ -1,6 +1,6 @@
 ---
 name: build-auto
-description: Architect → Coder → Tester for an already-specified Android feature
+description: Architect → Coder → Tester with automated reviewer gates (architect-reviewer + code-reviewer) that bounce work back on feedback
 allowed-tools:
   - Bash(bash .claude/adt/scripts/adt.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/adt.sh *)
@@ -8,7 +8,7 @@ allowed-tools:
   - mcp__maestro__*
 ---
 
-You will run the Android development pipeline for: $ARGUMENTS
+You will run the reviewer-gated Android development pipeline for: $ARGUMENTS
 
 Before executing, find and read two files in full. PIPELINE_DOC is
 `AGENTIC_DEV_TEAM_PIPELINE.md` (Part A: the rules every agent obeys).
@@ -23,7 +23,7 @@ source of truth; do not duplicate their content here.
 
 Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
 driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
-file (MODELS). Do all of them before any agent runs.
+file (MODELS, and RUNS). Do all of them before any agent runs.
 
 Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
 command, paths and driver once the slug is known, the phase at the start of
@@ -33,16 +33,21 @@ STOP. At every exit, after the device release, record how the run ended, as
 that section's "At the end" says. If `$ARGUMENTS` is exactly `resume <slug>`,
 follow "Resume" in that section instead of starting at the first phase.
 
-This is the /build-auto flow — assumes the feature is already understood.
-No PM phase. If the request is vague, suggest the user run /build-guided instead.
+Configured runs: when RUNS is on, follow CONFIG_DOC, "Configured Runs
+(/build-auto only)", for every phase below: it says where each role
+runs, and how a gate with 2 or more reviewers runs as a review panel with a
+judge. When RUNS is off, ignore every line that names RUNS.
 
-Design doc: **off** by default for this command. This is the speed path — no
-human gate and no reviewer waits on the run, so nobody is reading a design
-document while it happens, and generating one would cost tokens for an artifact
-nothing consumes. `$ARGUMENTS` may carry `doc: on` (or an explicit `doc: off`)
-anywhere in the text — read it, remove that token before you use the rest as the
-feature request, and let it override the default. Store the result as
-DESIGN_DOC (`on` or `off`).
+This is the /build-auto flow — same shape as /build-auto-fast (no PM phase,
+no human gates), but each producing phase is followed by an automated reviewer
+that can send the work back. It assumes the feature is already understood. If
+the request is vague, suggest the user run /build-guided instead.
+
+Design doc: **off** by default for this command. This is an unattended auto flow,
+so no design doc is generated unless explicitly requested. `$ARGUMENTS` may carry
+`doc: on` (or `doc: off`) anywhere in the text — read it, remove that token before
+you use the rest as the feature request, and let it override the default. Store the
+result as DESIGN_DOC (`on` or `off`).
 
 Test credentials: there is no `creds:` argument, and deliberately so — a PIN or
 password is free-form text with no terminator, so it cannot be told apart from
@@ -53,17 +58,28 @@ goes to the `adt-android-tester` subagent and nowhere else.
 Flows never ask: they type the project's declared test secrets by name, and
 the script supplies the values (Part A, "Test secrets for flows").
 
+**Reviewer-loop protocol (applies to every gate below):**
+- After the producing agent finishes, delegate to its reviewer.
+- If the reviewer ends with `✅ ... APPROVED`, proceed to the next phase.
+- If the reviewer ends with `🔧 ... CHANGES REQUESTED`, re-run the producing
+  agent, passing it the reviewer's numbered feedback, and review again.
+- A gate allows **at most 2 re-runs** (3 production attempts total). If the
+  reviewer still requests changes after the 2nd re-run, **STOP the whole
+  pipeline** and report the phase and the unresolved feedback. Do not proceed
+  to later phases.
+
 Input — before Phase 1, look at the feature request (`$ARGUMENTS` with the
 `doc:` token removed). It may be a file another command wrote:
   - **An existing `implementation-plan.md`** (from `/plan-design`, say): set
     PLAN_PATH to it, and DOC_PATH to the `design-doc.md` beside it when one
     exists (DESIGN_DOC on), else DESIGN_DOC off; a `doc:` token changes
     nothing here. Skip Phase 1: the plan is already written. Start at
-    Phase 2.
+    Phase 1R: the plan is reviewed like one this run wrote, and a CHANGES
+    REQUESTED re-runs the Architect on it as a revision run.
   - **An existing `design-doc.md`** with no plan beside it: in Phase 1, pass
     the Architect `DESIGN_DOC: from-design-doc` and that path instead of a
     feature request. DOC_PATH is that path.
-  - **An existing `feature.md`** (from `/plan-research`): in Phase 1, pass the
+  - **An existing `feature.md`** (from `/plan-spec`): in Phase 1, pass the
     Architect that path as the feature spec. It writes into that directory.
   - **Anything else** is the feature request, as below.
   A path ending in one of those names that does not exist is a STOP: name the
@@ -71,16 +87,34 @@ Input — before Phase 1, look at the feature request (`$ARGUMENTS` with the
 
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request
-  (with the `doc:` token removed), PIPELINE_DOC, and the line `DESIGN_DOC: off`
-  or `DESIGN_DOC: on` to match what you resolved above. Pass it explicitly —
-  an Architect told nothing writes both documents.
+  (with the `doc:` token removed), PIPELINE_DOC, and the line `DESIGN_DOC: on`
+  or `DESIGN_DOC: off` to match what you resolved above.
   Wait for ✅ ARCHITECT DONE.
   Parse the artifact paths from the DONE message — it will say:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
     "design doc at pipeline_artifacts/{slug}/design-doc.md" (present only when
     DESIGN_DOC is on)
   Store the plan path: PLAN_PATH = pipeline_artifacts/{slug}/implementation-plan.md
-  Store the design doc path: DOC_PATH (on only)
+  Store the design doc path: DOC_PATH = pipeline_artifacts/{slug}/design-doc.md
+  (on only)
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
+
+Phase 1R — Architect review gate (max 2 re-runs, counter `plan_review_reruns`):
+  Delegate to the `adt-android-architect-reviewer` subagent. Pass PLAN_PATH and,
+  when DESIGN_DOC is on, DOC_PATH — the rejected alternatives live in the design
+  doc, so a reviewer without it cannot check them.
+  - On `✅ PLAN APPROVED`: continue to Phase 2.
+  - On `🔧 PLAN CHANGES REQUESTED`: re-run `adt-android-architect` with the
+    reviewer's feedback (When RUNS is on, CONFIG_DOC, "Configured Runs", says
+    what this feedback is: in a gate with an external reviewer or a panel,
+    the build-gate item first when the build gate failed, then the judge's
+    Confirmed list or the reviewer's list.) and the instruction to revise PLAN_PATH in place — and
+    DOC_PATH with it, in the same invocation, so the document a human ends up
+    reading is the approved version rather than the first draft. Then review
+    again. After the 2nd failed re-run, STOP and report (see protocol).
+    Note which bounces changed the approach; that belongs in the design doc's
+    Implementation Notes at the end of the run.
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
   Early boot — first, once PLAN_PATH gives the slug S: run
@@ -126,6 +160,28 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
 
   If any coder reports a problem with its section (e.g. spec issue,
   unexpected file conflict), STOP rather than continuing.
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
+
+Phase 2R — Code review gate (max 2 re-runs, counter `code_review_reruns`):
+  After ALL coding for the feature is complete, delegate to the
+  `adt-android-code-reviewer` subagent. Pass PLAN_PATH (it reviews the
+  uncommitted diff against the plan and the project's conventions).
+  - On `✅ CODE APPROVED`: continue to Phase 3.
+  - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder to address the feedback —
+    spawn ONE `adt-android-coder` subagent with PLAN_PATH and the reviewer's
+    numbered feedback (When RUNS is on, CONFIG_DOC, "Configured Runs", says
+    what this feedback is: in a gate with an external reviewer or a panel,
+    the build-gate item first when the build gate failed, then the judge's
+    Confirmed list or the reviewer's list.), instructing it to fix exactly those points (regardless of
+    the parallel-safety decision; fixes are usually small and cross-cutting).
+    State in that prompt that the numbered findings are in scope to fix **even
+    where the plan does not specify the fix** — Part A, "Review-Driven Fixes Are
+    In Scope" — so the Coder does not STOP on a defect the plan never
+    anticipated. Wait for ✅ CODER DONE, then review again. After the 2nd failed
+    re-run, STOP and report (see protocol).
+    Record the `Plan departures` field from each ✅ CODER DONE marker; it feeds
+    the final summary below.
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
 Phase 3 — Tester:
   Run the test phase exactly as ORCHESTRATION_DOC, "The Test Phase",
@@ -151,6 +207,7 @@ Phase 3 — Tester:
   gate, at Phase 3B below.
   Wait for ✅ TESTER DONE **or** ⛔ TESTER BLOCKED. The Tester ends on one or
   the other; a blocked run never emits the DONE marker, so do not wait on it.
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
 Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes`):
   A gate stopped the Tester before it could finish — one it had no credential
@@ -180,15 +237,34 @@ Phase 3B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes
   On `stop`, or after the 2nd resume still comes back blocked, **STOP** and
   report per the Blocked Path, saying plainly that the feature is untested.
   Release the device and run "Close the run" below on the way out.
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
 
 Phase 3F — Tester fix loop (max 2 iterations, counter `fix_iterations`):
   Read the verdict from `test-results.md`. On READY TO MERGE, go to "Keep the
   passing flows" below. On NEEDS FIXES, iterate (N = 1, then 2):
     Spawn ONE `adt-android-coder` subagent with PLAN_PATH plus the test
     report's "Recommendations for Coder" section verbatim (blocking findings
-    only — the Tester's Observations section is for the user and never drives
-    a fix), instructing it to fix exactly those failures. Wait for
-    ✅ CODER DONE.
+    only — the Tester's Observations section never drives a fix), instructing
+    it to fix exactly those failures. Wait for ✅ CODER DONE.
+
+    Targeted re-review — the Coder just mutated code that Phase 2R approved,
+    which invalidates that approval (pipeline doc Part A, "Review Currency").
+    Delegate to `adt-android-code-reviewer`, stating that this is a TARGETED
+    RE-REVIEW and passing: PLAN_PATH and the fix instructions the Coder was
+    given.
+    - On `✅ CODE APPROVED`: proceed to the re-test below.
+    - On `🔧 CODE CHANGES REQUESTED`: re-run the Coder once with that numbered
+      feedback (When RUNS is on, CONFIG_DOC, "Configured Runs", says
+      what this feedback is: in a gate with an external reviewer or a panel,
+      the build-gate item first when the build gate failed, then the judge's
+      Confirmed list or the reviewer's list.), then re-review. Say in that prompt — as in Phase 2R — that the
+      findings are in scope to fix even where the plan specifies no fix, since
+      a Coder in the fix loop is otherwise under the stricter "stay in the plan"
+      rule that governs Tester findings. This targeted loop allows **at most 1
+      re-run** (counter `targeted_reruns_<N>`).
+      If the reviewer still requests changes, **STOP** — do not re-test
+      unreviewed code and do not spend the remaining Tester iteration on it.
+
     Re-run the test phase (ORCHESTRATION_DOC, "The Test Phase") on the same device —
     install included, so the re-test sees the fixed build. The Test Writer runs
     again only if the previous `test-results.md` lists Flow Defects (pass
@@ -204,6 +280,13 @@ Phase 3F — Tester fix loop (max 2 iterations, counter `fix_iterations`):
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
 
+  The targeted re-review is what keeps the final tree bound to a code review:
+  a run may only reach READY TO MERGE with an approval that post-dates the last
+  code mutation. Its 1-re-run budget is per iteration and separate from Phase
+  2R's — a targeted re-review never re-opens Phase 2R's own budget, and never
+  re-reviews the whole feature.
+  When RUNS is on, run this phase's roles as CONFIG_DOC, "Configured Runs", says.
+
 Keep the passing flows — only when the final verdict is READY TO MERGE: run
 the promote step of ORCHESTRATION_DOC, "The Test Phase" (`adt.sh
 promote`, with one `--remove` per Flows Retired row and per "Suite Flows to
@@ -216,26 +299,46 @@ ORCHESTRATION_DOC, "The Test Phase". It is separate from "Close the run",
 which is skipped when there is no design doc.
 
 Close the run — before the summary below, and on any exit path including a STOP:
-  Only if DESIGN_DOC is on and the Architect wrote one — the default run
-  produces no design doc and skips this entirely. Append to DOC_PATH's
-  `## Implementation Notes` section what actually diverged from the document:
-  Coder work that departed from the approach, and Tester fix-loop changes. You
-  have this in your own run history; do not re-read the diff to reconstruct it.
-  Edit that section only, and write "No divergence — the run implemented this
-  document as written." when there is nothing to record. Report DOC_PATH with
-  the summary.
+  Skip this entirely when there is no design doc to close out — DESIGN_DOC is
+  off, or the run stopped before the Architect wrote one. Otherwise append to
+  DOC_PATH's `## Implementation Notes` section what actually diverged from the
+  document — architect-reviewer bounces that changed the approach, code-reviewer
+  feedback that changed it, and Tester fix-loop changes. You have all of this in
+  your own run history; do not re-read the diff to reconstruct it. Edit that
+  section only, leave every other section as the Architect wrote it, and write
+  "No divergence — the run implemented this document as written." when there is
+  nothing to record.
 
 When complete, summarise the final verdict from the test-results.md in the same
 directory as PLAN_PATH — starting with its "Verified V of N plan cases; U not
 verified" line (count it from its Coverage section if the line is missing) and
-each unverified case with its reason — including how many
-fix iterations ran, any preflight warnings, and list any
-Observations the Tester recorded — those are unrequested behaviours it noticed
-and deliberately did not fix, for the user to accept or turn into a follow-up.
-Also report whether parallel execution was used and how many adt-android-coder
-subagents ran, so the user can gauge token cost, the test driver and the device
-the run tested on, the flow counts from the last `run-results.md` (including
-the regression suite's, and any P0 warning), the suite flows promote added,
-replaced and removed — with a reminder to commit `e2e/flows/` alongside the
-feature — and for each test phase how long the Test Writer, the flow run and
-the Tester took (ORCHESTRATION_DOC, "The Test Phase").
+each unverified case with its reason, plus any preflight
+warnings — report DOC_PATH — when the run produced one — as the
+document to review this work from, and include how many fix iterations ran and,
+for each one,
+the targeted re-review's verdict — so the user can see the final tree was
+reviewed after its last change. Note any Observations the Tester recorded as
+non-blocking, since those are decisions waiting on the user rather than work the
+pipeline did. Also report, for each review gate, how many re-runs were needed
+(0, 1, or 2) and whether parallel execution was used and how many
+adt-android-coder subagents ran, so the user can gauge token cost, the test
+driver and the device the run tested on, the flow counts from the last
+`run-results.md` (including the regression suite's, and any P0 warning), the
+suite flows promote added, replaced and removed — with a reminder to commit
+`e2e/flows/` alongside the feature — and for each test phase how long the Test
+Writer, the flow run and the Tester took (ORCHESTRATION_DOC, "The Test Phase").
+
+Two things from the code review gate go in the summary as well, because the
+developer — not this pipeline — does the real review of the diff, and these are
+what they would otherwise have to rediscover:
+  - **Plan departures**: every `Plan departures` line the Coders reported across
+    the whole run, Phase 3F included. These are places a reviewer-directed fix
+    contradicted something PLAN_PATH explicitly specifies, so the plan and the
+    tree now disagree there — say what the plan said and what was built instead.
+    Write `none` when there were none.
+  - **Nits the reviewer declined to block on**: the items under the reviewer's
+    "Nits / optional" sub-heading, which never drove a re-run and are otherwise
+    lost when the run ends. They are suggestions for the developer, not
+    outstanding work.
+
+When RUNS is on, add the "Configured run" section that CONFIG_DOC, "Configured Runs", defines.

@@ -1797,7 +1797,7 @@ cmd_state() {
       # A new run of this slug: a fresh ledger, so no count of an earlier run
       # carries over. A resume never runs this.
       [ $# -eq 1 ] || usage
-      case "$1" in ''|*[!"$LOWER"-]*) die 2 "start takes the command's name, such as build-auto: '$1'" ;; esac
+      case "$1" in ''|*[!"$LOWER"-]*) die 2 "start takes the command's name, such as build-auto-fast: '$1'" ;; esac
       mkdir -p "$(dirname "$file")"
       [ -f "$project/pipeline_artifacts/.gitignore" ] || printf '*\n' > "$project/pipeline_artifacts/.gitignore"
       [ -f "$file" ] && mv -f "$file" "$file.previous"

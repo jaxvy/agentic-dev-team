@@ -1,26 +1,26 @@
 ---
-name: plan-research
-description: Refine a vague Android idea into an approved feature spec (PM only, no build). The agentic-dev-team /plan-research command, for Codex.
+name: build-auto-fast
+description: Architect → Coder → Tester for an already-specified Android feature. The agentic-dev-team /build-auto-fast command, for Codex.
 ---
 
-# plan-research
+# build-auto-fast
 
-This skill runs the agentic-dev-team command `/plan-research` in Codex. Its
+This skill runs the agentic-dev-team command `/build-auto-fast` in Codex. Its
 command file holds the whole procedure, the same one that Claude Code,
 Antigravity and OpenCode follow. This skill only says where that file is and
 how its words map to Codex. In any other tool, do not follow it: tell the
-user to type `/plan-research` instead.
+user to type `/build-auto-fast` instead.
 
 1. **ARGUMENTS** is the text of the user's message after this skill's name,
-   which is `$plan-research`, or `$agentic-dev-team:plan-research` from the
-   plugin. ARGUMENTS can be empty.
-2. **The command file.** If `.claude/commands/plan-research.md` exists in the
+   which is `$build-auto-fast`, or `$agentic-dev-team:build-auto-fast` from the plugin.
+   ARGUMENTS can be empty.
+2. **The command file.** If `.claude/commands/build-auto-fast.md` exists in the
    project root, this is an `install.sh` install: use that file. Otherwise
    this skill comes from the Codex plugin, and this file is
-   `PLUGIN_ROOT/codex/skills/plan-research/SKILL.md`. PLUGIN_ROOT is the
-   absolute path of this file without its last four parts (the directory that
-   holds `commands/`, `agents/` and `scripts/`), and the command file is
-   `PLUGIN_ROOT/commands/plan-research.md`.
+   `PLUGIN_ROOT/codex/skills/build-auto-fast/SKILL.md`. PLUGIN_ROOT is the absolute
+   path of this file without its last four parts (the directory that holds
+   `commands/`, `agents/` and `scripts/`), and the command file is
+   `PLUGIN_ROOT/commands/build-auto-fast.md`.
 3. **Follow it.** Read the command file in full, skip its YAML frontmatter,
    and follow it exactly, as the orchestrator. In the command file, and in
    every file it sends you to:

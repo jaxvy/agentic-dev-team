@@ -45,7 +45,7 @@ Step 1 — Detect the input type.
   D. **Idea** — anything else (free text).
      → Write both the implementation plan and the design doc. If the text is
      too vague for the Architect to plan concretely, STOP and suggest the user
-     run `/plan-research` first.
+     run `/plan-spec` first.
 
   For cases C and D only: `$ARGUMENTS` may carry `doc: on` or `doc: off`
   anywhere in the text — read it, remove that token before you use the rest as
@@ -132,8 +132,8 @@ Step 4 — Report.
     Show the user the section headings of PLAN_PATH and report that path.
 
 Then STOP. Tell the user they can pass the plan's path to a build command to
-implement and verify it, without planning again: `/build-auto <PLAN_PATH>`,
-`/build-auto-reviewed <PLAN_PATH>` (which still reviews the plan first), or
+implement and verify it, without planning again: `/build-auto-fast <PLAN_PATH>`,
+`/build-auto <PLAN_PATH>` (which still reviews the plan first), or
 `/build-guided <PLAN_PATH>` (which shows it at the plan gate first).
 
 Do not proceed to any other phase — this command ends at the design phase.

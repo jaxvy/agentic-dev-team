@@ -3,7 +3,7 @@ name: adt-android-code-reviewer
 description: >
   Use this agent to review the Coder's uncommitted changes against the
   implementation plan and the project's conventions. Trigger after
-  adt-android-coder finishes in the /build-auto-reviewed flow, or when the user
+  adt-android-coder finishes in the /build-auto flow, or when the user
   says "review the code/diff". Requires uncommitted changes in the working tree
   and pipeline_artifacts/{slug}/implementation-plan.md. Outputs an APPROVED /
   CHANGES REQUESTED verdict — it never edits code.
@@ -101,7 +101,7 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    In-scope failures are blockers. Use the Skill tool for any area a skill
    covers when judging API usage.
 
-**Blocks from a configured run.** In a configured `/build-auto-reviewed`
+**Blocks from a configured run.** In a configured `/build-auto`
 run (the orchestrator's "Configured Runs" rules), your prompt can contain two extra blocks:
 
 - `BUILD GATE OUTPUT`: the orchestrator already ran the build gate. Use

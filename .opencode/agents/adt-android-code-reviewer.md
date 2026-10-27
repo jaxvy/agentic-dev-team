@@ -2,7 +2,7 @@
 description: >
   Use this agent to review the Coder's uncommitted changes against the
   implementation plan and the project's conventions. Trigger after
-  adt-android-coder finishes in the /build-auto-reviewed flow, or when the user
+  adt-android-coder finishes in the /build-auto flow, or when the user
   says "review the code/diff". Requires uncommitted changes in the working tree
   and pipeline_artifacts/{slug}/implementation-plan.md. Outputs an APPROVED /
   CHANGES REQUESTED verdict — it never edits code.

@@ -4,7 +4,7 @@ description: >
   Use this agent to refine a vague Android feature idea into a concrete
   feature description. Trigger only when the user runs /build-guided, or
   when they say "help me think through", "what should X look like", or
-  "I have an idea for". DO NOT use for /build-auto — /build-auto assumes
+  "I have an idea for". DO NOT use for /build-auto-fast — /build-auto-fast assumes
   the feature is already specified.
 tools: Read, Glob, Grep, Write
 model: opus
@@ -60,7 +60,7 @@ recommendation you make is grounded in Android platform conventions:
 ## Stop Conditions (report, do not guess)
 
 - The idea is already fully specified and needs no refinement → say so and
-  recommend `/build-auto` instead of running the interrogation.
+  recommend `/build-auto-fast` instead of running the interrogation.
 - The user goes quiet or gives only vague answers after you've pushed twice →
   summarise what's still unresolved and ask them to decide before you write.
 - You are running in a context where no user answers arrive → STOP and report

@@ -42,7 +42,7 @@ agents:
   # review_judge:       { model: <alias> } # default: no value = the main model
 
 # ---------------------------------------------------------------------------
-# build_auto_reviewed: only for /build-auto-reviewed.
+# build_auto: only for /build-auto.
 #
 # runner: where the agent runs.
 #   native    the current tool (default)
@@ -72,7 +72,7 @@ agents:
 # verifies and merges their findings. The judge runs in the current tool,
 # on the main model unless agents.review_judge sets a model.
 # ---------------------------------------------------------------------------
-build_auto_reviewed:
+build_auto:
   # architect: { runner: native }
   # coder:     { runner: native }
   # tester:    { runner: native }   # native, claude or command: no shell

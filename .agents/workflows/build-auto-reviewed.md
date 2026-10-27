@@ -1,1 +1,0 @@
-../../.claude/commands/build-auto-reviewed.md

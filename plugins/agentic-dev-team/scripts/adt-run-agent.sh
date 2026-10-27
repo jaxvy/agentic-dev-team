@@ -3,10 +3,10 @@
 # adt-run-agent.sh: config init and external agent runner for agentic-dev-team.
 #
 #   --init-config <project-root>   create .agentic-dev-team/config.yaml (all commands, install.sh)
-#   every other mode               external runs of /build-auto-reviewed (RUNS on)
+#   every other mode               external runs of /build-auto (RUNS on)
 #
 # Reference: AGENTIC_DEV_TEAM_CONFIG.md, "Agent Configuration" and
-# "Configured Runs (/build-auto-reviewed only)".
+# "Configured Runs (/build-auto only)".
 #
 # Usage:
 #   bash adt-run-agent.sh --init-config <project-root>

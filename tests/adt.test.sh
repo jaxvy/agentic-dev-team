@@ -784,10 +784,10 @@ $(adt "$SANDBOX/proj1" state --slug a show 2>/dev/null)
 EOF
 adt "$SANDBOX/proj2" state --slug a show >/dev/null 2>&1
 expect_code "a ledger belongs to its project" 2 $?
-adt "$SANDBOX/proj1" state --slug a start build-auto >/dev/null 2>&1
+adt "$SANDBOX/proj1" state --slug a start build-auto-fast >/dev/null 2>&1
 expect_code "start begins a new run's ledger" 0 $?
 expect_eq "  (no count of the earlier run carries over)" "1" "$(adt "$SANDBOX/proj1" state --slug a bump fix_iterations --max 2 2>/dev/null)"
-expect_eq "  (it records the command)" "build-auto" "$(adt "$SANDBOX/proj1" state --slug a get command 2>/dev/null)"
+expect_eq "  (it records the command)" "build-auto-fast" "$(adt "$SANDBOX/proj1" state --slug a get command 2>/dev/null)"
 expect_true "  (and keeps the earlier ledger beside it)" grep -q '^fix_iterations=2$' "$ledger.previous"
 adt "$SANDBOX/proj1" state --slug a start "build auto" >/dev/null 2>&1
 expect_code "start with a name that is not a command is refused" 2 $?

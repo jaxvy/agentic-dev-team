@@ -3,9 +3,9 @@ name: adt-android-architect
 description: >
   Use this agent to produce a concrete implementation plan for an Android
   feature, and the human-facing design doc that goes with it. Trigger after
-  adt-android-pm (in /build-guided flow) or directly (in /build-auto flow).
+  adt-android-pm (in /build-guided flow) or directly (in /build-auto-fast flow).
   Requires either pipeline_artifacts/{slug}/feature.md to exist (/build-guided)
-  or a clear feature description in the prompt (/build-auto). Writes
+  or a clear feature description in the prompt (/build-auto-fast). Writes
   design-doc.md alongside implementation-plan.md unless the orchestrator passes
   DESIGN_DOC: off.
 tools: Read, Write, Glob, Grep, Bash, Skill
@@ -280,7 +280,7 @@ must not touch):
 ## Stop Conditions (report, do not guess)
 
 - A required input is missing: in /build-guided the artifact dir or `feature.md`
-  doesn't exist; in /build-auto the feature description is too vague to plan
+  doesn't exist; in /build-auto-fast the feature description is too vague to plan
   concretely → STOP and ask the user (suggest `/build-guided` if it's the latter).
 - The feature conflicts with the existing architecture in a way you can't
   resolve from the codebase alone → STOP and surface the conflict, don't paper
@@ -362,9 +362,9 @@ Coder can re-invoke the same ones.
      `{dir}/feature.md` completely. If neither the path nor the file
      exists, STOP and tell the user.
    - **Feature spec run** (any flow; the prompt gives a path to a
-     `feature.md`, from `/plan-research`): read it completely and write into
+     `feature.md`, from `/plan-spec`): read it completely and write into
      its directory, keeping its slug. Do not derive a new one.
-   - In /build-auto flow: derive a short feature slug from the feature request
+   - In /build-auto-fast flow: derive a short feature slug from the feature request
      (lowercase, hyphens, no special chars — e.g. `recently-played-carousel`),
      then `mkdir -p pipeline_artifacts/{slug}`. Use `pipeline_artifacts/{slug}/`
      as the artifact directory for this run.

@@ -1,5 +1,5 @@
 ---
-name: plan-research
+name: plan-spec
 description: Refine a vague Android idea into an approved feature spec (PM only, no build)
 ---
 
@@ -20,7 +20,7 @@ source of truth; do not duplicate their content here.
 Then do ORCHESTRATION_DOC, "Command Start", steps 1 and 5: the docs and the
 config file (MODELS). This command uses no device, so it skips steps 2 to 4.
 
-This is the /plan-research flow — it produces a feature spec and stops. There
+This is the /plan-spec flow — it produces a feature spec and stops. There
 is no Architect, Coder, or Tester phase. Use it when you want the PM to turn a
 rough idea into a concrete, unambiguous `feature.md` you can review, hand off,
 or sit on.
@@ -39,8 +39,8 @@ PM Phase:
 When complete, show the user a summary of FEATURE_DIR/feature.md and STOP.
 Tell the user the `feature.md` path and that they can feed it to:
 - `/plan-design <FEATURE_DIR/feature.md>` to produce an implementation plan, or
-- `/build-guided <FEATURE_DIR/feature.md>`, `/build-auto <FEATURE_DIR/feature.md>`
-  or `/build-auto-reviewed <FEATURE_DIR/feature.md>` to run the rest of the
+- `/build-guided <FEATURE_DIR/feature.md>`, `/build-auto-fast <FEATURE_DIR/feature.md>`
+  or `/build-auto <FEATURE_DIR/feature.md>` to run the rest of the
   pipeline from this spec, with no second interview.
 
 Do not proceed to any other phase — this command ends at the feature spec.

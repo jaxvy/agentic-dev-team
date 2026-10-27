@@ -395,8 +395,8 @@ do_install() {
   echo ""
   echo "Summary: $added added, $unchanged unchanged, $removed removed."
   echo ""
-  echo "Done. Try /build-auto, /build-auto-reviewed, /build-guided, /plan-research, or /plan-design in Claude Code, Antigravity, or opencode,"
-  echo "or \$build-auto and the others in Codex."
+  echo "Done. Try /build-auto-fast, /build-auto, /build-guided, /plan-spec, or /plan-design in Claude Code, Antigravity, or opencode,"
+  echo "or \$build-auto-fast and the others in Codex."
   echo "Optional config: .agentic-dev-team/config.yaml (see HOW_IT_WORKS.md, \"Configuration\")."
 }
 
