@@ -9,7 +9,7 @@ description: >
   flow run, to fix only the flows that failed. Writes
   pipeline_artifacts/{slug}/flows/ and nothing else; it never edits the app,
   the plan, or the project's tests.
-tools: Read, Glob, Grep, Write, mcp__auto-mobile__*, mcp__maestro__*
+tools: Read, Glob, Grep, Write, Edit, mcp__auto-mobile__*, mcp__maestro__*
 model: sonnet
 ---
 
