@@ -29,7 +29,7 @@ Android emulator they boot for themselves. You get an uncommitted diff, a test
 report, and new regression tests for your project.
 
 ```text
-/build-auto-reviewed add a "save draft on background" hook to ComposeViewModel
+/build-auto add a "save draft on background" hook to ComposeViewModel
                      that persists input to Room every 2s and restores on launch
 ```
 
@@ -128,13 +128,13 @@ flowchart LR
 * **Blue** agents produce work. **Orange** reviewers are read-only: they
   approve, or they send back a numbered list of changes. The **green** step is
   a script, not a model.
-* The PM runs only in `/build-guided` and `/plan-research`. The reviewers run
-  only in `/build-auto-reviewed`. In `/build-guided`, you approve each step
+* The PM runs only in `/build-guided` and `/plan-spec`. The reviewers run
+  only in `/build-auto`. In `/build-guided`, you approve each step
   yourself.
 * Each loop has a limit, counted by a script. When work is still rejected
   after the last round, the run stops and tells you why. It does not report a
   success. A run whose session died continues with
-  `/build-auto resume <slug>` (or the command it started with).
+  `/build-auto-fast resume <slug>` (or the command it started with).
 
 ### Testing on a device
 
@@ -186,12 +186,12 @@ flowchart LR
   Q1{"Is the feature<br/>specified precisely?"}
   Q1 -- "No, it is an idea" --> Q2{"Do you want<br/>code now?"}
   Q2 -- "Yes" --> G["/build-guided<br/><i>you approve each step</i>"]
-  Q2 -- "No, a spec only" --> PRS["/plan-research"]
+  Q2 -- "No, a spec only" --> PRS["/plan-spec"]
   Q1 -- "Yes" --> Q3{"Do you want<br/>code now?"}
   Q3 -- "No, a plan only" --> PD["/plan-design"]
   Q3 -- "Yes" --> Q4{"Should reviewer agents<br/>check the plan and code?"}
-  Q4 -- "Yes" --> AR["/build-auto-reviewed<br/><i>unattended, reviewed</i>"]
-  Q4 -- "No, fastest path" --> AU["/build-auto<br/><i>unattended</i>"]
+  Q4 -- "Yes" --> AR["/build-auto<br/><i>unattended, reviewed</i>"]
+  Q4 -- "No, fastest path" --> AU["/build-auto-fast<br/><i>unattended</i>"]
 
   classDef cmd fill:#E8F0FE,stroke:#4285F4,color:#0B2E6B
   classDef ask fill:#F1F3F4,stroke:#5F6368,color:#202124
@@ -202,9 +202,9 @@ flowchart LR
 | Command | PM | Architect | Plan review | Coder | Code review | Device test | Who approves |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
 | `/build-guided` | ✅ | ✅ | | ✅ | | ✅ | You, at each step |
-| `/build-auto` | | ✅ | | ✅ | | ✅ | Nobody: it runs from start to finish |
-| `/build-auto-reviewed` | | ✅ | ✅ | ✅ | ✅ | ✅ | Reviewer agents. Uses more tokens |
-| `/plan-research` | ✅ | | | | | | Stops after the spec |
+| `/build-auto-fast` | | ✅ | | ✅ | | ✅ | Nobody: it runs from start to finish |
+| `/build-auto` | | ✅ | ✅ | ✅ | ✅ | ✅ | Reviewer agents. Uses more tokens |
+| `/plan-spec` | ✅ | | | | | | Stops after the spec |
 | `/plan-design` | | ✅ | | | | | Stops after the plan and design doc |
 
 <details>
@@ -229,10 +229,10 @@ one coder and fewer tokens.
 </details>
 
 <details>
-<summary><b>/build-auto</b>: the fastest path, for a feature you already specified</summary>
+<summary><b>/build-auto-fast</b>: the fastest path, for a feature you already specified</summary>
 
 ```text
-/build-auto add a "save draft on background" hook to ComposeViewModel that
+/build-auto-fast add a "save draft on background" hook to ComposeViewModel that
             persists the current input to Room every 2s and restores it on launch
 ```
 
@@ -243,14 +243,14 @@ tells you to use `/build-guided`. It writes no design doc by default. Pass
 </details>
 
 <details>
-<summary><b>/build-auto-reviewed</b>: unattended, with a reviewer after the plan and after the code</summary>
+<summary><b>/build-auto</b>: unattended, with a reviewer after the plan and after the code</summary>
 
 ```text
-/build-auto-reviewed add a "save draft on background" hook to ComposeViewModel
+/build-auto add a "save draft on background" hook to ComposeViewModel
                      that persists input to Room every 2s and restores on launch
 ```
 
-The same as `/build-auto`, with a reviewer after the Architect and after the
+The same as `/build-auto-fast`, with a reviewer after the Architect and after the
 Coder. The plan reviewer checks the plan against your codebase. The code
 reviewer reads every changed file, including new files that `git diff` does
 not show.
@@ -270,19 +270,19 @@ Each review has one reviewer unless you configure a panel of 2 to 5. See
 </details>
 
 <details>
-<summary><b>/plan-research</b> and <b>/plan-design</b>: plan only, no code</summary>
+<summary><b>/plan-spec</b> and <b>/plan-design</b>: plan only, no code</summary>
 
 ```text
-/plan-research add a recently-played carousel to the home screen
+/plan-spec add a recently-played carousel to the home screen
 /plan-design   pipeline_artifacts/recently-played-carousel/feature.md
 /plan-design   pipeline_artifacts/recently-played-carousel/implementation-plan.md
 /plan-design   pipeline_artifacts/recently-played-carousel/design-doc.md
 ```
 
-`/plan-research` runs only the PM. `/plan-design` runs only the Architect. Use
+`/plan-spec` runs only the PM. `/plan-design` runs only the Architect. Use
 them to think a feature through, or to estimate the work, before you build it.
 Their output goes directly into a `build-*` command later: pass the file's path
-(`/build-auto pipeline_artifacts/<slug>/implementation-plan.md`), and the build
+(`/build-auto-fast pipeline_artifacts/<slug>/implementation-plan.md`), and the build
 command skips the phases that file already covers.
 
 `/plan-design` finds out what you gave it. From a spec or an idea, it writes the
@@ -301,8 +301,8 @@ alternatives that lost, the blast radius, and how to roll back.
 |---|---|---|
 | `/build-guided` | on | At the plan step, before any code is written |
 | `/plan-design` | finds out what is missing | In the chat, when it is done |
+| `/build-auto-fast` | off | Not written |
 | `/build-auto` | off | Not written |
-| `/build-auto-reviewed` | off | Not written |
 
 Pass `doc: on` or `doc: off` to change this for one run. When the two documents
 differ, the plan is the source of truth for the code.
@@ -388,7 +388,7 @@ codex plugin marketplace add jaxvy/agentic-dev-team
 
 Then start `codex`, open `/plugins`, install `agentic-dev-team` from the
 `adt-pipeline` marketplace, and start a new session. The five commands are
-skills: `$agentic-dev-team:build-auto` and so on (type `$` to pick one). The
+skills: `$agentic-dev-team:build-auto-fast` and so on (type `$` to pick one). The
 plugin has no agent files, because a Codex plugin cannot carry them: the
 commands start Codex's default agent with each role's prompt. `install.sh`
 adds named agents. Before the first build, in each project, approve the device
@@ -454,7 +454,7 @@ setting commented out, and it is kept out of git.
 * **`agents:`** sets the model of each agent, in every command. Claude Code and
   Codex use it, each with its own model names. Antigravity and OpenCode run
   every agent on the model you select in the tool.
-* **`build_auto_reviewed:`** applies only to `/build-auto-reviewed`. An agent can
+* **`build_auto:`** applies only to `/build-auto`. An agent can
   run through another CLI you are logged in to (`claude`, `codex`, `agy`,
   `opencode`, or your own command). A review with 2 to 5 reviewers becomes a
   panel: they review the same work in parallel, and when one of them asks for
@@ -463,7 +463,7 @@ setting commented out, and it is kept out of git.
 ```yaml
 agents:
   coder: { model: opus }
-build_auto_reviewed:
+build_auto:
   code_reviewer:
     reviewers:
       - { runner: native }

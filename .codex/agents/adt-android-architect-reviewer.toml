@@ -5,7 +5,7 @@ name = "adt-android-architect-reviewer"
 description = """
 Use this agent to review an implementation plan — and the design doc that
 ships with it — produced by adt-android-architect before any code is written.
-Trigger after the Architect finishes in the /build-auto-reviewed flow, or when
+Trigger after the Architect finishes in the /build-auto flow, or when
 the user says "review the plan". Requires
 pipeline_artifacts/{slug}/implementation-plan.md to exist. Outputs an APPROVED
 / CHANGES REQUESTED verdict — it never edits either document.

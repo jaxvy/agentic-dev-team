@@ -106,7 +106,7 @@ The command file says which steps it does.
    6. **Active or not.** When the config file exists, read it in full. It has
       an **active setting** when any line is something other than a blank
       line, a comment (a `#` after optional spaces), `version: 1`, or one of
-      the top-level keys `agents:` and `build_auto_reviewed:` with nothing
+      the top-level keys `agents:` and `build_auto:` with nothing
       after the colon but an optional comment. The file as created has no
       active setting.
       - **No active setting**, or no file: MODELS and RUNS are off. Do not
@@ -114,10 +114,10 @@ The command file says which steps it does.
         run is exactly as it would be without the config file.
       - **An active setting**: read CONFIG_DOC in full and follow its "Agent
         Configuration" section: validate the whole file, and set MODELS (and,
-        in `/build-auto-reviewed`, RUNS). When MODELS is on, follow that
+        in `/build-auto`, RUNS). When MODELS is on, follow that
         section every time you start an `adt-*` subagent: it says which model
         to pass, and when to pass none. When RUNS is on, follow CONFIG_DOC,
-        "Configured Runs", for every phase of `/build-auto-reviewed`.
+        "Configured Runs", for every phase of `/build-auto`.
       - If ADT_ROOT is empty or CONFIG_DOC does not exist (an older install),
         do not use the config file, and, only when it has an active setting,
         print one line: "agentic-dev-team: the installed pipeline is older
@@ -136,7 +136,7 @@ re-run that the budget does not allow.
 marker, or from an existing plan the command was given):
 
 ```
-bash <ADT_SH> state --slug S start <build-auto | build-auto-reviewed | build-guided>
+bash <ADT_SH> state --slug S start <build-auto-fast | build-auto | build-guided>
 bash <ADT_SH> state --slug S set plan <PLAN_PATH>
 bash <ADT_SH> state --slug S set design_doc <DOC_PATH, or none>
 bash <ADT_SH> state --slug S set driver <the test driver>
@@ -239,11 +239,11 @@ At the Architect gate the artifact presented is `design-doc.md` — the plan is 
 link for anyone who wants the file-by-file detail. A `revise:` there re-runs the
 Architect under Part A's "Feedback Lands in the Documents" rule.
 
-For `/build-auto`, skip the PM phase. If the feature description is too vague
+For `/build-auto-fast`, skip the PM phase. If the feature description is too vague
 for the Architect to produce a concrete plan, stop and suggest `/build-guided`
 instead.
 
-For `/build-auto-reviewed`, skip the PM phase and run no human gates — but
+For `/build-auto`, skip the PM phase and run no human gates — but
 insert an automated reviewer after each producing phase, per the Reviewer-Loop
 Protocol below.
 
@@ -260,8 +260,8 @@ gets one, and the pure-speed flow does not.
 |---|---|---|
 | `/plan-design` | auto-detected from input | printed to chat upon completion |
 | `/build-guided` | on | at the plan approval gate, before any code is written |
-| `/build-auto-reviewed` | off | not generated |
 | `/build-auto` | off | not generated |
+| `/build-auto-fast` | off | not generated |
 
 `doc: on` / `doc: off` anywhere in `$ARGUMENTS` overrides the default in the
 pipeline commands. The orchestrator strips that token from the text before
@@ -279,7 +279,7 @@ there is nothing to record.
 
 ## Reviewer-Loop Protocol
 
-Used by `/build-auto-reviewed`. After a producing agent finishes, the
+Used by `/build-auto`. After a producing agent finishes, the
 orchestrator delegates to that agent's reviewer before proceeding:
 
 - `adt-android-architect` → reviewed by `adt-android-architect-reviewer`
@@ -558,7 +558,7 @@ Blocked"), the orchestrator takes this path instead of the fix loop:
    locked screen.
 
    **The unattended commands pause here too, and that is not a contradiction.** What
-   makes `/build-auto` and `/build-auto-reviewed` unattended is the absence of
+   makes `/build-auto-fast` and `/build-auto` unattended is the absence of
    *approval* gates — nobody signs off on the plan, the code, or the results.
    This gate approves nothing. The run has hit a wall it cannot pass, and the
    only two options are to wait for one short answer or to throw the run away.
@@ -587,15 +587,15 @@ saw run.
 
 ## Orchestration Workflow (Antigravity)
 
-When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`, the parent agent acts as orchestrator:
+When the user invokes `/build-guided`, `/build-auto-fast`, or `/build-auto`, the parent agent acts as orchestrator:
 
-1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above — including `adt-android-test-writer`, which every build command uses. For `/build-auto-reviewed`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`. When a review panel is configured (CONFIG_DOC, "Configured Runs"), also register adt-android-review-judge.
+1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above — including `adt-android-test-writer`, which every build command uses. For `/build-auto`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`. When a review panel is configured (CONFIG_DOC, "Configured Runs"), also register adt-android-review-judge.
 2. **Execute Phases**:
    - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
    - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows) and the `DESIGN_DOC` value this command defaults to (see "Design Doc Defaults Per Command"). Wait until it outputs `✅ ARCHITECT DONE`, and parse the artifact paths out of that marker — the plan path always, and the design doc path when one was requested.
-   - **Architect Review Gate** (`/build-auto-reviewed` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
+   - **Architect Review Gate** (`/build-auto` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
-   - **Code Review Gate** (`/build-auto-reviewed` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
+   - **Code Review Gate** (`/build-auto` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
    - **Before the run**: resolve the test driver and the script, run the preflight, and check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot.
    - **Tester Phase**: Run "The Test Phase" above: lease the run's device, run the plan's device tests and install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, send any of this run's flows that failed back to the Test Writer to fix and re-run those with `adt.sh run --only`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, `CHECKS` when a check ran, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
    - **Tester Blocked**: on `⛔ TESTER BLOCKED`, take "The Blocked Path" above instead of the fix loop, and do not advance.
@@ -603,17 +603,17 @@ When the user invokes `/build-guided`, `/build-auto`, or `/build-auto-reviewed`,
      Coder → targeted re-review → re-test loop the command file defines (max 2
      iterations) — each re-test is a run of "The Test Phase" on the same
      device, install included — then STOP and report if it is still
-     failing. In `/build-auto-reviewed` the targeted re-review is mandatory —
+     failing. In `/build-auto` the targeted re-review is mandatory —
      see "The Targeted Re-Review" above; the code that ships must have been
      reviewed after its last mutation. A run never ends by declaring a
      `NEEDS FIXES` feature complete.
-3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval — `approve`, `revise: <feedback>`, or `stop`, except at a blocked Tester gate, which takes `resume` or `stop` (see "Approval Gates" and "The Blocked Path"). For `/build-auto-reviewed`, the gates are the automated reviewer loops (no human pause). For `/build-auto`, there are no gates.
+3. **Gates**: For `/build-guided`, pause at each phase boundary for explicit user approval — `approve`, `revise: <feedback>`, or `stop`, except at a blocked Tester gate, which takes `resume` or `stop` (see "Approval Gates" and "The Blocked Path"). For `/build-auto`, the gates are the automated reviewer loops (no human pause). For `/build-auto-fast`, there are no gates.
 4. **Close the run**: release the run's device (see "The Test Phase"), on every exit including a STOP. When a design doc was produced, append its Implementation Notes before reporting the final summary (see "Design Doc Defaults Per Command"), and report the design doc path alongside the verdict.
 
 ## Native Workflow Registration
 
-`/build-auto`, `/build-auto-reviewed`, and `/build-guided` slash commands (along
-with `/plan-research` and `/plan-design`) are registered natively
+`/build-auto-fast`, `/build-auto`, and `/build-guided` slash commands (along
+with `/plan-spec` and `/plan-design`) are registered natively
 in Antigravity via symlinks in `.agents/workflows/` that point to
 `.claude/commands/`. Team personas are inlined into the consuming project's
 `.agents/agents.md` (inside a marker-fenced block managed by install.sh),
@@ -650,9 +650,9 @@ up by the same install.sh run:
 
 ## Orchestration Workflow (Codex)
 
-Codex runs the five commands as skills: `$build-auto`, `$build-auto-reviewed`,
-`$build-guided`, `$plan-research` and `$plan-design` (with the Codex plugin,
-`$agentic-dev-team:build-auto` and so on). Each skill sends you to the same
+Codex runs the five commands as skills: `$build-auto-fast`, `$build-auto`,
+`$build-guided`, `$plan-spec` and `$plan-design` (with the Codex plugin,
+`$agentic-dev-team:build-auto-fast` and so on). Each skill sends you to the same
 command file as the other tools, so everything in this file applies. Only
 these points differ:
 

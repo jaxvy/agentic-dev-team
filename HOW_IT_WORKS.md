@@ -31,9 +31,9 @@ flowchart LR
 | Command | PM | Architect | Plan review | Coder | Code review | Test Writer + Tester | Gates |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
 | `/build-guided` | yes | yes | | yes | | yes | Human, at every boundary |
-| `/build-auto` | | yes | | yes | | yes | None |
-| `/build-auto-reviewed` | | yes | yes | yes | yes | yes | Automated reviewers |
-| `/plan-research` | yes | | | | | | Stops after the PM |
+| `/build-auto-fast` | | yes | | yes | | yes | None |
+| `/build-auto` | | yes | yes | yes | yes | yes | Automated reviewers |
+| `/plan-spec` | yes | | | | | | Stops after the PM |
 | `/plan-design` | | yes | | | | | Stops after the Architect |
 
 The orchestrator is whatever agent your tool runs at the top level. It spawns
@@ -196,8 +196,8 @@ The plan is never rewritten mid-run — it is the Tester's contract too. Instead
 each departure is reported in the run summary, so the plan and the tree
 disagreeing somewhere is something you are told rather than something you find.
 
-This only exists where a code reviewer does, which is `/build-auto-reviewed`.
-`/build-auto` and `/build-guided` are unaffected.
+This only exists where a code reviewer does, which is `/build-auto`.
+`/build-auto-fast` and `/build-guided` are unaffected.
 
 > **Invariant:** a genuine defect the reviewer found is fixed in the tree you are
 > handed, and every place a fix departed from the plan is named in the summary.
@@ -677,8 +677,8 @@ any time: `bash .claude/adt/scripts/adt.sh preflight --driver auto-mobile`.
 
 ### Codex
 
-Codex runs the pipeline as five skills: type `$build-auto`, `$build-guided`
-and so on (with the Codex plugin, `$agentic-dev-team:build-auto`; `$` opens a
+Codex runs the pipeline as five skills: type `$build-auto-fast`, `$build-guided`
+and so on (with the Codex plugin, `$agentic-dev-team:build-auto-fast`; `$` opens a
 picker). Each skill reads the same command file as the other tools, so a run
 in Codex has the same phases, gates, budgets and safeguards. These things are
 different:
@@ -774,7 +774,7 @@ carrying what it asked for, if it named a credential — or `stop`. There is no
 `approve` at this gate, because a run that could not finish its cases is not
 something to approve. Two resumes is the limit; after that it stops.
 
-That includes `/build-auto` and `/build-auto-reviewed`. Unattended means nobody
+That includes `/build-auto-fast` and `/build-auto`. Unattended means nobody
 approves the plan, the code, or the results — not that the run may never ask a
 question it cannot proceed without. See [Test
 credentials](#test-credentials) for why waiting beats stopping here.
@@ -937,7 +937,7 @@ The ledger also makes a run resumable. If a session dies, or you stop it, start
 the same command again with `resume <slug>`:
 
 ```
-/build-auto-reviewed resume save-draft-on-background
+/build-auto resume save-draft-on-background
 ```
 
 It continues at the start of the phase it was in, with the counters it had,
@@ -1081,8 +1081,8 @@ your session's model. Antigravity and OpenCode do not support per-subagent
 model selection, so every subagent inherits your globally selected model, and
 they ignore `agents:`. Select the strongest model available before a full
 pipeline run in those tools, or, in
-`/build-auto-reviewed`, run a role through an external CLI (see
-[Other CLIs and review panels](#other-clis-and-review-panels-build_auto_reviewed)).
+`/build-auto`, run a role through an external CLI (see
+[Other CLIs and review panels](#other-clis-and-review-panels-build_auto)).
 
 ## Safeguards
 
@@ -1178,7 +1178,7 @@ and sets two switches:
 | Switch | On when | Effect |
 |---|---|---|
 | `MODELS` | A model is set for a role the command starts | Claude Code passes that model when it starts the agent |
-| `RUNS` | `/build-auto-reviewed` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as `AGENTIC_DEV_TEAM_CONFIG.md`, "Configured Runs", says |
+| `RUNS` | `/build-auto` only: a role uses a `runner` other than `native`, or a gate lists 2 or more reviewers | The phases run as `AGENTIC_DEV_TEAM_CONFIG.md`, "Configured Runs", says |
 
 With both switches off, a command runs exactly as it would without the file.
 
@@ -1207,7 +1207,7 @@ In Claude Code the value is a model alias: `opus`, `sonnet`, `haiku` or
 | Other family (for example Sonnet, config `opus`) | `opus` | The version the alias maps to (the newest Opus on the Anthropic API), or the model in `ANTHROPIC_DEFAULT_OPUS_MODEL` when you set it |
 
 You cannot pin an exact version for an agent that runs inside your tool. To
-pin one, use `runner: claude` with a full model ID in `/build-auto-reviewed`
+pin one, use `runner: claude` with a full model ID in `/build-auto`
 (below), set `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` in the `env` of
 `.claude/settings.json` for another family, or select that version as your
 main model. When `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is set, Claude Code ignores
@@ -1222,12 +1222,12 @@ the names of the tool you run. The run summary says what was not applied.
 Antigravity and OpenCode run every subagent on the model you selected in the
 tool, so they ignore `agents:`. The run summary says so.
 
-### Other CLIs and review panels: `build_auto_reviewed:`
+### Other CLIs and review panels: `build_auto:`
 
-For `/build-auto-reviewed` only.
+For `/build-auto` only.
 
 ```yaml
-build_auto_reviewed:
+build_auto:
   code_reviewer:
     reviewers:
       - { runner: native }
@@ -1346,7 +1346,7 @@ work.
    definitions are the discovery mechanism.
 5. **Codex discovery.** Codex scans `.agents/skills/` for skills and
    `.codex/agents/` for custom agents, in a project you trust. Each skill
-   (`$build-auto` and the others) only says where its command file is and how
+   (`$build-auto-fast` and the others) only says where its command file is and how
    its words map to Codex; it then follows the same command file as the other
    tools. Another tool that also reads `.agents/skills/` finds the same
    skills, and each one tells it to use the slash command instead. Each agent file is a stub whose instructions read the canonical
@@ -1370,9 +1370,9 @@ path inside your project.
 | Project path | Symlink target in your clone |
 |---|---|
 | `.claude/commands/build-guided.md` | `<clone>/.claude/commands/build-guided.md` |
+| `.claude/commands/build-auto-fast.md` | `<clone>/.claude/commands/build-auto-fast.md` |
 | `.claude/commands/build-auto.md` | `<clone>/.claude/commands/build-auto.md` |
-| `.claude/commands/build-auto-reviewed.md` | `<clone>/.claude/commands/build-auto-reviewed.md` |
-| `.claude/commands/plan-research.md` | `<clone>/.claude/commands/plan-research.md` |
+| `.claude/commands/plan-spec.md` | `<clone>/.claude/commands/plan-spec.md` |
 | `.claude/commands/plan-design.md` | `<clone>/.claude/commands/plan-design.md` |
 | `.claude/agents/adt-android-pm.md` | `<clone>/.claude/agents/adt-android-pm.md` |
 | `.claude/agents/adt-android-architect.md` | `<clone>/.claude/agents/adt-android-architect.md` |
@@ -1390,14 +1390,14 @@ path inside your project.
 | `.claude/adt/drivers/auto-mobile.md` | `<clone>/.claude/adt/drivers/auto-mobile.md` |
 | `.claude/adt/drivers/maestro.md` | `<clone>/.claude/adt/drivers/maestro.md` |
 | `.agents/workflows/build-guided.md` | `<clone>/.agents/workflows/build-guided.md` |
+| `.agents/workflows/build-auto-fast.md` | `<clone>/.agents/workflows/build-auto-fast.md` |
 | `.agents/workflows/build-auto.md` | `<clone>/.agents/workflows/build-auto.md` |
-| `.agents/workflows/build-auto-reviewed.md` | `<clone>/.agents/workflows/build-auto-reviewed.md` |
-| `.agents/workflows/plan-research.md` | `<clone>/.agents/workflows/plan-research.md` |
+| `.agents/workflows/plan-spec.md` | `<clone>/.agents/workflows/plan-spec.md` |
 | `.agents/workflows/plan-design.md` | `<clone>/.agents/workflows/plan-design.md` |
 | `.opencode/commands/build-guided.md` | `<clone>/.opencode/commands/build-guided.md` |
+| `.opencode/commands/build-auto-fast.md` | `<clone>/.opencode/commands/build-auto-fast.md` |
 | `.opencode/commands/build-auto.md` | `<clone>/.opencode/commands/build-auto.md` |
-| `.opencode/commands/build-auto-reviewed.md` | `<clone>/.opencode/commands/build-auto-reviewed.md` |
-| `.opencode/commands/plan-research.md` | `<clone>/.opencode/commands/plan-research.md` |
+| `.opencode/commands/plan-spec.md` | `<clone>/.opencode/commands/plan-spec.md` |
 | `.opencode/commands/plan-design.md` | `<clone>/.opencode/commands/plan-design.md` |
 | `.opencode/agents/adt-android-pm.md` | `<clone>/.opencode/agents/adt-android-pm.md` |
 | `.opencode/agents/adt-android-architect.md` | `<clone>/.opencode/agents/adt-android-architect.md` |
@@ -1408,9 +1408,9 @@ path inside your project.
 | `.opencode/agents/adt-android-tester.md` | `<clone>/.opencode/agents/adt-android-tester.md` |
 | `.opencode/agents/adt-android-review-judge.md` | `<clone>/.opencode/agents/adt-android-review-judge.md` |
 | `.agents/skills/build-guided/` | `<clone>/.agents/skills/build-guided/` |
+| `.agents/skills/build-auto-fast/` | `<clone>/.agents/skills/build-auto-fast/` |
 | `.agents/skills/build-auto/` | `<clone>/.agents/skills/build-auto/` |
-| `.agents/skills/build-auto-reviewed/` | `<clone>/.agents/skills/build-auto-reviewed/` |
-| `.agents/skills/plan-research/` | `<clone>/.agents/skills/plan-research/` |
+| `.agents/skills/plan-spec/` | `<clone>/.agents/skills/plan-spec/` |
 | `.agents/skills/plan-design/` | `<clone>/.agents/skills/plan-design/` |
 | `.codex/agents/adt-android-pm.toml` | `<clone>/.codex/agents/adt-android-pm.toml` |
 | `.codex/agents/adt-android-architect.toml` | `<clone>/.codex/agents/adt-android-architect.toml` |
@@ -1497,7 +1497,7 @@ prompt, then create `.agents/workflows/<name>.md` and
 For Codex, add the skill folder `plugins/agentic-dev-team/codex/skills/<name>/`:
 a `SKILL.md` like the other five, which points at the command file, and
 `agents/openai.yaml`, which keeps it from running unless the user types it.
-`/build-auto-reviewed` was built exactly this way. Its workflow symlinks point at
+`/build-auto` was built exactly this way. Its workflow symlinks point at
 the command, which orchestrates the two reviewers between the existing phases.
 
 **Changing shared orchestration rules.** Edit the canonical
@@ -1551,7 +1551,7 @@ and in Codex in `~/.codex/config.toml` (`codex mcp add` writes them there).
 project's `.agents/skills/` and `.codex/agents/` only when you trust the
 project, and finds new ones when a session starts. Trust the project, and
 start a new session. With the plugin, start a new session after you install
-it, and type `$` to find `agentic-dev-team:build-auto` and the others.
+it, and type `$` to find `agentic-dev-team:build-auto-fast` and the others.
 
 **The preflight fails: "Codex runs this script in its sandbox".** Codex ran
 the device script in its sandbox, where adb and the emulator cannot work. Run

@@ -62,7 +62,7 @@ the script supplies the values (Part A, "Test secrets for flows").
 
 Input — before Phase 1, look at the user's idea (`$ARGUMENTS` with the `doc:`
 token removed). It may be a file another command wrote:
-  - **An existing `feature.md`** (from `/plan-research`, where the user
+  - **An existing `feature.md`** (from `/plan-spec`, where the user
     already approved it): set FEATURE_DIR to its directory, skip Phase 1, and
     start at Phase 2.
   - **An existing `design-doc.md`** with no plan beside it: skip Phase 1. In

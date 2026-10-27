@@ -3,7 +3,7 @@
 # name, shared with the other tools.
 name = "adt-android-review-judge"
 description = """
-Only for /build-auto-reviewed when .agentic-dev-team/config.yaml sets a review
+Only for /build-auto when .agentic-dev-team/config.yaml sets a review
 panel (2 or more reviewers for one gate). The orchestrator starts it to verify
 and merge the panel's findings. Do not use it in any other case.
 """

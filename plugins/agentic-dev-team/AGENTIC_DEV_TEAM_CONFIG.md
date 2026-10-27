@@ -50,7 +50,7 @@ agents:                      # all commands; native agents only
   <role>:
     model: <alias>
 
-build_auto_reviewed:         # /build-auto-reviewed only
+build_auto:         # /build-auto only
   architect: <slot>
   coder:     <slot>
   tester:    <slot>
@@ -91,24 +91,24 @@ native, on the main model unless `agents.review_judge.model` sets another.
 ### Switches
 
 A **native model value** is any `agents.<role>.model`, or the `model` of a
-`build_auto_reviewed` slot or reviewer entry whose `runner` is `native` or
+`build_auto` slot or reviewer entry whose `runner` is `native` or
 that has no `runner` key.
 
 - **`MODELS` is on** when at least one native model value is set for a role
   that the current command starts: an `agents.<role>.model` for a role in the
-  table below, or (in `/build-auto-reviewed` only) a native model value under
-  `build_auto_reviewed`.
+  table below, or (in `/build-auto` only) a native model value under
+  `build_auto`.
 
   | Command | Roles it starts |
   |---|---|
-  | `/plan-research` | `pm` |
+  | `/plan-spec` | `pm` |
   | `/plan-design` | `architect` |
-  | `/build-auto` | `architect`, `coder`, `test_writer`, `tester` |
+  | `/build-auto-fast` | `architect`, `coder`, `test_writer`, `tester` |
   | `/build-guided` | `pm`, `architect`, `coder`, `test_writer`, `tester` |
-  | `/build-auto-reviewed` | `architect`, `architect_reviewer`, `coder`, `code_reviewer`, `test_writer`, `tester`; and `review_judge` only when a **configured** `reviewers` list has 2 or more entries |
+  | `/build-auto` | `architect`, `architect_reviewer`, `coder`, `code_reviewer`, `test_writer`, `tester`; and `review_judge` only when a **configured** `reviewers` list has 2 or more entries |
 
-- **`RUNS` is on** (only in `/build-auto-reviewed`) when at least one slot or
-  reviewer entry under `build_auto_reviewed:` has a `runner` other than
+- **`RUNS` is on** (only in `/build-auto`) when at least one slot or
+  reviewer entry under `build_auto:` has a `runner` other than
   `native`, or a `reviewers` list has 2 or more entries. A native slot or a
   single native reviewer entry with a `model` is a native model value
   (`MODELS`), not `RUNS`. So `architect: { runner: native }` or
@@ -159,7 +159,7 @@ problem:
    - `agents`: `null` or a mapping; each role under it: a mapping with exactly
      one key, `model`, whose value is a non-empty string (an empty mapping,
      `model:` with no value, and `model: ""` are errors).
-   - `build_auto_reviewed`: `null` or a mapping. `architect`, `coder`,
+   - `build_auto`: `null` or a mapping. `architect`, `coder`,
      `tester`: a slot. `architect_reviewer`, `code_reviewer`: a mapping whose
      only key is `reviewers`, a **list** (not `null`) of slots.
    - A slot: a mapping. `runner`, `model`, `command`, `check`: non-empty
@@ -232,7 +232,7 @@ subagent):
    `ANTHROPIC_DEFAULT_OPUS_MODEL` is set.
 
 A native agent cannot be pinned to an exact version through this config. To
-pin one: in `/build-auto-reviewed` use `runner: claude` with a full model ID;
+pin one: in `/build-auto` use `runner: claude` with a full model ID;
 for another family than the main model, set `ANTHROPIC_DEFAULT_<FAMILY>_MODEL`
 in the `env` of `.claude/settings.json`; otherwise select that version as the
 main session's model.
@@ -243,7 +243,7 @@ over the main model. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` overrides all of them.
 
 **Model resolution for a native agent** (first match wins):
 
-1. In `/build-auto-reviewed` only: the `model` of the slot that starts this
+1. In `/build-auto` only: the `model` of the slot that starts this
    agent (for a reviewer: its own entry in the `reviewers` list), when that
    slot is native.
 2. `agents.<role>.model`.
@@ -264,7 +264,7 @@ model per subagent. Pass nothing, do not fail, and report once in the final
 summary: `Model settings were not applied: <tool> runs every subagent on its
 selected model.` Validation rule 8 does not apply there.
 
-**External runners** (`/build-auto-reviewed`): `model` goes to the CLI's
+**External runners** (`/build-auto`): `model` goes to the CLI's
 `--model` flag unchanged (`claude`: an alias or a full ID such as
 `claude-opus-5-5`; `codex`: a Codex model name; `agy`: an Antigravity model
 slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
@@ -278,7 +278,7 @@ slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
 2. Read `.agentic-dev-team/config.yaml` if it exists. Validate it (rules 1 to
    7, 9 and 10, and in Claude Code rule 8). On an error: stop, report, start no
    agent.
-3. Set `MODELS` (and in `/build-auto-reviewed`, `RUNS`).
+3. Set `MODELS` (and in `/build-auto`, `RUNS`).
 4. If `MODELS` is off: skip the rest of this section and continue with the
    command's first phase as usual. No `printenv`, no model passing, no summary
    line about models.
@@ -288,7 +288,7 @@ slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
 ### When `MODELS` is on
 
 1. **Claude Code, every native start:** each time you start an `adt-*`
-   subagent natively (in `/build-auto-reviewed` this includes native slots and
+   subagent natively (in `/build-auto` this includes native slots and
    native panel reviewers), resolve the model and, while model passing is on,
    pass it in the Agent tool's `model` parameter. With no resolved value, pass
    nothing.
@@ -335,9 +335,9 @@ slug; `opencode`: `provider/model`; `command`: put into `{model}`). Without
    Claude Code older than v2.1.251 lets it override the requested models
    (sub-agents docs).` Model passing stays on.
 
-## Configured Runs (/build-auto-reviewed only)
+## Configured Runs (/build-auto only)
 
-Only /build-auto-reviewed uses this section, and only when RUNS is on. Every other command, and a run with RUNS off, ignores it.
+Only /build-auto uses this section, and only when RUNS is on. Every other command, and a run with RUNS off, ignores it.
 
 Configured runs let a role run as an external CLI (Claude Code, Codex,
 Antigravity, opencode, or any command) instead of as a native subagent, and

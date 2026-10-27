@@ -806,7 +806,7 @@ developer is handed, and anywhere the fix departed from the plan is named in the
 run's final summary rather than left for the developer to discover.
 
 This section applies only where a code reviewer exists, which is
-`/build-auto-reviewed`. It changes nothing in `/build-auto` or `/build-guided`,
+`/build-auto`. It changes nothing in `/build-auto-fast` or `/build-guided`,
 whose Coders never receive a code-review finding.
 
 ## Producing-Agent Obligations During a Reviewer Loop

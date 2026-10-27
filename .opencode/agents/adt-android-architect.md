@@ -2,9 +2,9 @@
 description: >
   Use this agent to produce a concrete implementation plan for an Android
   feature, and the human-facing design doc that goes with it. Trigger after
-  adt-android-pm (in /build-guided flow) or directly (in /build-auto flow).
+  adt-android-pm (in /build-guided flow) or directly (in /build-auto-fast flow).
   Requires either pipeline_artifacts/{slug}/feature.md to exist (/build-guided)
-  or a clear feature description in the prompt (/build-auto). Writes
+  or a clear feature description in the prompt (/build-auto-fast). Writes
   design-doc.md alongside implementation-plan.md unless the orchestrator passes
   DESIGN_DOC: off or from-design-doc.
 mode: subagent

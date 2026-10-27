@@ -5,7 +5,7 @@ name = "adt-android-test-writer"
 description = """
 Use this agent to turn the Architect's manual test cases into runnable flow
 files. Trigger after the adt-android-coder agent (and, in
-/build-auto-reviewed, the code review) finishes: it writes the flows from the
+/build-auto, the code review) finishes: it writes the flows from the
 plan and the code, without a device — the caller passes PLAN_PATH and
 DRIVER_DOC. Trigger it again with FIX, DEVICE and BUILD_INSTALLED after the
 flow run, to fix only the flows that failed. Writes

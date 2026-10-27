@@ -3,7 +3,7 @@ name: adt-android-architect-reviewer
 description: >
   Use this agent to review an implementation plan — and the design doc that
   ships with it — produced by adt-android-architect before any code is written.
-  Trigger after the Architect finishes in the /build-auto-reviewed flow, or when
+  Trigger after the Architect finishes in the /build-auto flow, or when
   the user says "review the plan". Requires
   pipeline_artifacts/{slug}/implementation-plan.md to exist. Outputs an
   APPROVED / CHANGES REQUESTED verdict — it never edits either document.
@@ -148,7 +148,7 @@ When the orchestrator also gives you a `design-doc.md` path, read it — it is t
 document a human will actually approve this work from, and the rejected
 alternatives live only there. If no design doc path was passed, or the file does
 not exist, review the plan alone and say so in one line; its absence is a
-per-command default (`/build-auto` ships no design doc), never a defect.
+per-command default (`/build-auto-fast` ships no design doc), never a defect.
 
 Judge it on four things and nothing else:
 
