@@ -232,8 +232,9 @@ claude mcp add auto-mobile -e AUTOMOBILE_ENABLED_TOOLS=rotate,displayConfig,setA
 In Codex, use `codex mcp add` with the same name, `--env` and command
 ([Setting up device testing](HOW_IT_WORKS.md#setting-up-device-testing)).
 
-**3. Describe your project** in an `AGENTS.md` or `CLAUDE.md` at its root: the
-stack, the architecture, the conventions, and how to verify a change.
+**3. Describe your project (optional).** The agents follow the `AGENTS.md` or
+`CLAUDE.md` at your project's root when it has one: the stack, the
+architecture, the conventions, and how to verify a change.
 
 **4. Build a feature:**
 
@@ -259,12 +260,12 @@ requirements below.
 
 * macOS or Linux. The scripts are bash and use Unix process tools, so Windows
   is not supported.
-* `git`
+* `git`, with your project in a git repository. The agents leave their
+  changes uncommitted, and the coders and the code review find them with git.
+  The `install.sh` path also uses `git clone`.
 * [Claude Code](https://claude.com/claude-code),
   [Codex](https://developers.openai.com/codex),
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)
-* An Android project with an `AGENTS.md` or `CLAUDE.md` that describes its stack,
-  architecture, conventions, and verification rules
 * The Android SDK emulator and platform tools (they come with Android Studio),
   and at least one AVD
 * A test driver registered with your tool:
