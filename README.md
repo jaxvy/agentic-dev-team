@@ -1,7 +1,9 @@
 <h1 align="center">Agentic Android Dev Team</h1>
 
 <p align="center">
-  <b>Describe an Android feature in one prompt. Get back a planned, reviewed, device-tested diff.</b>
+  <b>A team of AI agents that plans, codes, reviews and tests Android features on an emulator.</b><br>
+  It works in your own codebase, from the coding tool you already use. You give it a feature
+  request and get back a reviewed, emulator-tested diff.
 </p>
 
 <p align="center">
