@@ -285,6 +285,39 @@ expect_eq "an old lease with no device is removed, so its port is free again" "e
 expect_eq "and the new lease replaced it" "a" "$(lease_file emulator-15554 slug)"
 expect_eq "a young lease (still booting) is kept, so its port is not taken" "booting" "$(lease_file emulator-15556 slug)"
 
+# One acquire pauses while it removes a stale lease, and another starts then:
+# it must not remove the same lease too, claim its serial afresh, and then
+# lose its new lease to the first acquire's removal.
+setup
+mkdir -p "$SANDBOX/bin" "$ADT_HOME/leases/emulator-15554"
+ln -s "$SHIMS/rm" "$SANDBOX/bin/rm"
+echo "$SANDBOX/proj1" > "$ADT_HOME/leases/emulator-15554/project"
+echo old > "$ADT_HOME/leases/emulator-15554/slug"
+echo $(( $(date +%s) - 1000 )) > "$ADT_HOME/leases/emulator-15554/created"
+: > "$FAKE_ADT_STATE/rm.slow"
+(cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" device-acquire --slug a) > "$SANDBOX/a.out" 2>/dev/null &
+pid_a=$!
+while [ -f "$FAKE_ADT_STATE/rm.slow" ]; do sleep 0.1; done
+(cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" device-acquire --slug b) > "$SANDBOX/b.out" 2>/dev/null &
+pid_b=$!
+wait $pid_a; rc_a=$?
+wait $pid_b; rc_b=$?
+expect_eq "two acquires that both find a stale lease succeed" "0 0" "$rc_a $rc_b"
+sa="$(cat "$SANDBOX/a.out")"; sb="$(cat "$SANDBOX/b.out")"
+expect_true "  (they print different serials: $sa, $sb)" [ -n "$sa" -a "$sa" != "$sb" ]
+expect_eq "  (and each keeps its lease)" "a b" "$(lease_file "$sa" slug) $(lease_file "$sb" slug)"
+
+setup
+mkdir -p "$ADT_HOME/leases/emulator-15554"
+echo "$SANDBOX/proj1" > "$ADT_HOME/leases/emulator-15554/project"
+echo old > "$ADT_HOME/leases/emulator-15554/slug"
+echo $(( $(date +%s) - 1000 )) > "$ADT_HOME/leases/emulator-15554/created"
+lock="$ADT_HOME/leases/.lock-$(printf '%s|%s' "$SANDBOX/proj1" old | cksum | awk '{ print $1 }')"
+mkdir -p "$lock"
+echo 999999 > "$lock/pid"
+out="$(adt "$SANDBOX/proj1" device-acquire --slug a 2>/dev/null | tail -n 1)"
+expect_eq "a stale lease is removed even if its run's acquire died holding the lock" "emulator-15554" "$out"
+
 # ---------- install ----------
 
 echo "install"

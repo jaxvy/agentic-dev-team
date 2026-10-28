@@ -1,0 +1,9 @@
+#!/bin/bash
+# Fake rm for tests/adt.test.sh. The first removal of a lease after the test
+# creates $FAKE_ADT_STATE/rm.slow deletes that file, then waits 2 s before it
+# runs, so another process can act on the lease in the meantime.
+case "$*" in
+  */leases/emulator-*)
+    /bin/rm "${FAKE_ADT_STATE:?}/rm.slow" 2>/dev/null && sleep 2 ;;
+esac
+exec /bin/rm "$@"
