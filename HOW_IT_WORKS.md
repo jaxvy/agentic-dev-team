@@ -1231,12 +1231,21 @@ For `/build-auto` only.
 
 ```yaml
 build_auto:
+  architect_reviewer:
+    reviewers:
+      - { runner: native }
+      - { runner: agy, model: argon }
   code_reviewer:
     reviewers:
       - { runner: native }
       - { runner: codex, required: false }
       - { runner: claude, model: claude-opus-5-5 }
 ```
+
+`architect_reviewer` is the plan review and `code_reviewer` the code review.
+Each takes a list of 1 to 5 reviewers. A review you leave out has one reviewer
+in your current tool, on the model from `agents:` or the agent file. In the
+example, your current tool and Antigravity review the plan as a panel.
 
 Each role (`architect`, `coder`, `tester`, and each reviewer) can run in a
 different tool, through that tool's CLI and **your own login** (no API key):

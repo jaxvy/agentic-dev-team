@@ -470,10 +470,18 @@ setting commented out, and it is kept out of git.
   panel: they review the same work in parallel, and when one of them asks for
   changes, a judge agent checks each finding against the code.
 
+In this example, your current tool and Antigravity both review the plan, and
+your current tool and Codex both review the code. A review you leave out has
+one reviewer in your current tool.
+
 ```yaml
 agents:
   coder: { model: opus }
 build_auto:
+  architect_reviewer:
+    reviewers:
+      - { runner: native }
+      - { runner: agy, model: argon }
   code_reviewer:
     reviewers:
       - { runner: native }

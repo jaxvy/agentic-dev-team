@@ -68,6 +68,9 @@ agents:
 # check:            required for runner: command. The one program that
 #                   must be installed, for example: check: gemini
 #
+# architect_reviewer reviews the plan, code_reviewer the code. A gate you
+# leave out has one native reviewer. A list with one external reviewer runs
+# that reviewer instead.
 # With 2 or more reviewers, a gate becomes a review panel: a judge agent
 # verifies and merges their findings. The judge runs in the current tool,
 # on the main model unless agents.review_judge sets a model.
@@ -79,6 +82,7 @@ build_auto:
   architect_reviewer:
     reviewers:
       - { runner: native }
+      - { runner: agy, model: argon }
   code_reviewer:
     reviewers:
       - { runner: native }

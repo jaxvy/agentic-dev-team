@@ -172,6 +172,7 @@ assert d["version"] == 1
 assert set(d["agents"]) == {"pm", "architect", "architect_reviewer", "coder", "code_reviewer", "test_writer", "tester", "review_judge"}
 b = d["build_auto"]
 assert set(b) == {"architect", "coder", "tester", "architect_reviewer", "code_reviewer"}
+assert b["architect_reviewer"]["reviewers"] == [{"runner": "native"}, {"runner": "agy", "model": "argon"}]
 assert len(b["code_reviewer"]["reviewers"]) == 4
 assert b["code_reviewer"]["reviewers"][1]["required"] is False
 print("ok")
