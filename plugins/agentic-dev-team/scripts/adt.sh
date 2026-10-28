@@ -163,6 +163,15 @@ port_open() {
   (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
 }
 
+# Creates the directory <dir> and succeeds only for the one caller that made
+# it, so it can serve as a lock or a claim. mkdir alone is not enough: the
+# uutils mkdir before 0.11 (Ubuntu 26.04's) also succeeds when another process
+# creates the same directory at the same moment. With noclobber, bash creates
+# a file only if none is there, in one step, so only one caller makes .claimed.
+claim_dir() {
+  mkdir "$1" 2>/dev/null && (set -C; : > "$1/.claimed") 2>/dev/null
+}
+
 # ---------- tools ----------
 
 ADB=""
@@ -219,8 +228,9 @@ console_port() {
 }
 
 # ---------- leases ----------
-# A lease is the directory $LEASE_ROOT/<serial>/. mkdir is the atomic claim;
-# its files (project, slug, created, started, avd, pid) are written right after.
+# A lease is the directory $LEASE_ROOT/<serial>/. claim_dir is the atomic
+# claim; its files (project, slug, created, started, avd, pid) are written
+# right after.
 
 lease_path() { printf '%s/%s\n' "$LEASE_ROOT" "$1"; }
 
@@ -290,7 +300,7 @@ find_lease() {
 claim() {
   local serial="$1" project="$2" slug="$3" started="$4"
   mkdir -p "$LEASE_ROOT"
-  mkdir "$(lease_path "$serial")" 2>/dev/null || return 1
+  claim_dir "$(lease_path "$serial")" || return 1
   lease_set "$serial" project "$project"
   lease_set "$serial" slug "$slug"
   lease_set "$serial" created "$(now)"
@@ -318,7 +328,7 @@ take_lock() {
   lock="$LEASE_ROOT/.lock-$(lock_key "$1" "$2")"
   limit=$(( BOOT_TIMEOUT * 2 + 120 ))
   mkdir -p "$LEASE_ROOT"
-  while ! mkdir "$lock" 2>/dev/null; do
+  while ! claim_dir "$lock"; do
     holder="$(cat "$lock/pid" 2>/dev/null)"
     if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
       rm -rf "$lock"
@@ -1205,17 +1215,17 @@ cmd_install() {
 # ---------- running flows on one or two devices ----------
 
 # Prints the first line of <queue> and removes it; fails when it is empty.
-# Workers share the queue, so a mkdir lock guards it. A worker that takes a
-# flow touches <marker>, if it names one, before the lock is released.
+# Workers share the queue, so a claim_dir lock guards it. A worker that takes
+# a flow touches <marker>, if it names one, before the lock is released.
 queue_pop() {
   local queue="$1" marker="${2:-}" line
-  while ! mkdir "$queue.lock" 2>/dev/null; do sleep 0.1; done
+  while ! claim_dir "$queue.lock"; do sleep 0.1; done
   line="$(head -n 1 "$queue" 2>/dev/null)"
   if [ -n "$line" ]; then
     tail -n +2 "$queue" > "$queue.tmp" && mv "$queue.tmp" "$queue"
     [ -n "$marker" ] && : > "$marker"
   fi
-  rmdir "$queue.lock"
+  rm -rf "$queue.lock"
   [ -n "$line" ] && printf '%s\n' "$line"
 }
 
@@ -1351,7 +1361,7 @@ run_attempt() {
     awk 'NR % 2 == 0' "$todo" > "$logs/.todo-b"
     (
       if [ "$second_ready" = yes ] || why="$(prepare_second "$serial" "$second")"; then
-        mkdir "$logs/.claim-b" 2>/dev/null && : > "$logs/.second-took" && \
+        claim_dir "$logs/.claim-b" && : > "$logs/.second-took" && \
           maestro_batch "$second" "$logs/.todo-b" "$rows" "$logs/maestro.attempt$attempt-2" "${recheck}crash-check-$attempt-2"
       else
         printf '%s\n' "$why" > "$logs/.second-why"
@@ -1359,7 +1369,7 @@ run_attempt() {
     ) &
     w2=$!
     maestro_batch "$serial" "$logs/.todo-a" "$rows" "$logs/maestro.attempt$attempt" "${recheck}crash-check-$attempt"
-    if mkdir "$logs/.claim-b" 2>/dev/null; then
+    if claim_dir "$logs/.claim-b"; then
       kill_tree "$w2"
       wait "$w2" 2>/dev/null
       maestro_batch "$serial" "$logs/.todo-b" "$rows" "$logs/maestro.attempt$attempt-b" "${recheck}crash-check-$attempt-b"

@@ -1,0 +1,14 @@
+#!/bin/bash
+# Fake mkdir for tests/adt.test.sh that behaves like the uutils mkdir before
+# 0.11 (Ubuntu 26.04's): without -p, it checks that the directory is missing
+# and, a moment later, creates it, succeeding even if another process created
+# it in between. So two callers at once can both create the same directory.
+case "${1:-}" in -*) exec /bin/mkdir "$@" ;; esac
+for dir in "$@"; do
+  if [ -e "$dir" ]; then
+    echo "mkdir: cannot create directory '$dir': File exists" >&2
+    exit 1
+  fi
+done
+sleep 0.3
+exec /bin/mkdir -p "$@"

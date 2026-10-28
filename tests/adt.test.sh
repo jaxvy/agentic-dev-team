@@ -158,6 +158,26 @@ expect_eq "both acquires succeed" "0 0" "$rc_a $rc_b"
 sa="$(tail -n 1 "$SANDBOX/a.out")"; sb="$(tail -n 1 "$SANDBOX/b.out")"
 expect_true "they print different serials ($sa, $sb)" [ -n "$sa" -a "$sa" != "$sb" ]
 
+echo "device-acquire, concurrently, where mkdir is not atomic"
+# The fake mkdir lets every caller at once create the same directory, as the
+# uutils mkdir before 0.11 (Ubuntu 26.04's) can.
+setup
+mkdir -p "$SANDBOX/bin"
+ln -s "$SHIMS/mkdir" "$SANDBOX/bin/mkdir"
+pids=""
+for s in a a b; do
+  (cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" device-acquire --slug "$s") \
+    >> "$SANDBOX/$s.out" 2>/dev/null &
+  pids="$pids $!"
+done
+rcs=""
+for pid in $pids; do wait "$pid"; rcs="${rcs:+$rcs }$?"; done
+expect_eq "all three acquires succeed" "0 0 0" "$rcs"
+sa="$(sort -u "$SANDBOX/a.out")"; sb="$(cat "$SANDBOX/b.out")"
+expect_eq "two acquires for one slug print one serial" "1" "$(printf '%s\n' "$sa" | grep -c .)"
+expect_true "another slug gets another serial ($sa, $sb)" [ -n "$sb" -a "$sb" != "$sa" ]
+expect_eq "and only two devices boot" "2" "$(boots)"
+
 echo "choosing the AVD"
 setup
 attach emulator-5554 Pixel_A
