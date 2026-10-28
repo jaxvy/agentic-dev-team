@@ -100,7 +100,8 @@ stops and tells you how to fix it. The full checklist is in
 
 Each agent reads the previous agent's output in full before it starts. The spec
 constrains the plan, the plan constrains the code, and the test cases in the
-plan are what gets tested on the device.
+plan are what gets tested on the device
+([Device tests](HOW_IT_WORKS.md#device-tests-cases-flows-and-results)).
 
 ```mermaid
 flowchart LR
@@ -135,49 +136,6 @@ flowchart LR
   after the last round, the run stops and tells you why. It does not report a
   success. A run whose session died continues with
   `/build-auto-fast resume <slug>` (or the command it started with).
-
-### Testing on a device
-
-Each test is written once, by one agent, at the time it can be written well.
-
-```mermaid
-flowchart LR
-  A["Architect<br/>writes each test case<br/><i>before the code</i>"] --> W["Test Writer<br/>turns each case into a flow<br/><i>after the code</i>"]
-  W --> R[["adt.sh runs every flow<br/>on the run's own emulator<br/><i>no model, seconds per flow</i>"]]
-  R --> T["Tester<br/>judges the results and checks<br/>each failure by hand"]
-  T -- "READY TO MERGE" --> S[("e2e/flows/<br/>your regression suite")]
-  T -- "the app is wrong" --> C["Coder fixes it"]
-  T -- "the flow is wrong" --> W
-  C --> R
-  S -. "P0 flows and related areas<br/>replay on each later run" .-> R
-
-  classDef agent fill:#E8F0FE,stroke:#4285F4,color:#0B2E6B
-  classDef machine fill:#E6F4EA,stroke:#34A853,color:#0D3B1E
-  classDef store fill:#F3E8FD,stroke:#9334E6,color:#3C0A64
-  class A,W,T,C agent
-  class R machine
-  class S store
-```
-
-* **Your emulator stays free.** Each run boots a read-only copy of your AVD.
-  Two features in two git worktrees can be tested at the same time.
-* **The plan's selectors are requirements.** If the Coder leaves out a
-  `testTag`, the flow fails there. It does not quietly find the button by its
-  label.
-* **The report says how sure it is.** `test-results.md` starts with
-  "Verified V of N plan cases" and lists each case that was not verified, with
-  the reason.
-* **It asks when it is blocked.** On a locked screen or a sign-in, the Tester
-  stops and asks you for the one thing it needs, for example the device PIN.
-  It never writes the value down.
-* **Flows can sign in.** Name your test account's secrets in `AGENTS.md` and
-  put the values in the git-ignored `.agentic-dev-team/secrets.env`. The script
-  fills them in when a flow runs and removes them from every log
-  ([Test secrets and test hooks](HOW_IT_WORKS.md#test-secrets-and-test-hooks)).
-* **The suite runs without the agents too.** `adt.sh suite` replays
-  `e2e/flows/` on a device that is already running, with no model, and writes
-  a JUnit report, so a CI machine with an emulator can run it on every pull
-  request.
 
 ## Pick a command
 

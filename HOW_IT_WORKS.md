@@ -329,6 +329,25 @@ cannot undo.
 Every device test is written once, by one agent, at the moment it can be
 written well.
 
+```mermaid
+flowchart LR
+  A["Architect<br/>writes each test case<br/><i>before the code</i>"] --> W["Test Writer<br/>turns each case into a flow<br/><i>after the code</i>"]
+  W --> R[["adt.sh runs every flow<br/>on the run's own emulator<br/><i>no model, seconds per flow</i>"]]
+  R --> T["Tester<br/>judges the results and checks<br/>each failure by hand"]
+  T -- "READY TO MERGE" --> S[("e2e/flows/<br/>your regression suite")]
+  T -- "the app is wrong" --> C["Coder fixes it"]
+  T -- "the flow is wrong" --> W
+  C --> R
+  S -. "P0 flows and related areas<br/>replay on each later run" .-> R
+
+  classDef agent fill:#E8F0FE,stroke:#4285F4,color:#0B2E6B
+  classDef machine fill:#E6F4EA,stroke:#34A853,color:#0D3B1E
+  classDef store fill:#F3E8FD,stroke:#9334E6,color:#3C0A64
+  class A,W,T,C agent
+  class R machine
+  class S store
+```
+
 | Step | Who | When | What |
 |---|---|---|---|
 | The case | Architect | Before the code | Steps with selectors, and an Expected result. The spec the Coder builds to |
