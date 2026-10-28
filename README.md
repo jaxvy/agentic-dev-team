@@ -106,9 +106,9 @@ plan are what gets tested on the device.
 flowchart LR
   idea(["💡 Your<br/>prompt"]) --> PM["PM<br/><i>feature.md</i>"]
   PM --> AR["Architect<br/><i>plan +<br/>design doc</i>"]
-  AR <-.->|"max 2"| PR{{"Plan<br/>reviewer"}}
+  AR <-.->|"max 2"| PR{{"Plan review<br/><i>1 reviewer, or<br/>2 to 5 + judge</i>"}}
   AR --> CO["Coder(s)<br/><i>code +<br/>unit tests</i>"]
-  CO <-.->|"max 2"| CR{{"Code<br/>reviewer"}}
+  CO <-.->|"max 2"| CR{{"Code review<br/><i>1 reviewer, or<br/>2 to 5 + judge</i>"}}
   CO --> TW["Test Writer<br/><i>flows</i>"]
   TW --> RUN[["Flow run<br/><i>emulator</i>"]]
   RUN --> TE["Tester<br/><i>verdict</i>"]

@@ -21,12 +21,34 @@ links are present and who approves each one.
 
 ```mermaid
 flowchart LR
-  PM["PM"] -->|"feature.md"| AR["Architect"]
-  AR -->|"implementation-plan.md<br/>design-doc.md"| CO["Coder"]
-  CO -->|"the code"| TW["Test Writer"]
-  TW -->|"flows/"| TE["Tester"]
-  TE -->|"test-results.md"| OUT(["your diff"])
+  idea(["💡 Your<br/>prompt"]) --> PM["PM<br/><i>feature.md</i>"]
+  PM --> AR["Architect<br/><i>plan +<br/>design doc</i>"]
+  AR <-.->|"max 2"| PR{{"Plan review<br/><i>1 reviewer, or<br/>2 to 5 + judge</i>"}}
+  AR --> CO["Coder(s)<br/><i>code +<br/>unit tests</i>"]
+  CO <-.->|"max 2"| CR{{"Code review<br/><i>1 reviewer, or<br/>2 to 5 + judge</i>"}}
+  CO --> TW["Test Writer<br/><i>flows</i>"]
+  TW --> RUN[["Flow run<br/><i>emulator</i>"]]
+  RUN --> TE["Tester<br/><i>verdict</i>"]
+  TE -- "NEEDS FIXES (max 2)" --> CO
+  TE -- "READY TO<br/>MERGE" --> OUT(["✅ Diff +<br/>report"])
+
+  classDef agent fill:#E8F0FE,stroke:#4285F4,color:#0B2E6B
+  classDef review fill:#FEF3E2,stroke:#E8710A,color:#5A2D00
+  classDef machine fill:#E6F4EA,stroke:#34A853,color:#0D3B1E
+  classDef io fill:#F1F3F4,stroke:#5F6368,color:#202124
+  class PM,AR,CO,TW,TE agent
+  class PR,CR review
+  class RUN machine
+  class idea,OUT io
 ```
+
+The diagram shows every step. The PM runs only in `/build-guided` and
+`/plan-spec`, and the two reviews (orange) only in `/build-auto`.
+`/build-auto-fast` runs neither. `/build-guided` has no reviewers: it stops
+for your approval after the spec, the plan, the code and the test results.
+Each review has one reviewer, or a panel of 2 to 5 reviewers and a judge
+([How a review panel runs](#how-a-review-panel-runs)). The table shows which
+steps each command runs.
 
 | Command | PM | Architect | Plan review | Coder | Code review | Test Writer + Tester | Gates |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
@@ -1274,9 +1296,10 @@ are in `pipeline_artifacts/.runs/`.
 
 ### How a review panel runs
 
-With 2 to 5 reviewers for a gate, the gate becomes a panel. The orchestrator
-runs the build gate once, the reviewers review the same tree in parallel and
-anonymously (as A, B, C, in a new random order each round), and the
+With 2 to 5 reviewers for a gate (the plan review or the code review), the
+gate becomes a panel. The orchestrator runs the build gate once, the
+reviewers review the same tree in parallel and anonymously (as A, B, C, in a
+new random order each round), and the
 `adt-android-review-judge` agent checks every finding against the code,
 merges duplicates, and gives the verdict. When every reviewer approves, the
 judge does not run. The judge always runs in your current tool, on your main
