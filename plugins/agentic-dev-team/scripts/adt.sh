@@ -272,15 +272,30 @@ lease_live() {
 
 # Stale: not live, and older than the boot timeout, so a claim whose emulator
 # is still booting is never taken.
+lease_stale() {
+  lease_live "$1" && return 1
+  [ $(( $(now) - $(lease_created "$1") )) -gt "$BOOT_TIMEOUT" ]
+}
+
+# A stale lease is removed only under the lock of the run it belongs to, which
+# every acquire and release of that run holds, and is checked again under it.
+# Otherwise another acquire could remove the same lease and claim its serial
+# afresh in between, and this removal would take the new lease. The caller's
+# own lease is skipped, since it holds that lock: device-acquire replaces it.
 remove_stale_leases() {
-  local serial age
+  local serial project slug lock
   for serial in $(lease_serials); do
-    lease_live "$serial" && continue
-    age=$(( $(now) - $(lease_created "$serial") ))
-    if [ "$age" -gt "$BOOT_TIMEOUT" ]; then
+    lease_stale "$serial" || continue
+    project="$(lease_get "$serial" project)"
+    slug="$(lease_get "$serial" slug)"
+    lock="$(lock_path "$project" "$slug")"
+    try_lock "$lock" || continue
+    if lease_stale "$serial" && [ "$(lease_get "$serial" project)" = "$project" ] && \
+       [ "$(lease_get "$serial" slug)" = "$slug" ]; then
       rm -rf "$(lease_path "$serial")"
       say "adt: removed stale lease $serial"
     fi
+    rm -rf "$lock"
   done
 }
 
@@ -318,23 +333,45 @@ lock_key() {
   printf '%s|%s' "$1" "$2" | cksum | awk '{ print $1 }'
 }
 
+lock_path() {
+  printf '%s/.lock-%s\n' "$LEASE_ROOT" "$(lock_key "$1" "$2")"
+}
+
+# True when the process that took <lock> has gone: its pid is dead, or it
+# never wrote one in 30 s.
+lock_abandoned() {
+  local holder
+  holder="$(cat "$1/pid" 2>/dev/null)"
+  if [ -n "$holder" ]; then
+    ! kill -0 "$holder" 2>/dev/null
+  else
+    [ $(( $(now) - $(mtime "$1") )) -gt 30 ]
+  fi
+}
+
 release_lock() {
   [ -n "$LOCK_DIR" ] && rm -rf "$LOCK_DIR"
   LOCK_DIR=""
 }
 
+# Takes <lock> if it is free or abandoned, without waiting. The caller removes
+# it when done.
+try_lock() {
+  if ! claim_dir "$1"; then
+    lock_abandoned "$1" || return 1
+    rm -rf "$1"
+    claim_dir "$1" || return 1
+  fi
+  printf '%s\n' "$$" > "$1/pid"
+}
+
 take_lock() {
-  local lock holder waited=0 limit
-  lock="$LEASE_ROOT/.lock-$(lock_key "$1" "$2")"
+  local lock waited=0 limit
+  lock="$(lock_path "$1" "$2")"
   limit=$(( BOOT_TIMEOUT * 2 + 120 ))
   mkdir -p "$LEASE_ROOT"
   while ! claim_dir "$lock"; do
-    holder="$(cat "$lock/pid" 2>/dev/null)"
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-      rm -rf "$lock"
-      continue
-    fi
-    if [ -z "$holder" ] && [ $(( $(now) - $(mtime "$lock") )) -gt 30 ]; then
+    if lock_abandoned "$lock"; then
       rm -rf "$lock"
       continue
     fi
@@ -1069,7 +1106,7 @@ cmd_device_acquire() {
     child="$(start_detached "$log" /bin/bash "${BASH_SOURCE[0]}" device-acquire --slug "$slug")"
     # Return once the boot holds this run's lock (a few milliseconds), so a
     # device-release that follows at once waits for the boot, not misses it.
-    lock="$LEASE_ROOT/.lock-$(lock_key "$project" "$slug")"
+    lock="$(lock_path "$project" "$slug")"
     while [ "$waited" -lt 50 ] && kill -0 "$child" 2>/dev/null && \
           [ "$(cat "$lock/pid" 2>/dev/null)" != "$child" ]; do
       sleep 0.1
