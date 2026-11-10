@@ -1053,7 +1053,7 @@ cmd_device_acquire() {
   local slug="" background=0 project serial avd rc skip="" after=0 retried=0 log
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
       --background) background=1; shift ;;
       *) usage ;;
     esac
@@ -1163,7 +1163,7 @@ cmd_install() {
   local slug="" project serial own out rc avd stamp
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
       --) shift; break ;;
       *) usage ;;
     esac
@@ -1393,19 +1393,19 @@ cmd_run() {
   started_at="$(now)"
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
-      --driver) driver="${2:-}"; shift 2 ;;
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
+      --driver) [ $# -ge 2 ] || usage; driver="${2:-}"; shift 2 ;;
       # Set by cmd_suite only: the device, the results folder, every tier.
-      --suite-serial) suite_serial="${2:-}"; shift 2 ;;
-      --suite-out) suite_out="${2:-}"; shift 2 ;;
+      --suite-serial) [ $# -ge 2 ] || usage; suite_serial="${2:-}"; shift 2 ;;
+      --suite-out) [ $# -ge 2 ] || usage; suite_out="${2:-}"; shift 2 ;;
       --all) all_tiers=yes; shift ;;
-      --area) areas="$areas
+      --area) [ $# -ge 2 ] || usage; areas="$areas
 $(area_spec "${2:-}")"; shift 2 ;;
       # A tier on its own, as in "--area checkout:p1 p2", belongs to that area.
       [pP][0-2]) [ -n "$areas" ] || usage; areas="$areas,$(printf '%s' "$1" | tr 'P' 'p')"; shift ;;
-      --exclude) excludes="$excludes
+      --exclude) [ $# -ge 2 ] || usage; excludes="$excludes
 ${2:-}"; shift 2 ;;
-      --only) only="$only
+      --only) [ $# -ge 2 ] || usage; only="$only
 ${2:-}"; shift 2 ;;
       *) usage ;;
     esac
@@ -1645,10 +1645,10 @@ cmd_suite() {
   pass=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --driver) driver="${2:-}"; shift 2 ;;
-      --serial) serial="${2:-}"; shift 2 ;;
-      --out) out="${2:-}"; shift 2 ;;
-      --area|--exclude) pass+=("$1" "${2:-}"); shift 2 ;;
+      --driver) [ $# -ge 2 ] || usage; driver="${2:-}"; shift 2 ;;
+      --serial) [ $# -ge 2 ] || usage; serial="${2:-}"; shift 2 ;;
+      --out) [ $# -ge 2 ] || usage; out="${2:-}"; shift 2 ;;
+      --area|--exclude) [ $# -ge 2 ] || usage; pass+=("$1" "${2:-}"); shift 2 ;;
       [pP][0-2]) pass+=("$1"); shift ;;
       --all) pass+=(--all); shift ;;
       *) usage ;;
@@ -1684,11 +1684,11 @@ cmd_select() {
   local driver="" areas="" excludes="" project
   while [ $# -gt 0 ]; do
     case "$1" in
-      --driver) driver="${2:-}"; shift 2 ;;
-      --area) areas="$areas
+      --driver) [ $# -ge 2 ] || usage; driver="${2:-}"; shift 2 ;;
+      --area) [ $# -ge 2 ] || usage; areas="$areas
 $(area_spec "${2:-}")"; shift 2 ;;
       [pP][0-2]) [ -n "$areas" ] || usage; areas="$areas,$(printf '%s' "$1" | tr 'P' 'p')"; shift ;;
-      --exclude) excludes="$excludes
+      --exclude) [ $# -ge 2 ] || usage; excludes="$excludes
 ${2:-}"; shift 2 ;;
       *) usage ;;
     esac
@@ -1710,8 +1710,8 @@ cmd_check() {
   local slug="" name="" on_device=0 project serial dir log table rc start secs status row tmp
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
-      --name) name="${2:-}"; shift 2 ;;
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
+      --name) [ $# -ge 2 ] || usage; name="${2:-}"; shift 2 ;;
       --device) on_device=1; shift ;;
       --) shift; break ;;
       *) usage ;;
@@ -1788,7 +1788,7 @@ cmd_state() {
 '
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
       *) break ;;
     esac
   done
@@ -1896,8 +1896,8 @@ cmd_promote() {
   local src dest added=0 replaced=0 removed=0 kept=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
-      --remove) removes="$removes
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
+      --remove) [ $# -ge 2 ] || usage; removes="$removes
 ${2:-}"; shift 2 ;;
       *) usage ;;
     esac
@@ -2154,7 +2154,7 @@ cmd_preflight() {
   local driver=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --driver) driver="${2:-}"; shift 2 ;;
+      --driver) [ $# -ge 2 ] || usage; driver="${2:-}"; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -2251,7 +2251,7 @@ cmd_allow() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --remove) mode=remove; shift ;;
-      --project) project="${2:-}"; shift 2 ;;
+      --project) [ $# -ge 2 ] || usage; project="${2:-}"; shift 2 ;;
       --only) [ $# -ge 2 ] || usage; only="$2"; shift 2 ;;
       *) usage ;;
     esac
@@ -2393,8 +2393,8 @@ cmd_device_release() {
   local slug="" serial="" project rc=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --slug) slug="${2:-}"; shift 2 ;;
-      --serial) serial="${2:-}"; shift 2 ;;
+      --slug) [ $# -ge 2 ] || usage; slug="${2:-}"; shift 2 ;;
+      --serial) [ $# -ge 2 ] || usage; serial="${2:-}"; shift 2 ;;
       *) usage ;;
     esac
   done
