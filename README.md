@@ -43,9 +43,10 @@ report, and new regression tests for your project.
 
 | Capability | What it does for you |
 |---|---|
-| 📱 **Tested on a real emulator, not a mock** | Each run boots a headless copy of your AVD while the code is being written. Every test case becomes a flow file that runs in seconds with no model in the loop. A crash or ANR fails the test, even when every check passed. |
-| 🧪 **A regression suite that grows with each feature** | Flows that pass are saved to `e2e/flows/` with a P0, P1 or P2 priority. Later runs replay them, so a new feature cannot quietly break an old one. |
-| 📐 **A plan before any code** | The Architect reads your codebase first. The plan names exact files and line numbers, your real Gradle commands, the `testTag` of each UI element, and each unit test as GIVEN / WHEN / THEN. |
+| 🧪 **Tested with your own tests** | By default, the agents use the test types and tools your project already has: unit, snapshot, Espresso, Compose UI. The pipeline adds no test style of its own. |
+| 📱 **Or tested on a real emulator** | With `Test driver: auto-mobile` or `maestro`, each run boots a headless copy of your AVD while the code is being written. Every test case becomes a flow file that runs in seconds with no model in the loop. A crash or ANR fails the test, even when every check passed. |
+| 🔁 **A regression suite that grows with each feature** | With a device driver, flows that pass are saved to `e2e/flows/` with a P0, P1 or P2 priority. Later runs replay them, so a new feature cannot quietly break an old one. |
+| 📐 **A plan before any code** | The Architect reads your codebase first. The plan names exact files and line numbers, your real Gradle commands, and each test that the new code needs. |
 | 📝 **A design doc you can approve** | You review the approach in plain prose, with a diagram and the alternatives it rejected. A wrong design is cheap to fix before the code exists. |
 | 🔍 **No agent grades its own work** | Separate reviewers check the plan and the code. A real bug blocks the run, even when the plan did not expect it. You can make a review gate a panel of 2 to 5 reviewers on different models: Claude, Codex, Gemini and more. |
 | 🧩 **It follows your conventions** | Each agent reads your `AGENTS.md` or `CLAUDE.md`, uses the skills your project has, and uses the test libraries in your version catalog. The output looks like your codebase, not a generic sample. |
@@ -57,9 +58,10 @@ report, and new regression tests for your project.
 ### How a run works
 
 Each agent works from what the agent before it wrote: the Architect plans from
-the spec, the Coders build what the plan says, and the Tester checks the app
-against the test cases in the plan
-([Device tests](HOW_IT_WORKS.md#device-tests-cases-flows-and-results)).
+the spec, the Coders build what the plan says, and the Tester checks the
+result against the test plan. By default the project's own tests are the test
+plan; with a device driver, the Tester also checks the app on an emulator
+([Test drivers](HOW_IT_WORKS.md#test-drivers)).
 
 ```mermaid
 flowchart LR
@@ -180,10 +182,10 @@ differ, the plan is the source of truth for the code.
 | `adt-android-pm` | Principal product manager | `feature.md`, a clear spec |
 | `adt-android-architect` | Staff+ Android engineer | `implementation-plan.md` with exact file changes and a manual test plan, and `design-doc.md` for you |
 | `adt-android-architect-reviewer` | Plan reviewer, read-only | Approval, or a numbered list of changes |
-| `adt-android-coder` | Implementer | Uncommitted code and the unit tests the plan names |
+| `adt-android-coder` | Implementer | Uncommitted code and the tests the plan names |
 | `adt-android-code-reviewer` | Code reviewer, read-only | Approval, or a numbered list of changes |
-| `adt-android-test-writer` | Test engineer | One flow file for each test case the Architect wrote, and no tests of its own |
-| `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from a real device |
+| `adt-android-test-writer` | Test engineer, device drivers only | One flow file for each test case the Architect wrote, and no tests of its own |
+| `adt-android-tester` | Principal QA engineer | `test-results.md`, with a verdict from the project's tests or from a real device |
 | `adt-android-review-judge` | Panel judge, read-only. Runs only with a review panel | The verified, merged findings of the panel, and the verdict |
 
 ### What a run leaves behind
@@ -191,15 +193,16 @@ differ, the plan is the source of truth for the code.
 ```text
 your-android-project/
 ├── app/ ...                    # your code, with the changes uncommitted
-├── e2e/flows/                  # the regression suite: commit it with the feature
+├── e2e/flows/                  # device drivers only: the regression suite, commit it
 └── pipeline_artifacts/         # git-ignored
     └── recently-played-carousel/
         ├── feature.md              # the spec (only when the PM ran)
         ├── implementation-plan.md  # the plan, with the manual test plan
         ├── design-doc.md           # the same design, written for you
-        ├── flows/                  # one flow per test case, and INDEX.md
-        ├── run-results.md          # each flow's result and time
-        ├── run-logs/               # the test driver's output for each flow
+        ├── checks.md, checks/      # the build gate and device tests, with logs
+        ├── flows/                  # device drivers only: one flow per test case
+        ├── run-results.md          # device drivers only: each flow's result
+        ├── run-logs/               # device drivers only: the driver's output
         └── test-results.md         # per-case results, verdict, observations
 ```
 
@@ -223,8 +226,11 @@ In Codex, add the marketplace, then install `agentic-dev-team` from
 codex plugin marketplace add jaxvy/agentic-dev-team
 ```
 
-**2. Register a test driver.** The agents drive your app through
-[auto-mobile](https://github.com/kaeawc/auto-mobile) (the default) or
+**2. Choose how to test (optional).** By default the agents use your
+project's own tests, and you need no more setup. To also test on an emulator,
+add `Test driver: auto-mobile` (or `maestro`) to your `AGENTS.md` or
+`CLAUDE.md`, and register the driver with
+[auto-mobile](https://github.com/kaeawc/auto-mobile) or
 [Maestro](https://maestro.dev):
 
 ```bash
@@ -268,14 +274,18 @@ requirements below.
 * [Claude Code](https://claude.com/claude-code),
   [Codex](https://developers.openai.com/codex),
   [Antigravity](https://antigravity.google), or [OpenCode](https://opencode.ai)
-* The Android SDK emulator and platform tools (they come with Android Studio),
-  and at least one AVD
-* A test driver registered with your tool:
-  [auto-mobile](https://github.com/kaeawc/auto-mobile) (the default) or
-  [Maestro](https://maestro.dev). A Maestro project also needs the line
-  `Test driver: maestro` in its `AGENTS.md` or `CLAUDE.md`.
+* For the default project mode, nothing more. The Android SDK platform tools
+  and an AVD only when a plan has device tests (Espresso, for example).
+* To test on an emulator with a device driver: the Android SDK emulator and
+  platform tools (they come with Android Studio), at least one AVD, and
+  [auto-mobile](https://github.com/kaeawc/auto-mobile) or
+  [Maestro](https://maestro.dev) registered with your tool, with the line
+  `Test driver: auto-mobile` or `Test driver: maestro` in the project's
+  `AGENTS.md` or `CLAUDE.md`.
   [Setting up device testing](HOW_IT_WORKS.md#setting-up-device-testing) has
   the steps for each tool.
+* Upgrading: a project with no `Test driver:` line used auto-mobile before.
+  Add `Test driver: auto-mobile` to keep it.
 
 ### Claude Code plugin
 

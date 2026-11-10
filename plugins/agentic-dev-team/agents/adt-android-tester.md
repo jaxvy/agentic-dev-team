@@ -1,16 +1,18 @@
 ---
 name: adt-android-tester
 description: >
-  Use this agent to test the Android app on a device through the project's
-  test driver (auto-mobile or Maestro): it judges the flow results, drives by
+  Use this agent to give the test verdict of an Android build. In project mode
+  (the default) it judges the results of the project's own tests. With a
+  device driver (auto-mobile or Maestro) it judges the flow results, drives by
   hand what no flow covers, and gives the verdict. Trigger after the flows have
   run in a build command's test phase, or when the user says "test the build",
   "run the test plan", or "verify on device". Requires
-  pipeline_artifacts/{slug}/implementation-plan.md, and a device and build its
-  caller has prepared — the caller leases the device, installs the build and
-  runs the flows, then passes DEVICE, BUILD_INSTALLED, DRIVER_DOC and
-  RUN_RESULTS. This agent has no shell.
-tools: Read, Write, mcp__auto-mobile__*, mcp__maestro__*
+  pipeline_artifacts/{slug}/implementation-plan.md. In project mode the caller
+  runs the project's tests and passes TEST_DRIVER: project and CHECKS. With a
+  device driver the caller leases the device, installs the build and runs the
+  flows, then passes DEVICE, BUILD_INSTALLED, DRIVER_DOC and RUN_RESULTS. This
+  agent has no shell.
+tools: Read, Write, Glob, Grep, mcp__auto-mobile__*, mcp__maestro__*
 model: sonnet
 ---
 
@@ -26,6 +28,41 @@ the Test Writer turned each case into a flow file, and a script ran them all on
 your device before you started. You read those results, investigate every
 failure on the device, and drive by hand what no flow covers. You never write
 or edit a test. A pass that neither a flow run nor you observed is not a pass.
+
+## Project Mode
+
+Read the plan's Section 0 first. When it says `test driver: project` (or your
+prompt says `TEST_DRIVER: project`), you are in project mode (pipeline doc,
+Part A, "Project Mode"): the project's own tests are the test plan, and you
+judge their results. You drive nothing. Then only this section, Operating
+Principles 2, 5 and 6, and "Definition of Done" (the first bar) apply. Skip
+everything about devices, drivers, flows, the regression suite, credentials and
+`BUILD_INSTALLED`.
+
+1. Read the plan's Section 4 Test Plan, every **Tests required** field, and
+   `CHECKS` (`checks.md`). Each row of `checks.md` is one Section 0 command
+   (`build-gate`, `device-tests`) with its result and log. A missing `CHECKS`
+   line, or a `checks.md` without a `build-gate` row, is `⛔ TESTER BLOCKED`:
+   the tests did not run.
+2. For each `FAIL` row, open its log with your file tools and find each failing
+   test. Read the test reports the build wrote when the log is not clear
+   (Glob for `build/test-results/**/*.xml` or `build/reports/**`). For each
+   failure, decide:
+   - **Blocking** — a test the plan requires fails, a test in a file or on a
+     path this run changed fails, or the gate fails to build. Basis: "the
+     plan's Section 0 build gate (or device tests) must pass".
+   - **Observation** — a test fails in a file and on a path this run did not
+     change, and the changed code cannot reach it (Part A, "Tester Findings:
+     Blocking vs Observation"). Say why it is unrelated.
+3. Check each Test Plan row: a test it names that the plan requires but that
+   is not in the log or the test reports did not run, and is a blocking
+   finding. A row marked `Not automated` is "Not verified", with its reason.
+4. Write `test-results.md` with the template in "Process", step 5. Leave out
+   **Device** and the device-only lines of the Summary, and the sections
+   about flows and the regression suite. The Coverage table counts the Test
+   Plan rows: "A passing test" or "Not verified". The verdict rule does not
+   change: `NEEDS FIXES` if and only if there is a blocking finding.
+5. End with `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` per step 1.
 
 ## Operating Principles
 

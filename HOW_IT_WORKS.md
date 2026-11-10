@@ -268,28 +268,10 @@ uses the libraries the project already has rather than picking its own. Each
 section in Section 3 then carries a **Tests required** field naming the test
 file and one case per line.
 
-Every case is phrased GIVEN / WHEN / THEN — starting state, the single action
-under test, observable result — and that line becomes the test's name
-unchanged, with the body repeating the three steps as commented blocks:
-
-```kotlin
-@Test
-fun `GIVEN the cache holds items WHEN the refresh fails THEN the cached items are returned`() = runTest {
-    // GIVEN
-    val repository = NewsRepository(api = FailingApi(), cache = cache)
-
-    // WHEN
-    val result = repository.refresh()
-
-    // THEN
-    assertThat(result).isEqualTo(cachedItems)
-}
-```
-
-The point is not ceremony. A case that cannot be phrased this way usually is
-not a behaviour, so the format catches empty tests at planning time, before
-anyone writes them. And when one fails months later, the name alone says which
-behaviour broke and under what starting state.
+Each case says, in one line, the behaviour it proves. How the test is named
+and structured in code is your project's choice: the Coder follows your
+`AGENTS.md` or `CLAUDE.md` and the nearest existing test, and the reviewers
+judge the tests against those, not against a format of the pipeline's own.
 
 | Field value | What the Coder does |
 |---|---|
@@ -311,9 +293,10 @@ that exist — it can never fail for one that was never written. That is why the
 requirement lives in the plan and is checked by a reviewer instead.
 
 **Instrumented tests.** A case that needs a real Android runtime is marked
-`(instrumented)` and lives in `src/androidTest/`. JVM tests stay the default,
-because they run in the build gate on every review; instrumented ones run on
-the run's device as the device tests.
+`(instrumented)` and lives in `src/androidTest/`. With a device driver, JVM
+tests stay the default, because they run in the build gate on every review;
+instrumented ones run on the run's device as the device tests. In project
+mode, the test types follow your project ([Test drivers](#test-drivers)).
 
 **Data that outlives an update.** A change to a Room schema needs its
 migration, the exported schema JSON, and an instrumented migration test with
@@ -325,6 +308,10 @@ test is a blocker for both reviewers, since data loss is the one defect a user
 cannot undo.
 
 ### Device tests: cases, flows and results
+
+This section, and "The regression suite" below, apply only with a device
+driver (`Test driver: auto-mobile` or `maestro`). Project mode, the default,
+has no flows and no regression suite ([Test drivers](#test-drivers)).
 
 Every device test is written once, by one agent, at the moment it can be
 written well.
@@ -482,11 +469,49 @@ is one you attached.
 
 ### Test drivers
 
-The Tester never talks to a device directly. It goes through a *test driver*,
-an MCP server: auto-mobile by default, or Maestro when the project's
-`AGENTS.md` or `CLAUDE.md` says `Test driver: maestro`. The orchestrator reads
-that line once, at the start of a build command, and stops if it names anything
-else.
+A project tests in one of three modes, set by a `Test driver:` line in its
+`AGENTS.md` or `CLAUDE.md`. The orchestrator reads that line once, at the
+start of a build command, and stops if it names anything else. The Architect
+records the mode in the plan's Section 0, and a run that starts from a plan
+written for another mode stops.
+
+| | `project` | `auto-mobile` | `maestro` |
+|---|---|---|---|
+| Used when | No line, or `Test driver: project` (the default) | `Test driver: auto-mobile` | `Test driver: maestro` |
+| Tests | Your project's own: unit, snapshot, Espresso, Compose UI, whatever it already has | Unit tests, plus flows on a device | Unit tests, plus flows on a device |
+| Needs | Nothing beyond your build. A device only when the plan has device tests | An emulator, and auto-mobile through [Bun](https://bun.sh) | An emulator, and the [Maestro CLI](https://docs.maestro.dev) 2.11.0 or later, which needs Java 17 |
+| Test phase | `adt.sh check` runs the build gate and the device tests; the Tester judges the results | Flows, then the Tester on the device | Flows, then the Tester on the device |
+| Regression suite | No | `e2e/flows/` | `e2e/flows/` |
+| Can't do | Drive the app by hand | — | Change the font scale; such cases come back inconclusive |
+
+**Project mode.** The pipeline adds no test tool, test type or test style of
+its own. The Architect finds the test types your project already uses and the
+directory of each, and plans the same types for the new code: a screen in a
+project with snapshot tests for its screens gets a snapshot test. The Coder
+writes them like the existing ones. The build gate runs everything that runs
+without a device (unit tests, snapshot verify), and the device tests run what
+needs one (Espresso, for example). There is no Test Writer, no flow, no
+install and no `e2e/flows/`; Section 4 of the plan is a table of each
+behaviour and risk with the test that covers it, or why none does. A
+`testTag` is added only where a planned UI test needs one. The Tester reads
+the results in `checks.md`, and reports a failing test in code this run did
+not touch as an observation, not a blocking finding.
+
+A snapshot test needs reference images. A section that adds one names your
+project's record command, the Coder runs it for that section's tests only,
+and lists the new images in its DONE marker for you to examine. A plan with
+snapshot tests is never run in parallel, because parallel coders run no
+Gradle.
+
+**Moving from the earlier default.** Before project mode, a project with no
+`Test driver:` line used auto-mobile. To keep that, add the line
+`Test driver: auto-mobile`. The preflight warns when `e2e/flows/` exists in
+project mode.
+
+**Device drivers.** The rest of this section, and
+[Setting up device testing](#setting-up-device-testing), apply to auto-mobile
+and Maestro only. The Tester never talks to a device directly. It goes
+through the driver, an MCP server.
 
 Everything driver-specific lives in one **adapter** file per driver,
 `drivers/auto-mobile.md` and `drivers/maestro.md`. The orchestrator passes the
@@ -498,12 +523,6 @@ means writing a third adapter, not editing the agents.
 The Architect's test plan is the same for both: steps with test-tag selectors.
 For a Compose app the Architect also makes sure the root composable sets
 `testTagsAsResourceId`, because both drivers find elements by resource id.
-
-| | auto-mobile | Maestro |
-|---|---|---|
-| Used when | The project declares nothing (the default) | `AGENTS.md` or `CLAUDE.md` has the line `Test driver: maestro` |
-| Install | [Bun](https://bun.sh); auto-mobile itself runs through `bunx` | The [Maestro CLI](https://docs.maestro.dev), 2.11.0 or later, which needs Java 17 |
-| Can't do | — | Change the font scale; such cases come back inconclusive |
 
 auto-mobile is registered at a fixed version, with its device-setting tools
 switched on. Both parts matter:
@@ -582,8 +601,8 @@ reached over HTTP, `{"type": "remote", "url": "<auto-mobile's URL>"}`, with
 ```
 
 For Maestro, the entry is `"maestro": {"command": "maestro", "args": ["mcp"]}`.
-A project that uses Maestro also needs the line `Test driver: maestro` in its
-`AGENTS.md` or `CLAUDE.md`.
+A project needs the line `Test driver: auto-mobile` or `Test driver: maestro`
+in its `AGENTS.md` or `CLAUDE.md`; without one, it runs in project mode.
 
 After changing auto-mobile's version or tool list, restart its background
 service once, while nothing is being tested:
@@ -1155,10 +1174,8 @@ around a problem with the shell.
 
 The Architect names the unit tests each section needs, using the libraries your
 project already uses — discovered from your version catalog, not chosen from a
-default list. Every case is phrased GIVEN / WHEN / THEN, and that line becomes
-the test's name and the shape of its body, so a failing test says which
-behaviour broke without anyone opening the file. The Coder writes exactly
-those, and both reviewers check them:
+default list. Each case says the behaviour it proves; how the test is named
+is your project's choice. The Coder writes exactly those, and both reviewers check them:
 the plan reviewer that the cases are worth writing, the code reviewer that they
 exist and would fail if the logic were wrong. A section with no logic worth
 testing says so explicitly rather than padding itself with tests that cannot
@@ -1631,8 +1648,12 @@ in Codex's sandbox, which has no network. Approve it, give Codex full access
 for the run, or allow `./gradlew` in your own Codex rules ([Codex](#codex)).
 
 **The run stopped at the start, naming the test driver.** Your `AGENTS.md` or
-`CLAUDE.md` has a `Test driver:` line with a value other than `auto-mobile` or
-`maestro`. Fix the line, or delete it to use auto-mobile.
+`CLAUDE.md` has a `Test driver:` line with a value other than `project`,
+`auto-mobile` or `maestro`. Fix the line, or delete it to use project mode.
+
+**The run stopped because the plan was written for another test driver.**
+The plan's Section 0 `test driver:` differs from your `Test driver:` line.
+Change the line back, or plan again with `/plan-design`.
 
 **Rotation, dark mode, permission or offline cases come back inconclusive.** The
 Tester has no shell, so it only uses the test driver's own tools. Under

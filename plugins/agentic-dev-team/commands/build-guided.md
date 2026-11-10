@@ -23,8 +23,15 @@ consuming project's `AGENTS.md` (or `CLAUDE.md`) for local conventions
 source of truth; do not duplicate their content here.
 
 Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
-driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
-file (MODELS). Do all of them before any agent runs.
+driver (TEST_DRIVER, and DRIVER_DOC for a device driver), the device script
+(ADT_SH), the preflight, and the config file (MODELS). Do all of them
+before any agent runs.
+
+Test mode: in project mode (TEST_DRIVER is `project`, the default), the run
+tests with the project's own tests. Every step below about DRIVER_DOC, the
+Test Writer, flows, the install, DEVICE, BUILD_INSTALLED, RUN_RESULTS, the
+regression suite or "Keep the passing flows" does not apply: ORCHESTRATION_DOC,
+"The Test Phase in Project Mode", replaces them.
 
 Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
 command, paths and driver once the slug is known, the phase at the start of
@@ -92,8 +99,9 @@ Phase 1 — PM (kickoff):
 
 Phase 2 — Architect (after approval):
   Delegate to the `adt-android-architect` subagent.
-  Pass: the path FEATURE_DIR/feature.md, PIPELINE_DOC, and the line
-  `DESIGN_DOC: on` or `DESIGN_DOC: off` to match what you resolved above.
+  Pass: the path FEATURE_DIR/feature.md, PIPELINE_DOC, `TEST_DRIVER: <value>`,
+  and the line `DESIGN_DOC: on` or `DESIGN_DOC: off` to match what you
+  resolved above.
   When ✅ ARCHITECT DONE, parse the artifact paths from the DONE message:
     "plan at pipeline_artifacts/{slug}/implementation-plan.md"
     "design doc at pipeline_artifacts/{slug}/design-doc.md" (present only when
@@ -123,7 +131,8 @@ Phase 2 — Architect (after approval):
   in the design doc's Implementation Notes at the end of the run (Phase 5).
 
 Phase 3 — Coder (after approval, execution strategy decided by Architect):
-  Early boot — first, once PLAN_PATH gives the slug S: run
+  Early boot — first, once PLAN_PATH gives the slug S (in project mode, only
+  when the plan's Section 0 `device tests` line is not `none`): run
   `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
   boots this run's emulator while the Coder works; the test phase's own
   `device-acquire` waits for it. From here on, every exit releases the device
@@ -172,8 +181,11 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
     "Approve the implementation to proceed to Tester, or revise?"
 
 Phase 4 — Tester (after approval):
-  Run the test phase exactly as ORCHESTRATION_DOC, "The Test Phase",
-  defines it:
+  In project mode, run ORCHESTRATION_DOC, "The Test Phase in Project Mode",
+  instead: the build gate and the device tests through `adt.sh check`, then
+  the Tester with PLAN_PATH, PIPELINE_DOC, `TEST_DRIVER: project` and
+  `CHECKS: <path>`. With a device driver, run the test phase exactly as
+  ORCHESTRATION_DOC, "The Test Phase", defines it:
     1. lease this run's device with `adt.sh device-acquire` (DEVICE);
     2. run the plan's device tests with `adt.sh check`, when Section 0 has
        them (a failure continues, for the Tester), then install the build with
@@ -222,6 +234,9 @@ Phase 4 — Tester (after approval):
     the user explicitly asked for in their `revise:` feedback is fair game —
     that is the user creating a requirement, which is allowed; the Tester
     doing it on its own is not. Wait for ✅ CODER DONE.
+    In project mode, re-run "The Test Phase in Project Mode" and pass the
+    Tester PLAN_PATH, PIPELINE_DOC, `TEST_DRIVER: project`, the new `CHECKS`
+    and the previous `test-results.md`. With a device driver:
     Re-run the test phase (ORCHESTRATION_DOC, "The Test Phase") on the same device —
     install included, so the re-test sees the fixed build. The Test Writer runs
     again only if the previous `test-results.md` lists Flow Defects (pass
@@ -263,7 +278,7 @@ Phase 4B — Tester blocked (⛔ TESTER BLOCKED, max 2 resumes, counter `resumes
   per the Blocked Path. Never present a blocked run as a pass; the feature is
   untested until a Tester run executes the cases.
 
-Keep the passing flows — when the user answers `approve` at Phase 4 and the
+Keep the passing flows (device drivers only) — when the user answers `approve` at Phase 4 and the
 last verdict was READY TO MERGE: run the promote step of ORCHESTRATION_DOC,
 "The Test Phase" (`adt.sh promote`, with one `--remove` per Flows
 Retired row and per "Suite Flows to Remove" entry in the last test-results.md),
@@ -289,6 +304,10 @@ Phase 5 — Close the run (whenever the run ends: on `approve` at Phase 4, on
   implemented this document as written." when there is nothing to record.
   Then report DOC_PATH to the user as the document to review this work from,
   alongside the test verdict and the list of changed files.
+
+In project mode, the summary reports the test mode and each check from
+`checks.md` (result and time) instead of the device, the flow counts, the
+regression suite, promote and the Test Writer's time.
 
 Whenever the run ends, include the test driver, the device the run tested on,
 any preflight warnings, and for each test phase how long the Test Writer, the flow run and the Tester

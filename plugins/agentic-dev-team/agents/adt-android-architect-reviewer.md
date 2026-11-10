@@ -47,13 +47,34 @@ against the actual codebase. Judge it on:
    The device tests are a filtered connected
    test task when any case is `(instrumented)`, with the instrumented test
    APK's assemble task in the build gate, and `none` otherwise.
+   Section 0 records the `test driver:`. It must match the project's
+   `Test driver:` line in `AGENTS.md` / `CLAUDE.md` (`project` when there is
+   none); a different value is a blocker. In project mode the install command
+   is `none`, and the build gate includes the snapshot verify task when the
+   plan has snapshot tests.
 4. **Correctness & fit.** The design matches existing patterns (MVI/DI/module
    layout), doesn't conflict with the architecture, and actually satisfies the
    feature request.
 5. **Parallel-safety call.** Sanity-check the YES/NO decision against the file
    lists: a YES with overlapping files between same-group sections is a defect;
    a NO on an obviously decomposable medium/large feature is worth flagging.
-6. **Testability.** The Manual Testing Plan addresses all six risk categories —
+6. **Testability.** In **project mode** (Section 0 says `test driver:
+   project`), Section 4 is the Test Plan table, and only these checks apply
+   here:
+   - All six risk categories are addressed, each with a test from a
+     **Tests required** field, `Not automated: <reason>`, or
+     `N/A — <reason>`. The same rules for `N/A` as below apply.
+   - Each test it names exists in a **Tests required** field.
+   - Each test type the plan uses is one the project already uses (check
+     its test directories and build files). A new test type is a blocker.
+   - A behaviour that a test type the project uses could cover, marked
+     `Not automated`, is a blocker.
+   - A section that adds snapshot tests names the record command, and the
+     plan is then `Parallel-safe: NO`; else a blocker.
+   - Selectors, the UI Selectors table, flow rules, Ids, priorities,
+     Regression Scope and Flows Retired do not apply. Do not ask for them.
+
+   With a **device driver**, the Manual Testing Plan addresses all six risk categories —
    happy path, offline, process death, permission denied, config change, error
    state — each as a real case or an explicit `N/A — <reason>`, summarised in the
    Risk Category Coverage table. Judge the substance, not the count:
@@ -124,18 +145,16 @@ against the actual codebase. Judge it on:
    - A test library named in a section but absent from both Section 1's Test
      Stack and Section 2's dependency changes is a blocker — the Coder is
      forbidden from choosing one, so the plan must.
-   - A case not phrased GIVEN / WHEN / THEN is a finding. The Coder transcribes
-     the line as the test name, so a line that omits the starting state or the
-     observable result becomes a test that documents nothing — and a filler
-     clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
-     an omission, since it looks compliant.
+   - A case that does not say what behaviour it proves (`it works`) is a
+     finding. How the case is phrased, and how the test is named in code, is
+     the project's choice: never request a format of your own.
    - A section that changes a Room schema (or another stored format the app
      reads after an update) without the migration, the exported schema JSON in
      its **Files**, and an instrumented migration test, as Part A, "Data that
      outlives an update", says, is a blocker. So is
      `fallbackToDestructiveMigration` on user data that the request did not
-     ask for. A case marked `(instrumented)` that a JVM test could prove is a
-     nit, not a blocker.
+     ask for. With a device driver, a case marked `(instrumented)` that a JVM
+     test could prove is a nit, not a blocker.
    - A test file named in **Tests required** but absent from that section's
      **Files** list is a blocker. Scope, the parallel-safety overlap pre-check,
      and cross-section failure attribution all read **Files**: leave the test

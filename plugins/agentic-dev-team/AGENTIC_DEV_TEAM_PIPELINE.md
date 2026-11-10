@@ -33,9 +33,11 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
   - `adt-android-pm` writes `pipeline_artifacts/{slug}/feature.md`.
   - `adt-android-architect` writes `pipeline_artifacts/{slug}/implementation-plan.md`. Its `## 0. Verification Commands` block is the run's authority for the named commands below.
   - `adt-android-architect` also writes `pipeline_artifacts/{slug}/design-doc.md` — the human-facing design document — whenever the orchestrator asks for it. See "The Two Architect Artifacts" below.
-  - `adt-android-test-writer` writes `pipeline_artifacts/{slug}/flows/` — one flow file per test case, plus `flows/INDEX.md` — and nothing else.
-  - `adt.sh run` (run by the orchestrator) writes `pipeline_artifacts/{slug}/run-results.md` and the logs in `run-logs/`.
-  - `adt.sh promote` (run by the orchestrator after a final `READY TO MERGE`) copies this run's passing flows into the project's regression suite, `e2e/flows/` — the one pipeline output that lives outside `pipeline_artifacts/` and is meant to be committed.
+  - `adt.sh check` (run by the orchestrator) writes `pipeline_artifacts/{slug}/checks.md` and the logs in `checks/`.
+  - Device drivers only (not in project mode):
+    - `adt-android-test-writer` writes `pipeline_artifacts/{slug}/flows/` — one flow file per test case, plus `flows/INDEX.md` — and nothing else.
+    - `adt.sh run` (run by the orchestrator) writes `pipeline_artifacts/{slug}/run-results.md` and the logs in `run-logs/`.
+    - `adt.sh promote` (run by the orchestrator after a final `READY TO MERGE`) copies this run's passing flows into the project's regression suite, `e2e/flows/` — the one pipeline output that lives outside `pipeline_artifacts/` and is meant to be committed.
   - `adt-android-tester` writes `pipeline_artifacts/{slug}/test-results.md`.
   - `adt-android-coder` produces no markdown — only uncommitted code changes in the working tree.
   - `pipeline_artifacts/` must be git-ignored in the consuming project. Two mechanisms cover this, and they are deliberately redundant:
@@ -47,7 +49,7 @@ Gemini, opencode, etc.) and to every `adt-*` agent it spawns.
 
 - **Read-before-write**: Every agent must read the prior phase artifact in full before starting. A missing required artifact is a STOP condition — report to the user, do not proceed by guessing.
 - **No-commit rule for adt-android-coder**: The Coder must never run `git add`, `git commit`, or any staging command. Changes stay uncommitted for human review.
-- **Manual verification**: `adt-android-tester` must perform manual verification through the project's test driver (see "The Test Driver" below) when its MCP server is available and the consuming project's `AGENTS.md` / `CLAUDE.md` requires it.
+- **Verification**: `adt-android-tester` gives the verdict in every test mode (see "The Test Driver" below). With a device driver it drives the app through the driver's MCP tools; in project mode it judges the results of the project's own tests.
 
 ## The Two Architect Artifacts
 
@@ -129,7 +131,8 @@ commands themselves.
   a skipped check means that group's work was never verified by anything.
 
 - **The install command** — how the build reaches the device before
-  `adt-android-tester` drives it. The orchestrator runs it, not the Tester,
+  `adt-android-tester` drives it. It is `none` in project mode, where nothing
+  drives the app ("Project Mode" below). The orchestrator runs it, not the Tester,
   which has no shell (Part B, "The Test Phase"). A failure here is a STOP, not
   something to work around. The Tester refuses to test unless its prompt
   carries `BUILD_INSTALLED: <timestamp>`, the orchestrator's statement that the
@@ -179,24 +182,78 @@ broken".
 
 ## The Test Driver
 
-A project tests through one of two drivers, each an MCP server that controls
-the device:
+A project tests in one of three modes, declared with a `Test driver:` line in
+the project's `AGENTS.md` or `CLAUDE.md`:
 
-- **auto-mobile** — the default, used when the project declares nothing.
-- **Maestro** — declared with a `Test driver: maestro` line in the project's
-  `AGENTS.md` or `CLAUDE.md`.
+- **`project`** — the default, used when the project declares nothing. The
+  pipeline uses the project's own tests and test tools (unit, snapshot,
+  Espresso, Compose UI tests, whatever the project has) and no device driver.
+  See "Project Mode" below.
+- **`auto-mobile`** — a device driver: an MCP server that controls the device.
+- **`maestro`** — a device driver: an MCP server that controls the device.
 
 The orchestrator reads that line once, at the start of a build command, and
-passes the matching **adapter** to every agent that drives the device as
-`DRIVER_DOC`: `drivers/auto-mobile.md` or `drivers/maestro.md`, beside this
-file in the plugin (`.claude/adt/drivers/` in a per-project install). An
-adapter is the only place that names a driver's tools. Agent prompts say how to
-test; the adapter says which tool does it. A capability one driver lacks — Maestro
-cannot change font scale — makes the cases that need it `INCONCLUSIVE`, with
-the reason, never a workaround.
+the Architect records it in the plan's Section 0 as `test driver: <value>`.
+Every agent reads the mode from Section 0 once a plan exists; before that,
+from the line `TEST_DRIVER: <value>` the orchestrator passes.
 
-The test plan does not depend on the driver: the Architect writes the same
-selector-annotated cases either way.
+**Device drivers.** The orchestrator passes the matching **adapter** to every
+agent that drives the device as `DRIVER_DOC`: `drivers/auto-mobile.md` or
+`drivers/maestro.md`, beside this file in the plugin (`.claude/adt/drivers/`
+in a per-project install). An adapter is the only place that names a driver's
+tools. Agent prompts say how to test; the adapter says which tool does it. A
+capability one driver lacks — Maestro cannot change font scale — makes the
+cases that need it `INCONCLUSIVE`, with the reason, never a workaround.
+
+The test plan does not depend on which device driver runs: the Architect
+writes the same selector-annotated cases either way.
+
+The sections "Flows", "Test Cases a Flow Can Run", "The Regression Suite",
+"Devices" (except the device tests), "No Raw adb" and "Test Credentials" apply
+to the device drivers only. In project mode there are no flows, no regression
+suite and no Test Writer.
+
+## Project Mode
+
+In project mode (`Test driver: project`, or no `Test driver:` line), the
+consuming project decides how it is tested. The pipeline adds no test tool, no
+test style and no test type of its own.
+
+- **Test types follow the project.** The Architect finds the test types the
+  project already uses (unit, snapshot, Espresso, Compose UI, Robolectric,
+  screenshot tests) and the module and directory each lives in, and records
+  them in Section 1's Test Stack. A section gets the test types the project
+  uses for that kind of code: a screen in a project that has snapshot tests for
+  its screens gets a snapshot test. A test type the project does not use is
+  never added.
+- **The tests are written by the Coder**, with the unit tests, from each
+  section's **Tests required** field. A UI test or a snapshot test is a
+  required test like any other.
+- **The named commands.** The build gate runs every test that runs without a
+  device (unit tests, and snapshot verify tasks, for example). The device tests
+  run every test the plan requires that needs a device (for example
+  Espresso), filtered to the plan's test classes. The install command is
+  `none`: nothing drives the app.
+- **Snapshot baselines.** A section that adds or changes a snapshot test also
+  names, in its **Tests required** field, the project's command that records
+  the reference images for those tests. The Coder runs it for that section's
+  tests only, and the build gate's verify task then checks them. A plan that
+  adds snapshot tests is `Parallel-safe: NO` ("Gradle in a Parallel Run").
+- **Selectors.** A `testTag`, `contentDescription` or `testTagsAsResourceId`
+  is added only where a planned UI test finds an element by it. There is no UI
+  Selectors table unless the plan's tests use one.
+- **Section 4** is a **Test Plan**, not a Manual Testing Plan: a table of each
+  behaviour and risk, the automated test that covers it, or
+  `Not automated: <reason>`. It has no steps, selectors, ids, priorities,
+  Regression Scope or Flows Retired.
+- **The test phase** runs the build gate on the final tree, and the device
+  tests on a leased device when Section 0 has them, both through `adt.sh check`
+  (Part B, "The Test Phase in Project Mode"). The Tester then judges
+  `checks.md` and its logs. It does not drive the app.
+- **Failures the feature did not cause.** A test that fails in a file and on a
+  path this run did not change, and that the changed code cannot reach, is an
+  observation, not a blocking finding ("Tester Findings: Blocking vs
+  Observation").
 
 ## Flows
 
@@ -463,20 +520,24 @@ contract runs through the plan, so every link has to hold:
   already uses, plus an existing test to mirror. Discovered from the version
   catalog and test source sets, never assumed.
 - **Section 3** gives every section a **Tests required** field: the test file
-  path and one GIVEN / WHEN / THEN line per case, or `None — <reason>` where
-  the section holds no logic worth testing. `None` is a legitimate answer for
+  path and one line per case that names the behaviour it pins down, or
+  `None — <reason>` where the section holds no logic worth testing. `None` is a legitimate answer for
   pure wiring; padding a section with tests that cannot fail is not.
 - **`adt-android-coder`** implements those cases as part of the section, using
-  only the libraries the plan names. Each test is named with the plan's case
-  line and structured as `// GIVEN`, `// WHEN`, `// THEN` blocks in that order,
-  one action per WHEN. A section whose required tests are missing is not done.
+  only the libraries the plan names. How a test is named and structured is the
+  consuming project's choice: the Coder follows the project's `AGENTS.md` /
+  `CLAUDE.md` and the nearest existing test. A section whose required tests are
+  missing is not done.
 - **`adt-android-code-reviewer`** verifies they exist and are meaningful. A
   missing case is a finding; so is a test that passes regardless of whether the
-  logic is correct; so is one that departs from the GIVEN / WHEN / THEN name or
-  structure; so is a testing dependency the plan never named.
+  logic is correct; so is a testing dependency the plan never named.
 - **`adt-android-architect-reviewer`** verifies the fields were filled in at
   all, since an empty field ships a section with no tests and nothing
   downstream would notice.
+
+In project mode the same contract covers every test type the plan requires:
+snapshot, UI and instrumented tests are named in **Tests required** and checked
+by both reviewers exactly like unit tests ("Project Mode").
 
 **Invariant**: every unit test the plan requires exists in the tree the
 developer is handed, and no agent introduces a testing dependency the plan did
@@ -489,11 +550,15 @@ to the gate.
 
 ### Instrumented tests
 
-A JVM test is the default: it runs in the build gate, in seconds, on every
-review. A case that needs a real Android runtime is marked `(instrumented)`
-in **Tests required**, with its file under `src/androidTest/`, and it runs as
-the **device tests** (above) on the run's device. Use it only where a JVM test
-(with Robolectric, when the project has it) cannot prove the behaviour. The
+With a device driver, a JVM test is the default: it runs in the build gate,
+in seconds, on every review. In project mode, the test type follows the
+project ("Project Mode"), and this preference does not apply.
+
+A case that needs a real Android runtime is marked `(instrumented)` in
+**Tests required**, with its file under `src/androidTest/`, and it runs as
+the **device tests** (above) on the run's device. With a device driver, use it
+only where a JVM test (with Robolectric, when the project has it) cannot prove
+the behaviour. The
 same rules apply: the plan names it, the Coder writes it (and cannot run it,
 since the Coder has no device; the build gate compiles it), and the reviewers
 check it.
@@ -581,7 +646,9 @@ changes.
 - **Observation** — everything the Tester noticed that no approved artifact
   asked for: UX opinions, unspecified edge cases, polish, behaviour that could
   reasonably go either way. Recorded in `test-results.md` for the human, and
-  that is all.
+  that is all. In project mode, a project test that fails for a cause this run
+  did not introduce — a file and a path the run did not change, and that the
+  changed code cannot reach — is also an observation.
 
 The verdict follows mechanically: `NEEDS FIXES` if and only if there is at least
 one blocking finding. Observations never flip the verdict and never reach the

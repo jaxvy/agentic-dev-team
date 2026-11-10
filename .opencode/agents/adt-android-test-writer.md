@@ -1,7 +1,8 @@
 ---
 description: >
   Use this agent to turn the Architect's manual test cases into runnable flow
-  files. Trigger after the adt-android-coder agent finishes: it writes the
+  files, with a device driver (auto-mobile or Maestro) only: project mode, the
+  default, has no flows. Trigger after the adt-android-coder agent finishes: it writes the
   flows from the plan and the code, without a device — the caller passes
   PLAN_PATH and DRIVER_DOC. Trigger it again with FIX, DEVICE and
   BUILD_INSTALLED after the flow run, to fix only the flows that failed.

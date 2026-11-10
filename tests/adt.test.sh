@@ -1037,7 +1037,25 @@ rm -f "$FAKE_ADT_STATE/dev/emulator-5554" "$FAKE_ADT_STATE/dev/emulator-5556"
 : > "$FAKE_ADT_STATE/avds"
 preflight "$SANDBOX/proj1" auto-mobile > /dev/null
 expect_code "no AVD and no device fails preflight" 16 $?
+out="$(ADT_AUTOMOBILE=/nonexistent/bunx ADT_MAESTRO=/nonexistent/maestro preflight "$SANDBOX/proj1" project)"; rc=$?
+expect_code "project mode: no AVD and no driver still passes" 0 $rc
+expect_true "  (the missing AVD is a warning)" grep -q '^warn  no AVD exists' <<EOF
+$out
+EOF
+expect_true "  (and it checks no driver)" sh -c "! grep -qi 'auto-mobile\|maestro' <<EOF
+$out
+EOF"
 printf 'Pixel_A\n' > "$FAKE_ADT_STATE/avds"
+mkdir -p "$SANDBOX/proj1/e2e/flows"
+expect_true "project mode warns when e2e/flows/ exists" grep -q '^warn  e2e/flows/ exists, but the test driver is project' <<EOF
+$(preflight "$SANDBOX/proj1" project)
+EOF
+rmdir "$SANDBOX/proj1/e2e/flows" "$SANDBOX/proj1/e2e"
+for sub in "run --slug a" "suite" "select"; do
+  # shellcheck disable=SC2086
+  adt "$SANDBOX/proj1" $sub --driver project >/dev/null 2>&1
+  expect_code "${sub%% *} refuses --driver project" 2 $?
+done
 
 ADT_AUTOMOBILE=/nonexistent/bunx preflight "$SANDBOX/proj1" auto-mobile > /dev/null
 expect_code "a missing auto-mobile command fails preflight" 16 $?

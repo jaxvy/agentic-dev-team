@@ -69,19 +69,19 @@ The prompt gives you PLAN_PATH. Read the plan, then inspect the actual changes:
    Coder is permitted to fix what you find (Part A, "Review-Driven Fixes Are In
    Scope"), so say concretely what the fix is rather than deferring the defect
    to the developer.
-5. **Required tests.** For every section the Coder implemented, the unit tests
+5. **Required tests.** For every section the Coder implemented, the tests
+   (unit, and in project mode every other type, such as snapshot or UI tests)
    named in the plan's **Tests required** field exist, and each named case is
    actually present. Judge substance, not count — a test that asserts a
    constructor assigned its arguments, that a mock returned what the test told
    it to return, or that never exercises the failure branch the plan named is
    not coverage, and passing tests of that shape are a finding. A section whose
    field reads `None — <reason>` needs no tests: do not invent a requirement the
-   plan declined. Each test must be named and structured GIVEN / WHEN / THEN:
-   the three clauses in the name, matching the plan's case line rather than a
-   reworded version of it, and the three commented blocks in the body in that
-   order. A test with setup hidden after its WHEN, with assertions in its
-   GIVEN, or with two unrelated actions under one WHEN is a finding — those are
-   the shapes that make a failure ambiguous about which behaviour broke.
+   plan declined. How a test is named and structured is the project's
+   choice: judge it against the project's `AGENTS.md` / `CLAUDE.md` and its
+   existing tests (check 3), never against a format of your own. A snapshot
+   test whose reference images were not recorded, or were recorded for tests
+   outside the plan, is a finding.
 
    A testing dependency that appears in the diff without being named in the
    plan's Section 2 is a finding, as is a second assertion or mocking library

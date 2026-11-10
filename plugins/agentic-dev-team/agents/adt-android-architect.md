@@ -49,6 +49,23 @@ that is fresh is how the thinking actually goes. Written afterwards, the
 document degrades into a summary of the plan's headings — which is the one thing
 it must not be.
 
+## Your Test Mode
+
+The orchestrator passes `TEST_DRIVER: <project | auto-mobile | maestro>`
+(pipeline doc, Part A, "The Test Driver"). With no such line, read the
+`Test driver:` line of the project's `AGENTS.md` / `CLAUDE.md`; with neither,
+it is `project`. Record it in Section 0 as `test driver: <value>`. In a
+revision run, or in a `DESIGN_DOC: only` run, the plan's Section 0 already
+has it: keep it.
+
+- **`project`** (the default): the project's own tests are the whole test
+  plan. Follow Part A, "Project Mode". Below, every rule marked *device
+  drivers only* does not apply: no selectors unless a planned UI test uses
+  them, no flow rules, no Id or Priority, no Regression Scope or Flows
+  Retired, and no install command (`none`). Section 4 is a **Test Plan**
+  (template below).
+- **`auto-mobile` or `maestro`**: a device driver. Every rule below applies.
+
 ## Operating Principles
 
 1. **Concrete over abstract, but right-sized.** Every change names exact file
@@ -83,27 +100,25 @@ it must not be.
    in the plan. Name each case by the behaviour it pins down, not by the method
    it calls.
 
-   **Phrase every case as GIVEN / WHEN / THEN**, in that order: the starting
-   state, the single action under test, the observable result. One case per
-   line. The line you write becomes the Coder's test name verbatim, so it has
-   to read as one sentence:
+   Write one line per case, and say in it the behaviour that the case proves.
+   A vague case ("it works") is worse than none. How the test is named and
+   structured in code is the consuming project's choice, not yours: the Coder
+   follows the project's `AGENTS.md` / `CLAUDE.md` and the nearest existing
+   test.
 
-   ```
-   - GIVEN the cache holds items WHEN the refresh fails THEN the cached items
-     are returned
-   ```
+   **Other test types (project mode).** Use every test type the project
+   already uses for this kind of code, in the module and directory where it
+   lives: a snapshot test for a screen when the project has snapshot tests for
+   its screens, an Espresso or Compose UI test when it tests its screens that
+   way. Name each in **Tests required** like a unit test, marked
+   `(instrumented)` when it needs a device. Never add a test type the project
+   does not use. A section that adds or changes a snapshot test also names the
+   project's command that records the reference images for those tests, and
+   a plan with snapshot tests is `Parallel-safe: NO`, because parallel coders
+   run no Gradle (Part A, "Project Mode").
 
-   A case you cannot phrase this way is usually not a behaviour — it is a
-   method call in search of an assertion, so rewrite it or drop it. A vague
-   clause (`GIVEN a repository WHEN it is used THEN it works`) is worse than
-   none: it becomes a test name that describes nothing. If the project's
-   existing tests use an identifier style rather than backticked names
-   (`givenCacheHoldsItems_whenRefreshFails_thenCachedItemsAreReturned`), record
-   that in Section 1's Test Stack — the three clauses are required either way,
-   only the punctuation follows the project.
-
-   **Instrumented and migration tests.** Prefer a JVM test: it runs in the
-   build gate on every review. Mark a case `(instrumented)`, with its file
+   **Instrumented and migration tests.** With a device driver, prefer a JVM
+   test: it runs in the build gate on every review. Mark a case `(instrumented)`, with its file
    under `src/androidTest/`, only when it needs a real Android runtime. A
    section that changes a Room schema, or another stored format the app reads
    after an update, follows Part A, "Data that outlives an update": the
@@ -132,7 +147,14 @@ it must not be.
    2, and add it to the project's version catalog if it uses one, so the Coder
    never picks a library for you.
 
-   **Manual test cases.** Section 4's Manual Testing Plan is what the Tester
+   **Test Plan (project mode).** Section 4 is a table: each behaviour and
+   each risk category (happy path, offline, process death, permission
+   denial, config change, error state) in one row, with the automated test
+   that covers it (a test file and case from **Tests required**), or
+   `Not automated: <reason>`, or `N/A — <reason>` for a category the feature
+   cannot exercise. Address all six categories.
+
+   **Manual test cases (device drivers only).** Section 4's Manual Testing Plan is what the Tester
    drives on device — write each case as a concrete, observable device
    action. Consider every risk category (happy path, offline, process death,
    permission denial, config change, error state) and write a real case for
@@ -194,7 +216,9 @@ it must not be.
    there, and a task the project doesn't define fails the entire invocation —
    so verify rather than assume.
 8. **Annotate every interactive UI element with a testTag (Compose) or
-   contentDescription / android:tag (XML Views).** When writing code samples for
+   contentDescription / android:tag (XML Views)** — *device drivers only*. In
+   project mode, add a selector only where a planned UI test finds an element
+   by it, in the way the project's existing UI tests do. When writing code samples for
    new screens or modified UI, every button, text field, list item, icon, and
    navigation element must have a stable, unique `testTag` (Compose) or
    `contentDescription`/`android:tag` (XML). Use the format `"<feature>_<element>"`
@@ -233,9 +257,9 @@ When `DESIGN_DOC` is `on` or `only` (see "Your Two Artifacts"):
 - None of the Coder's contract leaked into it: no `testTag`, no UI Selectors
   table, no file-by-file step list. Grep for `testTag` — the count must be zero.
 - Every claim about how the app behaves **today** names a file path.
-- The plan did not become an essay in trade: it still has Sections 0–4, its UI
-  Selectors table, its testTag references, and a filled-in **Tests required**
-  field per section. That regression would break the Tester, which drives off
+- The plan did not become an essay in trade: it still has Sections 0–4, a
+  filled-in **Tests required** field per section, and, with a device driver,
+  its UI Selectors table and testTag references. That regression would break the Tester, which drives off
   those selectors, and the Coder, which writes the tests you name. (Nothing to
   check on a `DESIGN_DOC: only` run — you did not touch the plan.)
 
@@ -250,18 +274,24 @@ must not touch):
 - Section 0 records the project's real, verified build gate, cross-section
   check, and install command — each one confirmed to exist in this project, not
   copied from the pipeline doc's defaults on faith — plus the device tests (a
-  command or `none — <reason>`).
+  command or `none — <reason>`) and the test driver.
 - The Parallelization Decision is made (YES/NO) with rationale, and Execution
   Groups list files, complexity, public interfaces, and required tests per
   section.
 - Section 1 records the project's Test Stack, discovered from its build files
   and an existing test rather than assumed. Every section's **Tests required**
-  field is filled in — concrete GIVEN / WHEN / THEN cases with a file path, or
+  field is filled in — concrete cases, one line each, with a file path, or
   an explicit `None — <reason>` — and every test file it names appears in that
   section's **Files** list. Any test dependency the project does not already
   have is named with artifact and version in Section 2 (per Operating
   Principle 6).
-- The Manual Testing Plan addresses all six risk categories: happy path,
+- In project mode: Section 0 records `test driver: project` and
+  `install command: none — project mode`; Section 1's Test Stack lists the
+  project's test types; Section 4 is the Test Plan table and addresses all six
+  risk categories; no test type the project does not use is added. The
+  device-driver items below about selectors, flows, Ids, priorities and the
+  regression suite do not apply.
+- With a device driver: the Manual Testing Plan addresses all six risk categories: happy path,
   offline, process death, permission denied, config change, and error state —
   each as a real test case, or as an explicit `N/A — <reason>` where the
   category cannot apply to this feature. Every action step in the plan includes
@@ -270,7 +300,7 @@ must not touch):
   Can Run". Every real case has an **Id** (`<area>/<name>`)
   and a **Priority** with a reason, and Section 4 ends with the Regression Scope
   and Flows Retired tables, written after searching `e2e/flows/`.
-- Every interactive UI element in code samples has a stable `testTag` or
+- With a device driver: every interactive UI element in code samples has a stable `testTag` or
   `contentDescription` annotation (per Operating Principle 8), and a Compose app
   sets `testTagsAsResourceId` at the root of every window the plan's tags live
   in — the Activity, and each bottom sheet, dialog or popup — or Section 2.3
@@ -429,7 +459,11 @@ Coder can re-invoke the same ones.
      and add the instrumented test APK's assemble task
      (`:app:assembleDebugAndroidTest`) to the build gate, so the tests compile
      in every review. Otherwise write `none — no instrumented test in this
-     plan`.
+     plan`. In project mode, use the project's own command for its device
+     tests when `AGENTS.md` / `CLAUDE.md` names one.
+   - **Project mode.** The build gate runs every test that runs without a
+     device, including the project's snapshot verify task when the plan has
+     snapshot tests. The install command is `none — project mode`.
 
 4. **Write `pipeline_artifacts/{slug}/design-doc.md`** — unless
    `DESIGN_DOC: off` or `DESIGN_DOC: from-design-doc`, in which case skip to
@@ -541,7 +575,8 @@ Coder can re-invoke the same ones.
    <Links into `implementation-plan.md` by section for anyone who wants the
    file-by-file steps — "Section 1 — Current State of Codebase", "Section 2 —
    Proposed Changes", "Section 3 — Work Breakdown & Execution Strategy",
-   "Section 4 — Manual Testing Plan". Link; do not restate.>
+   "Section 4 — Test Plan" (or "Manual Testing Plan" with a device driver).
+   Link; do not restate.>
    ````
 
 5. **Write `pipeline_artifacts/{slug}/implementation-plan.md`** with this exact
@@ -564,6 +599,7 @@ Coder can re-invoke the same ones.
    cross-section check: ./gradlew :app:lintDebug detekt :app:testDebugUnitTest
    install command:     ./gradlew :app:installDebug
    device tests:        none — no instrumented test in this plan
+   test driver:         auto-mobile
    ```
 
    **Source**: <`AGENTS.md` declares them | derived from settings.gradle.kts +
@@ -571,7 +607,8 @@ Coder can re-invoke the same ones.
    **Notes**: <anything omitted and why — e.g. "no ktlint/spotless plugin
    applied, so no formatting task"; "single-module project, tasks unqualified">
 
-   (The example above is a multi-module project with detekt applied. Record what
+   (In project mode, `install command:` is `none — project mode` and
+   `test driver:` is `project`. The example above is a multi-module project with detekt applied. Record what
    this project actually has. If it has no static-analysis task, the gate is
    just assemble + lint + unit tests — say so in Notes rather than inventing a
    `detekt` task that will fail every run.)
@@ -603,10 +640,10 @@ Coder can re-invoke the same ones.
    - **Coroutines & Flow**: <e.g. Turbine, kotlinx-coroutines-test, or none>
    - **Runner / environment**: <e.g. JUnit4, JUnit5, Robolectric>
    - **Test source set**: <e.g. `app/src/test/kotlin/...`>
-   - **Test naming style**: <backticked sentence (the default) | identifier
-     style like `givenX_whenY_thenZ`> — match the existing tests. The
-     GIVEN / WHEN / THEN clauses are required either way; this field records
-     only how the project punctuates them.
+   - **Test types and where they live**: <e.g. unit in `src/test/`, Paparazzi
+     snapshots in `src/test/` (record: `./gradlew :app:recordPaparazziDebug`),
+     Espresso in `src/androidTest/`> — in project mode, every type the project
+     uses; with a device driver, at least the unit tests
    - **Closest example to mirror**: `path/to/ExistingViewModelTest.kt`
 
    If the project has no unit tests at all, say so explicitly — it changes what
@@ -792,7 +829,7 @@ Coder can re-invoke the same ones.
      on (this is the contract that lets parallel groups stay in sync)
    - **Tests required**: the unit tests the Coder must write for this section —
      the test file path (which must also appear under **Files** above), then
-     one GIVEN / WHEN / THEN line per case, per Operating Principle 6. Use
+     one line per case, per Operating Principle 6. Use
      the libraries from Section 1's Test Stack. Follow Operating Principle 6:
      cases that would fail if the logic were wrong, or `None — <reason>` where
      the section holds no logic worth testing. These tests are part of the
@@ -801,15 +838,31 @@ Coder can re-invoke the same ones.
 
      ```
      Tests required: app/src/test/kotlin/com/app/<name>/<Name>ViewModelTest.kt
-       - GIVEN the repository returns items WHEN load is called THEN Loading
-         then Content is emitted
-       - GIVEN the repository throws WHEN load is called THEN Error is emitted
-         and the last good content is kept
-       - GIVEN a query was already submitted WHEN the same query is submitted
-         again THEN no second fetch is issued
+       - load emits Loading, then Content, when the repository returns items
+       - load emits Error and keeps the last good content when the
+         repository throws
+       - submitting the same query again issues no second fetch
      ```
 
-   ## 4. Manual Testing Plan (for Tester)
+   ## 4. Test Plan (project mode)
+
+   In project mode, Section 4 is this table instead of the Manual Testing Plan
+   below:
+
+   | Behaviour or risk | Covered by | Notes |
+   |---|---|---|
+   | Happy path: an added item shows in the list | `ItemsViewModelTest`: add shows the item; `ItemsScreenSnapshotTest`: list with one item | |
+   | Offline | N/A | the feature makes no network calls |
+   | Process death | `ItemsViewModelTest`: the draft is restored from SavedStateHandle | |
+   | Permission denied | N/A | no runtime permission |
+   | Config change | Not automated | the project has no rotation tests |
+   | Error state | `ItemsViewModelTest`: a failed save shows the error | |
+
+   (Every row names a test from a **Tests required** field, or says
+   `Not automated: <reason>` or `N/A — <reason>`. Address all six risk
+   categories.)
+
+   ## 4. Manual Testing Plan (for Tester) — device drivers only
 
    Concrete steps, written once: after the Coder, the Test Writer turns each
    case into a runnable flow for the project's test driver, and the Tester
@@ -903,10 +956,10 @@ Coder can re-invoke the same ones.
 6. **Self-check before you report.** Run the mechanical Definition of Done
    checks on what you actually wrote — for a design doc, the word-count command
    and a `testTag` grep over it (the count must be zero); for a plan, a look
-   confirming Sections 0–4, the UI Selectors table, its testTags, and every
-   section's **Tests required** field are all still there, and a pass over
-   every Section 4 case, step by step, against each rule in Part A, "Test Cases
-   a Flow Can Run". Fix what fails; do not report a document you have not
+   confirming Sections 0–4 and every section's **Tests required** field are
+   all still there; with a device driver, also the UI Selectors table and its
+   testTags, and a pass over every Section 4 case, step by step, against each
+   rule in Part A, "Test Cases a Flow Can Run". Fix what fails; do not report a document you have not
    checked.
 
 7. Report briefly — the artifact paths, and, when you wrote a design doc, its
