@@ -119,6 +119,37 @@ adt "$SANDBOX/proj1" device-acquire >/dev/null 2>&1;        expect_code "device-
 adt "$SANDBOX/proj1" install --slug a >/dev/null 2>&1;      expect_code "install without a command is a usage error" 2 $?
 adt "$SANDBOX/proj1" device-release >/dev/null 2>&1;        expect_code "device-release without --slug or --serial is a usage error" 2 $?
 
+# An option given as the last word, with no value, is a usage error. Before,
+# "shift 2" did nothing with one word left, and the option loop never ended.
+# Each call is bounded here, so a regression fails the test rather than hang it.
+bounded_adt() {
+  local dir="$1" pid n=0
+  shift
+  # exec, so that $! is the script itself and the kill below reaches it.
+  (cd "$dir" && exec /bin/bash "$SCRIPT" "$@") >/dev/null 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$n" -ge 100 ]; then
+      kill -9 "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      return 124
+    fi
+    sleep 0.1
+    n=$((n + 1))
+  done
+  wait "$pid"
+}
+for args in "device-acquire --slug" "install --slug" "run --slug" "run --slug a --driver" \
+            "run --slug a --driver maestro --area" "run --slug a --driver maestro --exclude" \
+            "run --slug a --driver maestro --only" "suite --driver" "suite --driver maestro --out" \
+            "select --driver" "select --driver maestro --area" "check --slug" "check --slug a --name" \
+            "state --slug" "promote --slug" "promote --slug a --remove" "preflight --driver" \
+            "allow --project" "allow --only" "device-release --slug" "device-release --serial"; do
+  # shellcheck disable=SC2086
+  bounded_adt "$SANDBOX/proj1" $args
+  expect_code "'$args' with no value is a usage error" 2 $?
+done
+
 # ---------- acquire ----------
 
 echo "device-acquire"
