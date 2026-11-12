@@ -151,7 +151,7 @@ pipeline_artifacts/recently-played-carousel/
 ├── run-results.md          # each flow's result and time, from the last run,
 │                           #   including the regression suite's
 ├── run-logs/               # the driver's output for each flow
-├── checks.md, checks/      # the device tests' result, and their log
+├── checks.md, checks/      # the build gate and device tests, with logs
 └── test-results.md         # per-case results, verdict, observations
 pipeline_artifacts/.ledger/recently-played-carousel
                             # the run ledger: phase, paths, budgets (for resume)
@@ -506,7 +506,14 @@ Gradle.
 **Moving from the earlier default.** Before project mode, a project with no
 `Test driver:` line used auto-mobile. To keep that, add the line
 `Test driver: auto-mobile`. The preflight warns when `e2e/flows/` exists in
-project mode.
+project mode. A plan written before project mode has no `test driver:` line
+in its Section 0: plan again with `/plan-design` to continue it.
+
+**A device in project mode.** The preflight at the start of a run reports a
+missing emulator or AVD as a warning only, because most plans need no device.
+When the plan has device tests, the run checks the device again as soon as
+the plan exists, and stops there if it is not usable, before any code is
+written.
 
 **Device drivers.** The rest of this section, and
 [Setting up device testing](#setting-up-device-testing), apply to auto-mobile

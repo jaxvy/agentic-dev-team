@@ -758,6 +758,10 @@ expect_true "  (the other check's row is kept)" grep -q '^| lint-extra | PASS |'
 FAKE_CHECK_EXIT=1 adt "$SANDBOX/proj1" check --slug a --name lint-extra -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
 expect_eq "running a check again replaces its row" "1" "$(grep -c '^| lint-extra |' "$table")"
 expect_true "  (with the new result)" grep -q '^| lint-extra | FAIL | 1 |' "$table"
+adt "$SANDBOX/proj1" check --slug a --name build-gate --fresh -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
+expect_eq "--fresh drops the rows of earlier checks" "1" "$(grep -c '^| [a-z]' "$table")"
+expect_true "  (and keeps its own)" grep -q '^| build-gate | PASS |' "$table"
+expect_true "  (the header does not call every FAIL blocking)" sh -c "! grep -q 'blocking' '$table'"
 ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
 expect_true "a flow run does not delete the check logs" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log" ]
 adt "$SANDBOX/proj1" check --slug a --name "Bad Name" -- true >/dev/null 2>&1
@@ -1045,7 +1049,18 @@ EOF
 expect_true "  (and it checks no driver)" sh -c "! grep -qi 'auto-mobile\|maestro' <<EOF
 $out
 EOF"
+(cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" preflight --driver project --devices > /dev/null 2>&1)
+expect_code "project mode with --devices: no AVD fails preflight" 16 $?
 printf 'Pixel_A\n' > "$FAKE_ADT_STATE/avds"
+out="$(ADT_AUTOMOBILE=/nonexistent/bunx ADT_MAESTRO=/nonexistent/maestro preflight "$SANDBOX/proj1" project)"
+expect_true "project mode with an AVD names no driver and no flows" sh -c "! grep -qi 'auto-mobile\|maestro\|flows' <<EOF
+$out
+EOF"
+expect_true "  (and still reports the AVD)" grep -q '^ok    AVD: Pixel_A' <<EOF
+$out
+EOF
+(cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" preflight --driver project --devices > /dev/null 2>&1)
+expect_code "project mode with --devices and an AVD passes" 0 $?
 mkdir -p "$SANDBOX/proj1/e2e/flows"
 expect_true "project mode warns when e2e/flows/ exists" grep -q '^warn  e2e/flows/ exists, but the test driver is project' <<EOF
 $(preflight "$SANDBOX/proj1" project)

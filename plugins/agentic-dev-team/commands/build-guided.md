@@ -132,7 +132,8 @@ Phase 2 — Architect (after approval):
 
 Phase 3 — Coder (after approval, execution strategy decided by Architect):
   Early boot — first, once PLAN_PATH gives the slug S (in project mode, only
-  when the plan's Section 0 `device tests` line is not `none`): run
+  when the plan's Section 0 `device tests` line is not `none`, and only after
+  ORCHESTRATION_DOC, "The Device Check in Project Mode", passes): run
   `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
   boots this run's emulator while the Coder works; the test phase's own
   `device-acquire` waits for it. From here on, every exit releases the device
@@ -182,9 +183,10 @@ Phase 3 — Coder (after approval, execution strategy decided by Architect):
 
 Phase 4 — Tester (after approval):
   In project mode, run ORCHESTRATION_DOC, "The Test Phase in Project Mode",
-  instead: the build gate and the device tests through `adt.sh check`, then
-  the Tester with PLAN_PATH, PIPELINE_DOC, `TEST_DRIVER: project` and
-  `CHECKS: <path>`. With a device driver, run the test phase exactly as
+  instead: the build gate (with `--fresh`) and the device tests through
+  `adt.sh check`, then the Tester with PLAN_PATH, PIPELINE_DOC,
+  `TEST_DRIVER: project` and `CHECKS: <path>`. With a device driver, run the
+  test phase exactly as
   ORCHESTRATION_DOC, "The Test Phase", defines it:
     1. lease this run's device with `adt.sh device-acquire` (DEVICE);
     2. run the plan's device tests with `adt.sh check`, when Section 0 has

@@ -597,9 +597,9 @@ Coder can re-invoke the same ones.
    ```
    build gate:          ./gradlew :app:assembleDebug :app:lintDebug detekt :app:testDebugUnitTest
    cross-section check: ./gradlew :app:lintDebug detekt :app:testDebugUnitTest
-   install command:     ./gradlew :app:installDebug
-   device tests:        none — no instrumented test in this plan
-   test driver:         auto-mobile
+   install command:     none — project mode
+   device tests:        none — no test in this plan needs a device
+   test driver:         project
    ```
 
    **Source**: <`AGENTS.md` declares them | derived from settings.gradle.kts +
@@ -607,9 +607,12 @@ Coder can re-invoke the same ones.
    **Notes**: <anything omitted and why — e.g. "no ktlint/spotless plugin
    applied, so no formatting task"; "single-module project, tasks unqualified">
 
-   (In project mode, `install command:` is `none — project mode` and
-   `test driver:` is `project`. The example above is a multi-module project with detekt applied. Record what
-   this project actually has. If it has no static-analysis task, the gate is
+   (The example above is project mode, the default. With a device driver,
+   `install command:` is the project's real install task, such as
+   `./gradlew :app:installDebug`, and `test driver:` is `auto-mobile` or
+   `maestro`: the value of your `TEST_DRIVER`, never another one. The example
+   is a multi-module project with detekt applied. Record what this project
+   actually has. If it has no static-analysis task, the gate is
    just assemble + lint + unit tests — say so in Notes rather than inventing a
    `detekt` task that will fail every run.)
 
@@ -844,25 +847,32 @@ Coder can re-invoke the same ones.
        - submitting the same query again issues no second fetch
      ```
 
-   ## 4. Test Plan (project mode)
+   (A plan has exactly one Section 4. In project mode, write "## 4. Test
+   Plan" and leave out the Manual Testing Plan. With a device driver, write
+   "## 4. Manual Testing Plan (for Tester)" and leave out the Test Plan. Never
+   write both, and do not copy this note or the two like it into the plan.)
 
-   In project mode, Section 4 is this table instead of the Manual Testing Plan
-   below:
+   ## 4. Test Plan
 
-   | Behaviour or risk | Covered by | Notes |
-   |---|---|---|
-   | Happy path: an added item shows in the list | `ItemsViewModelTest`: add shows the item; `ItemsScreenSnapshotTest`: list with one item | |
-   | Offline | N/A | the feature makes no network calls |
-   | Process death | `ItemsViewModelTest`: the draft is restored from SavedStateHandle | |
-   | Permission denied | N/A | no runtime permission |
-   | Config change | Not automated | the project has no rotation tests |
-   | Error state | `ItemsViewModelTest`: a failed save shows the error | |
+   (Project mode only.)
+
+   | Behaviour or risk | Covered by |
+   |---|---|
+   | Happy path: an added item shows in the list | `ItemsViewModelTest`: add shows the item; `ItemsScreenSnapshotTest`: list with one item |
+   | Offline | N/A — the feature makes no network calls |
+   | Process death | `ItemsViewModelTest`: the draft is restored from SavedStateHandle |
+   | Permission denied | N/A — no runtime permission |
+   | Config change | Not automated: no test type this project uses can rotate the screen |
+   | Error state | `ItemsViewModelTest`: a failed save shows the error |
 
    (Every row names a test from a **Tests required** field, or says
-   `Not automated: <reason>` or `N/A — <reason>`. Address all six risk
-   categories.)
+   `Not automated: <reason>` or `N/A — <reason>`, with the reason in the same
+   cell. `Not automated` is only for a risk that no test type the project
+   uses can cover. Address all six risk categories.)
 
-   ## 4. Manual Testing Plan (for Tester) — device drivers only
+   ## 4. Manual Testing Plan (for Tester)
+
+   (Device drivers only.)
 
    Concrete steps, written once: after the Coder, the Test Writer turns each
    case into a runnable flow for the project's test driver, and the Tester

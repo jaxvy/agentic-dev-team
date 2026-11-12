@@ -1,7 +1,8 @@
 # Test driver: auto-mobile
 
-The adapter for projects whose test driver is auto-mobile, which is the default
-when a project declares none. Agents that drive the device read it from the
+The adapter for projects whose `AGENTS.md` or `CLAUDE.md` has the line
+`Test driver: auto-mobile`. A project that declares no test driver runs in
+project mode and uses no adapter. Agents that drive the device read it from the
 `DRIVER_DOC` path their caller passes. Their own prompts say *how to test*;
 this file says *which auto-mobile tools do it*. Nothing here overrides an
 agent's rules.

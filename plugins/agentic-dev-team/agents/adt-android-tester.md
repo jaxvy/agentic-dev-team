@@ -34,16 +34,22 @@ or edit a test. A pass that neither a flow run nor you observed is not a pass.
 Read the plan's Section 0 first. When it says `test driver: project` (or your
 prompt says `TEST_DRIVER: project`), you are in project mode (pipeline doc,
 Part A, "Project Mode"): the project's own tests are the test plan, and you
-judge their results. You drive nothing. Then only this section, Operating
-Principles 2, 5 and 6, and "Definition of Done" (the first bar) apply. Skip
-everything about devices, drivers, flows, the regression suite, credentials and
-`BUILD_INSTALLED`.
+judge their results. You drive nothing: you have no device and no driver.
+Then only this section applies, with Operating Principles 5 and 6 (repro and
+severity for every failure; blocking or observation for every finding), the
+verdict and marker rule of Operating Principle 8, and the "Project mode" bar in
+"Definition of Done". Skip everything else: devices, drivers, flows, the
+Manual Testing Plan, edge cases you add, the regression sanity check, the
+regression suite, credentials and `BUILD_INSTALLED`.
 
 1. Read the plan's Section 4 Test Plan, every **Tests required** field, and
    `CHECKS` (`checks.md`). Each row of `checks.md` is one Section 0 command
-   (`build-gate`, `device-tests`) with its result and log. A missing `CHECKS`
-   line, or a `checks.md` without a `build-gate` row, is `⛔ TESTER BLOCKED`:
-   the tests did not run.
+   (`build-gate`, `device-tests`) with its result and log. Judge the
+   `build-gate` row, and the `device-tests` row only when Section 0's
+   `device tests` line is not `none`; ignore any other row. A missing `CHECKS`
+   line, a `checks.md` without a `build-gate` row, or no `device-tests` row
+   when Section 0 has device tests, is `⛔ TESTER BLOCKED`: the tests did not
+   run. A `FAIL` row is not a finding by itself: step 2 decides.
 2. For each `FAIL` row, open its log with your file tools and find each failing
    test. Read the test reports the build wrote when the log is not clear
    (Glob for `build/test-results/**/*.xml` or `build/reports/**`). For each
@@ -58,10 +64,14 @@ everything about devices, drivers, flows, the regression suite, credentials and
    is not in the log or the test reports did not run, and is a blocking
    finding. A row marked `Not automated` is "Not verified", with its reason.
 4. Write `test-results.md` with the template in "Process", step 5. Leave out
-   **Device** and the device-only lines of the Summary, and the sections
-   about flows and the regression suite. The Coverage table counts the Test
-   Plan rows: "A passing test" or "Not verified". The verdict rule does not
-   change: `NEEDS FIXES` if and only if there is a blocking finding.
+   **Date** and **Device**; **App version / build** is "the working tree, as
+   the checks ran it". Leave out also the device-only lines of the Summary,
+   and the sections about flows, the regression suite and the regression
+   sanity check. The Summary's first line stays
+   `Verified V of N plan cases; U not verified.`, where a case is a Test Plan
+   row that is not `N/A`. The Coverage table counts those rows: "A passing
+   test", "Failed" or "Not verified". The verdict rule does not change:
+   `NEEDS FIXES` if and only if there is a blocking finding.
 5. End with `✅ TESTER DONE`, or `⛔ TESTER BLOCKED` per step 1.
 
 ## Operating Principles
@@ -226,6 +236,13 @@ A run that got to drive the app is done when:
   `Verified V of N plan cases; U not verified.` — the orchestrator quotes it —
   and a `## Coverage` section lists every plan case exactly once, by how it was
   verified, or that it was not, and why.
+
+**Project mode.** The bar above does not apply. A project-mode run is done
+when every row of `checks.md` that the plan's Section 0 names is judged, every
+failing test is a finding classified blocking or observation with its basis,
+every Test Plan row has a result ("A passing test", "Failed" or "Not
+verified"), and `test-results.md` is written with the Summary's first line,
+the Coverage section and a verdict.
 
 **A run that hit a gate it cannot open is done on a different bar.** The one
 above is unreachable once the device stops you, and grinding against it is the

@@ -55,6 +55,8 @@ The command file says which steps it does.
       its warn lines for the final summary. In project mode
       (`--driver project`) it checks no driver, and a missing SDK or AVD is
       only a warning, because only a plan with device tests needs a device.
+      The device check of such a plan is "The Device Check in Project Mode",
+      below.
    2. Device drivers only. Check your own tool list for the driver's MCP tools
       (`mcp__auto-mobile__…` or `mcp__maestro__…`). None at all: STOP, the
       driver's MCP server is not registered (HOW_IT_WORKS, "Setting up device
@@ -205,7 +207,8 @@ release, record how the run ended:
    - From Phase 2 on, first start the early boot again
      (`device-acquire --background`; it returns at once, and reuses the run's
      device when it still runs). In project mode, only when Section 0's
-     `device tests` line is not `none`.
+     `device tests` line is not `none`, and after "The Device Check in Project
+     Mode".
    - A Coder phase: the tree may hold part of the work. Tell every Coder that
      this is a resumed run: an earlier Coder may have done part of its
      section, so it reads the files first, finishes what the plan asks, and
@@ -530,6 +533,18 @@ there, the no-shell rule is enforced by their prompts only. Codex gives every
 agent a shell, because it reads files through it, so there too the rule is
 enforced by the prompts only (Part A, "Agents in Codex").
 
+## The Device Check in Project Mode
+
+In project mode the preflight cannot know whether the run needs a device: the
+plan does not exist yet. So check again when the plan does. As soon as the
+plan's Section 0 is final (before the early boot, and before any Coder runs)
+and its `device tests` line is not `none`, run
+`bash <ADT_SH> preflight --driver project --devices`. With `--devices`, a
+device problem is a FAIL, as with a device driver. On exit 16, STOP and report
+its FAIL lines: the user fixes the device and continues with `resume`, and the
+plan is kept. A `resume` from Phase 2 on runs this check again before its
+early boot. A plan whose `device tests` line is `none` skips this check.
+
 ## The Test Phase in Project Mode
 
 In project mode ("Command Start", step 2) the build commands test with the
@@ -541,7 +556,9 @@ nothing. `S` and `<adt.sh>` are as in "The Test Phase".
 Each test — the first one and every re-test in the fix loop:
 
 1. **The build gate.**
-   `bash <adt.sh> check --slug S --name build-gate -- <the build gate from the plan's Section 0>`.
+   `bash <adt.sh> check --slug S --name build-gate --fresh -- <the build gate from the plan's Section 0>`.
+   `--fresh` empties `checks.md` first, so the Tester never reads a row from
+   an earlier test or an earlier plan. Only this step passes it.
    It runs the gate on the final tree, so even `/build-auto-fast`, which has no
    code review, sees every test that runs without a device. A command with
    `&&`, `;`, a pipe or a leading `cd` goes whole into `bash -c '…'`, as for
