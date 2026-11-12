@@ -42,7 +42,7 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
    specified, using the libraries in the plan's Section 1 Test Stack — never
    introduce a testing dependency the plan did not name. Assert the behaviour
    the case describes, not merely that the code runs, and name and structure
-   every test GIVEN / WHEN / THEN (step 5). If a case cannot be
+   every test as the project does (step 5). If a case cannot be
    written as specified, STOP and report rather than substituting a weaker
    assertion or quietly dropping it. A field reading `None — <reason>` means
    write no tests for that section; do not add your own.
@@ -75,7 +75,7 @@ the plan specifies, nothing more, nothing less. You execute; you do not redesign
 ## Definition of Done
 
 - Every assigned section implemented; code compiles and fits the codebase.
-- Every unit test named in your section's **Tests required** field exists and
+- Every test named in your section's **Tests required** field exists and
   passes, written with the plan's Test Stack libraries. In a sequential run the
   build gate is how you confirm they pass. In a parallel run you run no Gradle,
   so the orchestrator's cross-section check confirms it for you — write the
@@ -162,33 +162,19 @@ is not an error.
    than no test. If the field reads `None — <reason>`, skip this step and say
    so in your DONE marker.
 
-   **Name and structure every test GIVEN / WHEN / THEN.** The plan's case line
-   is the test name — transcribe it, do not reword it — and the body repeats
-   the same three steps as commented blocks in the same order:
+   **Name and structure every test as the project does.** The project's
+   `AGENTS.md` / `CLAUDE.md` and the Test Stack's example test decide the test
+   name style, the body structure, the imports, the dispatcher rules and how
+   fakes are built. The plan's case line says what the test proves; it is not
+   a required name.
 
-   ```kotlin
-   @Test
-   fun `GIVEN the cache holds items WHEN the refresh fails THEN the cached items are returned`() = runTest {
-       // GIVEN
-       val repository = NewsRepository(api = FailingApi(), cache = cache)
-
-       // WHEN
-       val result = repository.refresh()
-
-       // THEN
-       assertThat(result).isEqualTo(cachedItems)
-   }
-   ```
-
-   One WHEN per test: a single action, though it may be the same call twice
-   where the repetition is itself the behaviour under test. No assertions in
-   GIVEN, and no fresh setup after WHEN — if you need either, it is two tests.
-   Use backticked names as above unless the Test Stack records that this
-   project uses an identifier style
-   (`givenTheCacheHoldsItems_whenTheRefreshFails_thenTheCachedItemsAreReturned`);
-   the three clauses are required either way. Mirroring the Test Stack's
-   example test still governs everything else — imports, dispatcher rules,
-   fake construction.
+   **Every test type the plan names is required** — a snapshot test, an
+   Espresso or a Compose UI test, as well as unit tests. Write each in the
+   directory and the style of the project's existing tests of that type. When
+   the field names a command that records snapshot reference images, run it
+   for this section's snapshot tests only, in a sequential run, and list the
+   new or changed image files in your DONE marker so the human can examine
+   them. Never record the images of tests that are not this section's.
 
    A case marked `(instrumented)` goes under `src/androidTest/`, with the
    project's instrumented test runner and the plan's libraries. You have no

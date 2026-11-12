@@ -17,8 +17,10 @@ consuming project's `AGENTS.md` (or `CLAUDE.md`) for local conventions
 (architecture, libraries, verification requirements). These files are the
 source of truth; do not duplicate their content here.
 
-Then do ORCHESTRATION_DOC, "Command Start", steps 1 and 5: the docs and the
-config file (MODELS). This command uses no device, so it skips steps 2 to 4.
+Then do ORCHESTRATION_DOC, "Command Start", steps 1, 2 and 5: the docs, the
+test driver (only TEST_DRIVER: this command needs no DRIVER_DOC) and the
+config file (MODELS). This command uses no device, so it skips steps 3 and 4.
+Pass `TEST_DRIVER: <value>` to the Architect in every case below.
 
 This is the /plan-design flow — it produces an implementation plan and/or the
 design doc that goes with it, then stops. There is no PM, Coder, or Tester

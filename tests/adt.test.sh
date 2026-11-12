@@ -758,6 +758,10 @@ expect_true "  (the other check's row is kept)" grep -q '^| lint-extra | PASS |'
 FAKE_CHECK_EXIT=1 adt "$SANDBOX/proj1" check --slug a --name lint-extra -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
 expect_eq "running a check again replaces its row" "1" "$(grep -c '^| lint-extra |' "$table")"
 expect_true "  (with the new result)" grep -q '^| lint-extra | FAIL | 1 |' "$table"
+adt "$SANDBOX/proj1" check --slug a --name build-gate --fresh -- "$SANDBOX/bin/fake-gradle" >/dev/null 2>&1
+expect_eq "--fresh drops the rows of earlier checks" "1" "$(grep -c '^| [a-z]' "$table")"
+expect_true "  (and keeps its own)" grep -q '^| build-gate | PASS |' "$table"
+expect_true "  (the header does not call every FAIL blocking)" sh -c "! grep -q 'blocking' '$table'"
 ADT_AUTOMOBILE="$SHIMS/auto-mobile" adt "$SANDBOX/proj1" run --slug a --driver auto-mobile >/dev/null 2>&1
 expect_true "a flow run does not delete the check logs" [ -f "$SANDBOX/proj1/pipeline_artifacts/a/checks/lint-extra.log" ]
 adt "$SANDBOX/proj1" check --slug a --name "Bad Name" -- true >/dev/null 2>&1
@@ -1037,7 +1041,36 @@ rm -f "$FAKE_ADT_STATE/dev/emulator-5554" "$FAKE_ADT_STATE/dev/emulator-5556"
 : > "$FAKE_ADT_STATE/avds"
 preflight "$SANDBOX/proj1" auto-mobile > /dev/null
 expect_code "no AVD and no device fails preflight" 16 $?
+out="$(ADT_AUTOMOBILE=/nonexistent/bunx ADT_MAESTRO=/nonexistent/maestro preflight "$SANDBOX/proj1" project)"; rc=$?
+expect_code "project mode: no AVD and no driver still passes" 0 $rc
+expect_true "  (the missing AVD is a warning)" grep -q '^warn  no AVD exists' <<EOF
+$out
+EOF
+expect_true "  (and it checks no driver)" sh -c "! grep -qi 'auto-mobile\|maestro' <<EOF
+$out
+EOF"
+(cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" preflight --driver project --devices > /dev/null 2>&1)
+expect_code "project mode with --devices: no AVD fails preflight" 16 $?
 printf 'Pixel_A\n' > "$FAKE_ADT_STATE/avds"
+out="$(ADT_AUTOMOBILE=/nonexistent/bunx ADT_MAESTRO=/nonexistent/maestro preflight "$SANDBOX/proj1" project)"
+expect_true "project mode with an AVD names no driver and no flows" sh -c "! grep -qi 'auto-mobile\|maestro\|flows' <<EOF
+$out
+EOF"
+expect_true "  (and still reports the AVD)" grep -q '^ok    AVD: Pixel_A' <<EOF
+$out
+EOF
+(cd "$SANDBOX/proj1" && PATH="$SANDBOX/bin:$PATH" /bin/bash "$SCRIPT" preflight --driver project --devices > /dev/null 2>&1)
+expect_code "project mode with --devices and an AVD passes" 0 $?
+mkdir -p "$SANDBOX/proj1/e2e/flows"
+expect_true "project mode warns when e2e/flows/ exists" grep -q '^warn  e2e/flows/ exists, but the test driver is project' <<EOF
+$(preflight "$SANDBOX/proj1" project)
+EOF
+rmdir "$SANDBOX/proj1/e2e/flows" "$SANDBOX/proj1/e2e"
+for sub in "run --slug a" "suite" "select"; do
+  # shellcheck disable=SC2086
+  adt "$SANDBOX/proj1" $sub --driver project >/dev/null 2>&1
+  expect_code "${sub%% *} refuses --driver project" 2 $?
+done
 
 ADT_AUTOMOBILE=/nonexistent/bunx preflight "$SANDBOX/proj1" auto-mobile > /dev/null
 expect_code "a missing auto-mobile command fails preflight" 16 $?

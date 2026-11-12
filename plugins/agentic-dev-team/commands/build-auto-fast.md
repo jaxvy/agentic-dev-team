@@ -22,8 +22,15 @@ consuming project's `AGENTS.md` (or `CLAUDE.md`) for local conventions
 source of truth; do not duplicate their content here.
 
 Then do ORCHESTRATION_DOC, "Command Start", steps 1 to 5: the docs, the test
-driver (DRIVER_DOC), the device script (ADT_SH), the preflight, and the config
-file (MODELS). Do all of them before any agent runs.
+driver (TEST_DRIVER, and DRIVER_DOC for a device driver), the device script
+(ADT_SH), the preflight, and the config file (MODELS). Do all of them before
+any agent runs.
+
+Test mode: in project mode (TEST_DRIVER is `project`, the default), the run
+tests with the project's own tests. Every step below about DRIVER_DOC, the
+Test Writer, flows, the install, DEVICE, BUILD_INSTALLED, RUN_RESULTS, the
+regression suite or "Keep the passing flows" does not apply: ORCHESTRATION_DOC,
+"The Test Phase in Project Mode", replaces them.
 
 Run ledger: record this run as ORCHESTRATION_DOC, "The Run Ledger", says: the
 command, paths and driver once the slug is known, the phase at the start of
@@ -71,8 +78,9 @@ Input — before Phase 1, look at the feature request (`$ARGUMENTS` with the
 
 Phase 1 — Architect:
   Delegate to the `adt-android-architect` subagent with the feature request
-  (with the `doc:` token removed), PIPELINE_DOC, and the line `DESIGN_DOC: off`
-  or `DESIGN_DOC: on` to match what you resolved above. Pass it explicitly —
+  (with the `doc:` token removed), PIPELINE_DOC, `TEST_DRIVER: <value>`, and
+  the line `DESIGN_DOC: off` or `DESIGN_DOC: on` to match what you resolved
+  above. Pass it explicitly —
   an Architect told nothing writes both documents.
   Wait for ✅ ARCHITECT DONE.
   Parse the artifact paths from the DONE message — it will say:
@@ -83,7 +91,9 @@ Phase 1 — Architect:
   Store the design doc path: DOC_PATH (on only)
 
 Phase 2 — Coder (execution strategy is decided by the Architect):
-  Early boot — first, once PLAN_PATH gives the slug S: run
+  Early boot — first, once PLAN_PATH gives the slug S (in project mode, only
+  when the plan's Section 0 `device tests` line is not `none`, and only after
+  ORCHESTRATION_DOC, "The Device Check in Project Mode", passes): run
   `bash <ADT_SH> device-acquire --slug S --background`. It returns at once and
   boots this run's emulator while the Coder works; the test phase's own
   `device-acquire` waits for it. From here on, every exit releases the device
@@ -128,8 +138,12 @@ Phase 2 — Coder (execution strategy is decided by the Architect):
   unexpected file conflict), STOP rather than continuing.
 
 Phase 3 — Tester:
-  Run the test phase exactly as ORCHESTRATION_DOC, "The Test Phase",
-  defines it:
+  In project mode, run ORCHESTRATION_DOC, "The Test Phase in Project Mode",
+  instead: the build gate (with `--fresh`) and the device tests through
+  `adt.sh check`, then the Tester with PLAN_PATH, PIPELINE_DOC,
+  `TEST_DRIVER: project` and `CHECKS: <path>`. With a device driver, run the
+  test phase exactly as
+  ORCHESTRATION_DOC, "The Test Phase", defines it:
     1. lease this run's device with `adt.sh device-acquire` (DEVICE);
     2. run the plan's device tests with `adt.sh check`, when Section 0 has
        them (a failure continues, for the Tester), then install the build with
@@ -189,6 +203,9 @@ Phase 3F — Tester fix loop (max 2 iterations, counter `fix_iterations`):
     only — the Tester's Observations section is for the user and never drives
     a fix), instructing it to fix exactly those failures. Wait for
     ✅ CODER DONE.
+    In project mode, re-run "The Test Phase in Project Mode" and pass the
+    Tester PLAN_PATH, PIPELINE_DOC, `TEST_DRIVER: project`, the new `CHECKS`
+    and the previous `test-results.md`. With a device driver:
     Re-run the test phase (ORCHESTRATION_DOC, "The Test Phase") on the same device —
     install included, so the re-test sees the fixed build. The Test Writer runs
     again only if the previous `test-results.md` lists Flow Defects (pass
@@ -204,7 +221,7 @@ Phase 3F — Tester fix loop (max 2 iterations, counter `fix_iterations`):
   After the 2nd iteration still reports NEEDS FIXES, **STOP** — do not
   declare the run complete, and do not start a 3rd iteration.
 
-Keep the passing flows — only when the final verdict is READY TO MERGE: run
+Keep the passing flows (device drivers only) — only when the final verdict is READY TO MERGE: run
 the promote step of ORCHESTRATION_DOC, "The Test Phase" (`adt.sh
 promote`, with one `--remove` per Flows Retired row and per "Suite Flows to
 Remove" entry in the last test-results.md). Never after NEEDS FIXES or a STOP.
@@ -224,6 +241,10 @@ Close the run — before the summary below, and on any exit path including a STO
   Edit that section only, and write "No divergence — the run implemented this
   document as written." when there is nothing to record. Report DOC_PATH with
   the summary.
+
+In project mode, the summary reports the test mode and each check from
+`checks.md` (result and time) instead of the device, the flow counts, the
+regression suite, promote and the Test Writer's time.
 
 When complete, summarise the final verdict from the test-results.md in the same
 directory as PLAN_PATH — starting with its "Verified V of N plan cases; U not

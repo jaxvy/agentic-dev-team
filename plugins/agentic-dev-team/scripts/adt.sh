@@ -3,7 +3,7 @@
 # adt.sh — devices and flow runs for the agentic-dev-team pipeline.
 #
 # Usage:
-#   adt.sh preflight      --driver auto-mobile|maestro
+#   adt.sh preflight      --driver project|auto-mobile|maestro [--devices]
 #   adt.sh device-acquire --slug <slug> [--background]
 #   adt.sh install        --slug <slug> -- <install command...>   (prints BUILD_INSTALLED)
 #   adt.sh run            --slug <slug> --driver auto-mobile|maestro
@@ -14,7 +14,8 @@
 #                         [--out <dir>]
 #   adt.sh select         --driver auto-mobile|maestro
 #                         [--area <area>:<tiers>]... [--exclude <id>]...
-#   adt.sh check          --slug <slug> --name <name> [--device] -- <command...>
+#   adt.sh check          --slug <slug> --name <name> [--device] [--fresh]
+#                         -- <command...>
 #   adt.sh promote        --slug <slug> [--remove <id>]...
 #   adt.sh state          --slug <slug> start <command> | set <key> <value>
 #                         | get <key> | bump <key> --max <n> | show
@@ -24,7 +25,10 @@
 #
 # preflight checks the machine before a run starts. The only thing it changes
 # is to start auto-mobile's background service when it is not running, which
-# the run needs anyway, so a service that cannot start is found at once.
+# the run needs anyway, so a service that cannot start is found at once. With
+# --driver project (the project's own tests, no device driver) it checks no
+# driver, and a device problem is only a warning: only a plan with device
+# tests needs a device. run, suite and select are for the device drivers only.
 #
 # Every build command leases one device for its whole run. device-acquire
 # boots a headless, read-only emulator (or reuses this run's existing lease)
@@ -43,8 +47,9 @@
 # emulators when it has two, and writes run-results.md. It reads Android's
 # crash log after each flow, so a crash or ANR of the app fails the flow.
 # With --only, it re-runs just the named flows of this run and updates their
-# rows. check runs one of the plan's Section 0 checks (today, the device
-# tests on the run's device) and records it in checks.md for the Tester. promote keeps this run's passing flows in e2e/flows/, and only when
+# rows. check runs one of the plan's Section 0 commands (the device tests on
+# the run's device, and in project mode the build gate too) and records it in
+# checks.md for the Tester; --fresh drops the rows of earlier checks first. promote keeps this run's passing flows in e2e/flows/, and only when
 # the Tester's test-results.md says READY TO MERGE. state is the run's
 # ledger: the phase, paths and budgets a build command records as it goes, so
 # a run can be resumed and a spent budget is refused (exit 17). suite replays
@@ -1386,6 +1391,16 @@ run_attempt() {
   fi
 }
 
+# device_driver <driver> <subcommand>: <driver> must be a device driver.
+# project mode has no flows, so a flow subcommand refuses it (exit 2).
+device_driver() {
+  case "$1" in
+    auto-mobile|maestro) ;;
+    project) die 2 "$2 runs flows, which only the device drivers have. In project mode (Test driver: project, the default) the test phase uses adt.sh check instead." ;;
+    *) usage ;;
+  esac
+}
+
 cmd_run() {
   local slug="" driver="" project serial flows_dir results logs flow id rel only="" recheck=""
   local total=0 passed=0 failed=0 flaky=0 skipped=0 seconds=0 areas="" excludes="" started_at
@@ -1411,7 +1426,7 @@ ${2:-}"; shift 2 ;;
     esac
   done
   [ -n "$slug" ] || usage
-  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  device_driver "$driver" run
   find_adb
   project="$(project_dir)"
   if [ -n "$suite_serial" ]; then
@@ -1654,7 +1669,7 @@ cmd_suite() {
       *) usage ;;
     esac
   done
-  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  device_driver "$driver" suite
   find_adb
   project="$(project_dir)"
   [ -d "$project/e2e/flows" ] || die 2 "no regression suite in $project/e2e/flows."
@@ -1693,26 +1708,28 @@ ${2:-}"; shift 2 ;;
       *) usage ;;
     esac
   done
-  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  device_driver "$driver" select
   project="$(project_dir)"
   select_suite "$project" "$driver" "$areas" "$excludes" "" | cut -f3
 }
 
 # ---------- checks ----------
-# A check is one of the plan's Section 0 commands that the test phase runs
-# beside the flows: today, the device tests (instrumented tests, on the run's
-# device, with --device). Its output goes to
+# A check is one of the plan's Section 0 commands that the test phase runs:
+# the device tests (instrumented tests, on the run's device, with --device)
+# and, in project mode, the build gate. Its output goes to
 # pipeline_artifacts/<slug>/checks/<name>.log, and its row to checks.md,
-# which the Tester reads. A failed check is the Tester's to report, so it
-# exits 1, like a failed flow.
+# which the Tester reads. A failed check is the Tester's to judge, so it
+# exits 1, like a failed flow. --fresh drops the rows of earlier checks, so a
+# test phase that starts with it leaves no row from an earlier run.
 
 cmd_check() {
-  local slug="" name="" on_device=0 project serial dir log table rc start secs status row tmp
+  local slug="" name="" on_device=0 fresh=0 project serial dir log table rc start secs status row tmp
   while [ $# -gt 0 ]; do
     case "$1" in
       --slug) slug="${2:-}"; shift 2 ;;
       --name) name="${2:-}"; shift 2 ;;
       --device) on_device=1; shift ;;
+      --fresh) fresh=1; shift ;;
       --) shift; break ;;
       *) usage ;;
     esac
@@ -1746,10 +1763,10 @@ cmd_check() {
   tmp="$table.tmp.$$"
   {
     printf '# Checks: %s\n\n' "$slug"
-    printf 'Section 0 commands run beside the flows. A FAIL is a blocking finding for the Tester to report.\n\n'
+    printf 'Section 0 commands that the test phase ran. The Tester judges each FAIL from its log.\n\n'
     printf '| Check | Result | Exit | Seconds | Log | Command |\n'
     printf '|---|---|---|---|---|---|\n'
-    [ -f "$table" ] && grep '^| ' "$table" | grep -v '^| Check |' | awk -v n="$name" -F'|' '{ c = $2; gsub(/^ +| +$/, "", c) } c != n'
+    [ "$fresh" = 0 ] && [ -f "$table" ] && grep '^| ' "$table" | grep -v '^| Check |' | awk -v n="$name" -F'|' '{ c = $2; gsub(/^ +| +$/, "", c) } c != n'
     printf '%s\n' "$row"
   } > "$tmp" && mv -f "$tmp" "$table"
   say "adt: check $name: $status (exit $rc). Log: $log"
@@ -1964,7 +1981,11 @@ PF_FAILS=0
 PF_WARNS=0
 pf_ok()   { printf 'ok    %s\n' "$*"; }
 pf_warn() { printf 'warn  %s\n' "$*"; PF_WARNS=$((PF_WARNS + 1)); }
-pf_fail() { printf 'FAIL  %s\n' "$*"; PF_FAILS=$((PF_FAILS + 1)); }
+pf_fail() {
+  # In project mode a device problem is only a warning (cmd_preflight).
+  if [ "${PF_SOFT:-0}" = 1 ]; then pf_warn "$*"; return; fi
+  printf 'FAIL  %s\n' "$*"; PF_FAILS=$((PF_FAILS + 1))
+}
 
 # Online devices with no lease, one serial per line.
 free_attached() {
@@ -1977,6 +1998,7 @@ free_attached() {
 # Whether this machine has the memory for a run's second emulator of <avd>.
 preflight_parallel() {
   local why
+  [ "${PF_DRIVER:-}" = project ] && return 0  # project mode has no flows
   if ! [ "$PARALLEL" -ge 2 ] 2>/dev/null; then
     pf_ok "flows run on one emulator (ADT_PARALLEL=$PARALLEL)"
   elif why="$(can_afford_emulator "$1")"; then
@@ -2024,7 +2046,7 @@ preflight_devices() {
   if [ -n "$usable" ]; then
     pf_ok "AVD: $usable (the first one not open in normal mode)"
     preflight_parallel "$usable"
-    pf_warn "ADT_AVD is not set, so runs may boot different AVDs and pay auto-mobile's first-time setup again. See HOW_IT_WORKS, 'Setting up device testing'."
+    [ "${PF_DRIVER:-}" = project ] || pf_warn "ADT_AVD is not set, so runs may boot different AVDs and pay auto-mobile's first-time setup again. See HOW_IT_WORKS, 'Setting up device testing'."
   elif [ -z "$avds" ]; then
     pf_fail "no AVD exists. Create one in Android Studio's Device Manager, or set ADT_DEVICE_MODE=reuse to test on an attached device${attached:+ such as $attached} (flows clear the app's data on it)."
   else
@@ -2131,8 +2153,10 @@ preflight_permissions() {
   [ -n "${CLAUDECODE:-}" ] || return 0
   for file in "$here/.claude/settings.local.json" "$here/.claude/settings.json" \
               "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
-    [ -f "$file" ] && grep -q 'mcp__auto-mobile__\*\|mcp__auto-mobile"' "$file" && \
-      grep -q 'adt[.]sh' "$file" && return 0
+    [ -f "$file" ] && grep -q 'adt[.]sh' "$file" || continue
+    # Project mode uses no driver, so it needs no rule for one.
+    [ "${PF_DRIVER:-}" = project ] && return 0
+    grep -q 'mcp__auto-mobile__\*\|mcp__auto-mobile"' "$file" && return 0
   done
   pf_warn "in Claude Code, the pipeline's own commands are not pre-approved, so a run may stop to ask. Approve them once with: bash $(script_path) allow --project $here"
 }
@@ -2151,14 +2175,24 @@ preflight_leftovers() {
 }
 
 cmd_preflight() {
-  local driver=""
+  local driver="" devices=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --driver) driver="${2:-}"; shift 2 ;;
+      --devices) devices=1; shift ;;
       *) usage ;;
     esac
   done
-  case "$driver" in auto-mobile|maestro) ;; *) usage ;; esac
+  case "$driver" in project|auto-mobile|maestro) ;; *) usage ;; esac
+  PF_DRIVER="$driver"
+  if [ "$driver" = project ]; then
+    pf_ok "test driver: project (the project's own tests; no device driver)"
+    [ -d "$(project_dir)/e2e/flows" ] && \
+      pf_warn "e2e/flows/ exists, but the test driver is project, so its flows do not run. To keep using them, add 'Test driver: auto-mobile' (or maestro) to AGENTS.md or CLAUDE.md."
+    # A device problem is a warning: most plans have no device tests. With
+    # --devices, for a plan that has them, it is a failure as in the other modes.
+    [ "$devices" = 1 ] || PF_SOFT=1
+  fi
   if (find_adb) > /dev/null 2>&1; then
     find_adb
     pf_ok "adb: $ADB"
@@ -2167,11 +2201,11 @@ cmd_preflight() {
   else
     pf_fail "adb not found. Install the Android SDK platform tools, or set ANDROID_HOME."
   fi
-  if [ "$driver" = auto-mobile ]; then
-    preflight_automobile
-  else
-    preflight_maestro
-  fi
+  PF_SOFT=0
+  case "$driver" in
+    auto-mobile) preflight_automobile ;;
+    maestro) preflight_maestro ;;
+  esac
   preflight_permissions
   printf '\npreflight: %s problem(s), %s warning(s)\n' "$PF_FAILS" "$PF_WARNS"
   [ "$PF_FAILS" -eq 0 ] || exit 16

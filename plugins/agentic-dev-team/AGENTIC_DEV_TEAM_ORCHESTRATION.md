@@ -23,13 +23,22 @@ The command file says which steps it does.
    to every subagent you spawn, beside the artifact paths you already pass.
    Never pass ORCHESTRATION_DOC or CONFIG_DOC to an agent: they are yours.
 
-2. **The test driver** (build commands). Read the `Test driver:` line in the
-   project's `AGENTS.md` (or `CLAUDE.md`): `auto-mobile` or `maestro`, and
-   `auto-mobile` when there is no such line. Any other value is a STOP: report
-   it and name the two valid values. Then find the driver's adapter the way
-   PIPELINE_DOC was found (`.claude/adt/drivers/<driver>.md` if it exists,
-   otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md`) and store that path as
-   DRIVER_DOC. The test phase passes it on (Part A, "The Test Driver").
+2. **The test driver** (build commands, and `/plan-design`). Read the
+   `Test driver:` line in the project's `AGENTS.md` (or `CLAUDE.md`):
+   `project`, `auto-mobile` or `maestro`, and `project` when there is no such
+   line. Any other value is a STOP: report it and name the three valid values.
+   Pass `TEST_DRIVER: <the value>` to the Architect, which records it in
+   Section 0. When a run starts from an existing plan, Section 0's
+   `test driver:` line must be the same value: a different value, or no line
+   while the value is not `project`, is a STOP that names both values, because
+   that plan was written for another kind of test.
+   For a **device driver** (`auto-mobile` or `maestro`), find the driver's
+   adapter the way PIPELINE_DOC was found (`.claude/adt/drivers/<driver>.md`
+   if it exists, otherwise `${CLAUDE_PLUGIN_ROOT}/drivers/<driver>.md`) and
+   store that path as DRIVER_DOC. The test phase passes it on (Part A, "The
+   Test Driver"). In **project mode** there is no DRIVER_DOC, and every rule
+   below that names DRIVER_DOC, flows, the Test Writer, `adt.sh run`,
+   `adt.sh promote`, the install, or the regression suite does not apply.
 
 3. **The device script** (build commands). Resolve it the same way and store
    it as ADT_SH: the relative path `.claude/adt/scripts/adt.sh`, written
@@ -43,8 +52,12 @@ The command file says which steps it does.
    1. Run `bash <ADT_SH> preflight --driver <driver>`. It checks the Android
       SDK, the AVDs, and the driver's command line and background service. On
       exit 16, STOP and report its FAIL lines; each says how to fix it. Keep
-      its warn lines for the final summary.
-   2. Check your own tool list for the driver's MCP tools
+      its warn lines for the final summary. In project mode
+      (`--driver project`) it checks no driver, and a missing SDK or AVD is
+      only a warning, because only a plan with device tests needs a device.
+      The device check of such a plan is "The Device Check in Project Mode",
+      below.
+   2. Device drivers only. Check your own tool list for the driver's MCP tools
       (`mcp__auto-mobile__…` or `mcp__maestro__…`). None at all: STOP, the
       driver's MCP server is not registered (HOW_IT_WORKS, "Setting up device
       testing"). For auto-mobile, if `mcp__auto-mobile__rotate`,
@@ -193,7 +206,9 @@ release, record how the run ended:
      user to start the command again with the feature request.
    - From Phase 2 on, first start the early boot again
      (`device-acquire --background`; it returns at once, and reuses the run's
-     device when it still runs).
+     device when it still runs). In project mode, only when Section 0's
+     `device tests` line is not `none`, and after "The Device Check in Project
+     Mode".
    - A Coder phase: the tree may hold part of the work. Tell every Coder that
      this is a resumed run: an earlier Coder may have done part of its
      section, so it reads the files first, finishes what the plan asks, and
@@ -201,7 +216,7 @@ release, record how the run ended:
    - A review gate: run the review again. A review is not a re-run, so bump
      nothing for it.
    - A test phase, or a fix-loop iteration: run the test phase again from its
-     first step, install included.
+     first step, install included (in project mode, from its first check).
    - A blocked Tester (Phase 3B or 4B): show the ask from `test-results.md`
      again and wait for `resume` or `stop`.
    - In `/build-guided`: show the gate of the recorded phase again and wait
@@ -343,7 +358,8 @@ command, so the pre-approved permission rule matches it (see "Permissions"
 below).
 
 Then, as soon as the plan names the slug `S` and before the Coder starts, the
-command **boots the run's device early**:
+command **boots the run's device early** — with a device driver always, and in
+project mode only when Section 0's `device tests` line is not `none`:
 `bash <adt.sh> device-acquire --slug S --background`. It returns at once, and
 the emulator boots while the Coder works. The test phase's own
 `device-acquire` waits for it, so the boot costs no extra time. From this
@@ -517,6 +533,65 @@ there, the no-shell rule is enforced by their prompts only. Codex gives every
 agent a shell, because it reads files through it, so there too the rule is
 enforced by the prompts only (Part A, "Agents in Codex").
 
+## The Device Check in Project Mode
+
+In project mode the preflight cannot know whether the run needs a device: the
+plan does not exist yet. So check again when the plan does. As soon as the
+plan's Section 0 is final (before the early boot, and before any Coder runs)
+and its `device tests` line is not `none`, run
+`bash <ADT_SH> preflight --driver project --devices`. With `--devices`, a
+device problem is a FAIL, as with a device driver. On exit 16, STOP and report
+its FAIL lines: the user fixes the device and continues with `resume`, and the
+plan is kept. A `resume` from Phase 2 on runs this check again before its
+early boot. A plan whose `device tests` line is `none` skips this check.
+
+## The Test Phase in Project Mode
+
+In project mode ("Command Start", step 2) the build commands test with the
+project's own tests and take this section instead of "The Test Phase" above.
+There is no Test Writer, no flow run, no install, no regression suite and no
+promote. The Tester judges the results of the project's tests and drives
+nothing. `S` and `<adt.sh>` are as in "The Test Phase".
+
+Each test — the first one and every re-test in the fix loop:
+
+1. **The build gate.**
+   `bash <adt.sh> check --slug S --name build-gate --fresh -- <the build gate from the plan's Section 0>`.
+   `--fresh` empties `checks.md` first, so the Tester never reads a row from
+   an earlier test or an earlier plan. Only this step passes it.
+   It runs the gate on the final tree, so even `/build-auto-fast`, which has no
+   code review, sees every test that runs without a device. A command with
+   `&&`, `;`, a pipe or a leading `cd` goes whole into `bash -c '…'`, as for
+   the install in "The Test Phase". Exit 0, and exit 1 (the gate failed), both
+   continue: a failure is the Tester's to report. Any other exit: release the
+   device if one is leased, then STOP and report its message.
+2. **The device tests — only when Section 0's `device tests` line is not
+   `none`.** The run's first test leases the device:
+   `bash <adt.sh> device-acquire --slug S` (it waits for the early boot). If
+   it fails, release the device, then STOP and report its message; the user
+   can fix the device and `resume`. Then
+   `bash <adt.sh> check --slug S --name device-tests --device -- <the device tests>`,
+   with the same exit rules as step 1.
+3. **Test.** Delegate to `adt-android-tester` with PLAN_PATH, PIPELINE_DOC,
+   `TEST_DRIVER: project`, `CHECKS: pipeline_artifacts/S/checks.md`, and
+   whatever the command adds for a re-test. It reads the checks and their
+   logs and writes `test-results.md` with the usual verdict. Wait for
+   `✅ TESTER DONE` or `⛔ TESTER BLOCKED`; on the latter, take "The Blocked
+   Path" below.
+
+When a command file names a step of "The Test Phase" — DEVICE,
+BUILD_INSTALLED, RUN_RESULTS, the Test Writer, the flow run, "Keep the passing
+flows" — skip it in project mode; the steps above replace them. The fix loop,
+its budgets, the targeted re-review, the ledger and the blocked path do not
+change. A blocked run in project mode is rare: a check that could not start,
+for example a device that would not boot. Release the device, when one was
+leased, on every exit, as "The Test Phase" says.
+
+The final summary names the test mode, lists each check with its result and
+time from `checks.md`, repeats the preflight's warnings, and gives the
+Tester's Coverage: each plan behaviour verified by a passing test, and each
+one that is not automated, with its reason.
+
 ## The Blocked Path
 
 When the Tester ends on `⛔ TESTER BLOCKED` (Part A, "When the Tester Is
@@ -589,15 +664,15 @@ saw run.
 
 When the user invokes `/build-guided`, `/build-auto-fast`, or `/build-auto`, the parent agent acts as orchestrator:
 
-1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above — including `adt-android-test-writer`, which every build command uses. For `/build-auto`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`. When a review panel is configured (CONFIG_DOC, "Configured Runs"), also register adt-android-review-judge.
+1. **Define Subagents**: Dynamically register any required subagents using `define_subagent` if they aren't already defined, using the mappings above — including `adt-android-test-writer`, which every build command uses with a device driver. For `/build-auto`, also register `adt-android-architect-reviewer` and `adt-android-code-reviewer`. When a review panel is configured (CONFIG_DOC, "Configured Runs"), also register adt-android-review-judge.
 2. **Execute Phases**:
    - **PM Phase** (`/build-guided` only): Invoke `adt-android-pm` with the user request. Pass messages back and forth between the user and the PM subagent until it outputs `✅ PM DONE`.
    - **Architect Phase**: Invoke `adt-android-architect` with the PM's `feature.md` path (or the feature description for the auto flows) and the `DESIGN_DOC` value this command defaults to (see "Design Doc Defaults Per Command"). Wait until it outputs `✅ ARCHITECT DONE`, and parse the artifact paths out of that marker — the plan path always, and the design doc path when one was requested.
    - **Architect Review Gate** (`/build-auto` only): Invoke `adt-android-architect-reviewer` with the plan path (and the design doc path if one was requested), and apply the Reviewer-Loop Protocol above before proceeding. A bounce re-runs the Architect, which re-emits the artifacts, so any document a human ends up reading is always the approved one.
    - **Coder Phase**: Read the execution strategy from the implementation plan. If parallel-safe, verify mechanically that no file appears in two sections of the same group, then invoke multiple `adt-android-coder` subagents in parallel. Otherwise, invoke a single `adt-android-coder`. Parallel coders run no Gradle — you own the verification, via the cross-section check after **every** group (Part A, "Gradle in a Parallel Run"). Take its command from the plan's Section 0 like every other agent — not from Part A's defaults — and on failure follow Part A's "When the cross-section check fails".
    - **Code Review Gate** (`/build-auto` only): After all coding is complete, invoke `adt-android-code-reviewer` with the plan path and apply the Reviewer-Loop Protocol above before proceeding.
-   - **Before the run**: resolve the test driver and the script, run the preflight, and check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot.
-   - **Tester Phase**: Run "The Test Phase" above: lease the run's device, run the plan's device tests and install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, send any of this run's flows that failed back to the Test Writer to fix and re-run those with `adt.sh run --only`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, `CHECKS` when a check ran, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
+   - **Before the run**: resolve the test driver and the script, run the preflight, and, with a device driver, check the driver's MCP tools ("Before the Run" above). After the Architect, start the early boot when the run needs a device.
+   - **Tester Phase**: In project mode, run "The Test Phase in Project Mode" above instead. With a device driver, run "The Test Phase" above: lease the run's device, run the plan's device tests and install the build on it, invoke `adt-android-test-writer` to write the flows, run them with `adt.sh run`, send any of this run's flows that failed back to the Test Writer to fix and re-run those with `adt.sh run --only`, then invoke `adt-android-tester` with the plan path, `DRIVER_DOC`, `DEVICE`, `BUILD_INSTALLED`, `RUN_RESULTS`, `CHECKS` when a check ran, and any `TEST CREDENTIALS` the human supplied for this run (Part A, "Test Credentials"). It judges the flow results, drives what no flow covers, and writes `test-results.md`. Wait for **either** `✅ TESTER DONE` **or** `⛔ TESTER BLOCKED` — both end its turn.
    - **Tester Blocked**: on `⛔ TESTER BLOCKED`, take "The Blocked Path" above instead of the fix loop, and do not advance.
    - **Tester Fix Loop**: on a `NEEDS FIXES` verdict, run the bounded
      Coder → targeted re-review → re-test loop the command file defines (max 2
@@ -638,7 +713,7 @@ up by the same install.sh run:
    model (the agent files set no per-role `model:`), matching Antigravity's
    behavior. Select the strongest available model for full pipeline runs.
    The `agents:` model settings in .agentic-dev-team/config.yaml cannot change this; see CONFIG_DOC, "Agent Configuration".
-4. **Tester MCP**: the test driver's MCP server is registered in
+4. **Tester MCP**: with a device driver, the test driver's MCP server is registered in
    `opencode.json` under the `mcp` key — auto-mobile as an HTTP server
    (`type: "remote"`, with auto-mobile's `url`), Maestro as a local one
    (`type: "local"`, `command: ["maestro", "mcp"]`); the Tester reaches it like
@@ -705,7 +780,7 @@ these points differ:
    tells each agent what it must not use. In a review panel, the tree
    snapshot ("Configured Runs" in CONFIG_DOC) still checks that the reviewers
    changed nothing.
-7. **The test driver.** Its MCP server is registered with Codex under the name
+7. **The test driver.** With a device driver, its MCP server is registered with Codex under the name
    `auto-mobile` or `maestro` (HOW_IT_WORKS, "Setting up device testing").
    Subagents get the same MCP servers as you, and the tools keep their names:
    `mcp__auto-mobile__…` and `mcp__maestro__…`.

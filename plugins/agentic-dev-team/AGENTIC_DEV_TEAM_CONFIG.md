@@ -107,6 +107,9 @@ that has no `runner` key.
   | `/build-guided` | `pm`, `architect`, `coder`, `test_writer`, `tester` |
   | `/build-auto` | `architect`, `architect_reviewer`, `coder`, `code_reviewer`, `test_writer`, `tester`; and `review_judge` only when a **configured** `reviewers` list has 2 or more entries |
 
+  In project mode (Part A, "The Test Driver"), no build command starts
+  `test_writer`: there are no flows.
+
 - **`RUNS` is on** (only in `/build-auto`) when at least one slot or
   reviewer entry under `build_auto:` has a `runner` other than
   `native`, or a `reviewers` list has 2 or more entries. A native slot or a
